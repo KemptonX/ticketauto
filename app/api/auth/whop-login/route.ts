@@ -1,0 +1,66 @@
+import { NextResponse } from "next/server";
+import { setSession } from "@/src/lib/whop-auth";
+
+export const runtime = "nodejs";
+
+const WHOP_API_BASE_URL = process.env.WHOP_API_BASE_URL || "https://api.whop.com/api/v5";
+const ALLOWED_STATUSES = new Set(["active", "trialing", "canceling"]);
+
+export async function POST(request: Request) {
+  try {
+    const { licenseKey } = (await request.json()) as { licenseKey?: string };
+
+    if (!licenseKey?.trim()) {
+      return NextResponse.json({ error: "License key is required" }, { status: 400 });
+    }
+
+    const apiKey = process.env.WHOP_API_KEY;
+    if (!apiKey) {
+      return NextResponse.json({ error: "WHOP_API_KEY is not configured" }, { status: 500 });
+    }
+
+    const response = await fetch(
+      `${WHOP_API_BASE_URL}/memberships/${encodeURIComponent(licenseKey.trim())}`,
+      {
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+        },
+        cache: "no-store",
+      },
+    );
+
+    if (!response.ok) {
+      return NextResponse.json({ error: "Invalid license key" }, { status: 401 });
+    }
+
+    const membership = (await response.json()) as {
+      id: string;
+      status: string;
+      product?: { id?: string | null };
+      user?: { email?: string | null };
+    };
+
+    if (!ALLOWED_STATUSES.has(membership.status)) {
+      return NextResponse.json({ error: "License is not active" }, { status: 403 });
+    }
+
+    const allowedProductId = process.env.WHOP_ALLOWED_PRODUCT_ID;
+    const membershipProductId = membership.product?.id || null;
+
+    if (allowedProductId && membershipProductId !== allowedProductId) {
+      return NextResponse.json({ error: "License is for the wrong product" }, { status: 403 });
+    }
+
+    await setSession({
+      membershipId: membership.id,
+      productId: membershipProductId,
+      userEmail: membership.user?.email || null,
+      expiresAt: Date.now() + 1000 * 60 * 60 * 24 * 30,
+    });
+
+    return NextResponse.json({ ok: true });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Login failed";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
