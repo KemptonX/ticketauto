@@ -684,7 +684,7 @@ function formatBoughtAt(value: string | null) {
   const isoMatch = value.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
   if (isoMatch) {
     const [, year, month, day, hours, minutes] = isoMatch;
-    return `${Number(month)}/${Number(day)}/${year} ${hours}:${minutes}`;
+    return `${Number(day)}/${Number(month)}/${year} ${hours}:${minutes}`;
   }
 
   const parsed = new Date(value);
@@ -698,5 +698,5 @@ function formatBoughtAt(value: string | null) {
   const hours = String(parsed.getUTCHours()).padStart(2, "0");
   const minutes = String(parsed.getUTCMinutes()).padStart(2, "0");
 
-  return `${month}/${day}/${year} ${hours}:${minutes}`;
+  return `${day}/${month}/${year} ${hours}:${minutes}`;
 }
