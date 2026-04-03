@@ -35,6 +35,7 @@ const sourceOptions = [
 export default function OrdersPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [message, setMessage] = useState("");
 
   const [search, setSearch] = useState("");
@@ -53,22 +54,32 @@ export default function OrdersPage() {
     setSoldFilter("All");
   }
 
-  useEffect(() => {
-    async function loadOrders() {
-      const { data, error } = await supabase
-        .from("orders")
-        .select("*")
-        .order("created_at", { ascending: false });
-
-      if (error) {
-        setMessage(error.message);
-      } else {
-        setOrders((data as Order[]) || []);
-      }
-
-      setLoading(false);
+  async function loadOrders(showRefreshing = false) {
+    if (showRefreshing) {
+      setRefreshing(true);
+    } else {
+      setLoading(true);
     }
 
+    const { data, error } = await supabase
+      .from("orders")
+      .select("*")
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      setMessage(error.message);
+    } else {
+      setOrders((data as Order[]) || []);
+      if (showRefreshing) {
+        setMessage("Orders refreshed");
+      }
+    }
+
+    setLoading(false);
+    setRefreshing(false);
+  }
+
+  useEffect(() => {
     loadOrders();
   }, []);
 
@@ -264,6 +275,14 @@ export default function OrdersPage() {
           </div>
 
           <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
+            <button
+              onClick={() => loadOrders(true)}
+              style={refreshButtonStyle}
+              disabled={refreshing}
+            >
+              {refreshing ? "Refreshing..." : "Refresh"}
+            </button>
+
             <button onClick={addRow} style={addButtonStyle}>
               Add Row
             </button>
@@ -667,6 +686,16 @@ const addButtonStyle = {
   borderRadius: "8px",
   background: "#2563eb",
   color: "#fff",
+  padding: "10px 14px",
+  cursor: "pointer",
+  fontWeight: 600,
+};
+
+const refreshButtonStyle = {
+  border: "1px solid #d1d5db",
+  borderRadius: "8px",
+  background: "#fff",
+  color: "#111827",
   padding: "10px 14px",
   cursor: "pointer",
   fontWeight: 600,
