@@ -171,11 +171,17 @@ export default function OrdersPage() {
   }
 
   const eventOptions = useMemo(() => {
-    return ["All", ...new Set(orders.map((o) => o.event_name).filter(Boolean))];
+    const values = orders
+      .map((o) => o.event_name)
+      .filter((value): value is string => Boolean(value));
+    return ["All", ...new Set(values)];
   }, [orders]);
 
   const venueOptions = useMemo(() => {
-    return ["All", ...new Set(orders.map((o) => o.venue).filter(Boolean))];
+    const values = orders
+      .map((o) => o.venue)
+      .filter((value): value is string => Boolean(value));
+    return ["All", ...new Set(values)];
   }, [orders]);
 
   const filteredOrders = useMemo(() => {
