@@ -496,7 +496,7 @@ export default function OrdersClient() {
                   const profit =
                     order.sold_total != null ? soldTotal - totalCost : null;
                   const roi =
-                    order.sold_total != null && totalCost > 0
+                    profit != null && totalCost > 0
                       ? (profit / totalCost) * 100
                       : null;
 
