@@ -1,9 +1,6 @@
 import Link from "next/link";
-import { requireSession } from "@/src/lib/whop-auth";
 
 export default async function HomePage() {
-  await requireSession();
-
   return (
     <main style={{ padding: "40px", fontFamily: "Arial, sans-serif" }}>
       <h1>TicketAuto</h1>
