@@ -21,6 +21,7 @@ export async function GET(request: Request) {
     return NextResponse.redirect(new URL("/login?next=/connections", request.url));
   }
 
+  const requestUrl = new URL(request.url);
   const clientId = process.env.GOOGLE_CLIENT_ID;
   if (!clientId) {
     return NextResponse.redirect(new URL("/connections?error=missing-google-client", request.url));
@@ -40,6 +41,15 @@ export async function GET(request: Request) {
   authUrl.searchParams.set("include_granted_scopes", "true");
   authUrl.searchParams.set("scope", GOOGLE_SCOPES.join(" "));
   authUrl.searchParams.set("state", state);
+
+  if (requestUrl.searchParams.get("debug") === "1") {
+    return NextResponse.json({
+      clientId,
+      callbackUrl,
+      scopes: GOOGLE_SCOPES,
+      authUrl: authUrl.toString(),
+    });
+  }
 
   const response = NextResponse.redirect(authUrl);
   response.cookies.set("gmail_oauth_state", state, {
