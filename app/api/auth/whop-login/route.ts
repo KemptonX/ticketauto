@@ -30,7 +30,19 @@ export async function POST(request: Request) {
     );
 
     if (!response.ok) {
-      return NextResponse.json({ error: "Invalid license key" }, { status: 401 });
+      let whopError = "Invalid license key";
+
+      try {
+        const errorBody = (await response.json()) as {
+          message?: string;
+          error?: string;
+        };
+        whopError = errorBody.message || errorBody.error || whopError;
+      } catch {
+        whopError = `Whop request failed with status ${response.status}`;
+      }
+
+      return NextResponse.json({ error: whopError }, { status: 401 });
     }
 
     const membership = (await response.json()) as {
