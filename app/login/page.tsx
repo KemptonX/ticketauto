@@ -1,26 +1,19 @@
-import { redirect } from "next/navigation";
+﻿import { redirect } from "next/navigation";
 import LoginForm from "./login-form";
-import { getSession } from "@/src/lib/whop-auth";
+import { createSupabaseServerClient } from "@/src/lib/supabase-server";
 
 export default async function LoginPage() {
-  const session = await getSession();
+  const supabase = await createSupabaseServerClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
-  if (session) {
+  if (user) {
     redirect("/orders");
   }
 
   return (
-    <main
-      style={{
-        minHeight: "100vh",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: "24px",
-        background: "#f3f4f6",
-        fontFamily: "Arial, sans-serif",
-      }}
-    >
+    <main className="auth-page">
       <LoginForm />
     </main>
   );

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
@@ -24,12 +24,20 @@ type Order = {
   created_at: string | null;
 };
 
-const statusOptions = ["All", "Unlisted", "Listed", "Listed/Sold", "Sold"];
+const statusOptions = ["All", "Unlisted", "Listed", "Sold", "Problem / Missing"];
+const quickStatusOptions = ["Unlisted", "Listed", "Sold", "Problem / Missing"];
 const sourceOptions = [
   "All",
   "ticketmaster_direct",
   "ticketmaster_resale",
   "manual",
+];
+
+const navItems = [
+  { label: "Dashboard", href: "/orders", active: true },
+  { label: "Listings", href: "#", active: false },
+  { label: "Inventory", href: "/inventory", active: false },
+  { label: "Analytics", href: "/analytics", active: false },
 ];
 
 export default function OrdersClient() {
@@ -38,6 +46,7 @@ export default function OrdersClient() {
   const [refreshing, setRefreshing] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [message, setMessage] = useState("");
+  const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null);
 
   const [search, setSearch] = useState("");
   const [eventFilter, setEventFilter] = useState("All");
@@ -70,9 +79,16 @@ export default function OrdersClient() {
     if (error) {
       setMessage(error.message);
     } else {
-      setOrders((data as Order[]) || []);
+      const nextOrders = (data as Order[]) || [];
+      setOrders(nextOrders);
+      if (selectedOrderId != null) {
+        const stillExists = nextOrders.some((order) => order.id === selectedOrderId);
+        if (!stillExists) {
+          setSelectedOrderId(null);
+        }
+      }
       if (showRefreshing) {
-        setMessage("Orders refreshed");
+        setMessage("Inventory refreshed");
       }
     }
 
@@ -98,9 +114,9 @@ export default function OrdersClient() {
       }
 
       await loadOrders(true);
-      setMessage("Gmail scan completed");
+      setMessage("Inbox scan complete");
     } catch {
-      setMessage("Unable to run Gmail scan");
+      setMessage("Inbox scan failed");
     } finally {
       setScanning(false);
     }
@@ -125,8 +141,8 @@ export default function OrdersClient() {
                     : Number(value)
                   : value,
             }
-          : order
-      )
+          : order,
+      ),
     );
   }
 
@@ -153,11 +169,38 @@ export default function OrdersClient() {
       })
       .eq("id", order.id);
 
-    setMessage(error ? error.message : `Saved ${order.booking_ref}`);
+    setMessage(error ? error.message : `Saved ${order.booking_ref || "ticket"}`);
+  }
+
+  async function saveQuickField(
+    order: Order,
+    field: "listing_status" | "sold_total",
+    value: string,
+  ) {
+    updateOrder(order.id, field, value);
+
+    const payload =
+      field === "sold_total"
+        ? { sold_total: value === "" ? null : Number(value) }
+        : { listing_status: value };
+
+    const { error } = await supabase
+      .from("orders")
+      .update(payload)
+      .eq("id", order.id);
+
+    if (error) {
+      setMessage(error.message);
+      return;
+    }
+
+    setMessage(
+      field === "listing_status" ? "Status saved" : "Sales total saved",
+    );
   }
 
   async function deleteOrder(id: number) {
-    const confirmed = window.confirm("Delete this row?");
+    const confirmed = window.confirm("Delete this ticket row?");
     if (!confirmed) {
       return;
     }
@@ -172,7 +215,10 @@ export default function OrdersClient() {
     }
 
     setOrders((current) => current.filter((order) => order.id !== id));
-    setMessage("Row deleted");
+    if (selectedOrderId === id) {
+      setSelectedOrderId(null);
+    }
+    setMessage("Ticket row deleted");
   }
 
   async function addRow() {
@@ -204,20 +250,22 @@ export default function OrdersClient() {
       return;
     }
 
-    setOrders((current) => [data as Order, ...current]);
-    setMessage("New row added");
+    const newOrder = data as Order;
+    setOrders((current) => [newOrder, ...current]);
+    setSelectedOrderId(newOrder.id);
+    setMessage("New ticket row added");
   }
 
   const eventOptions = useMemo(() => {
     const values = orders
-      .map((o) => o.event_name)
+      .map((order) => order.event_name)
       .filter((value): value is string => Boolean(value));
     return ["All", ...new Set(values)];
   }, [orders]);
 
   const venueOptions = useMemo(() => {
     const values = orders
-      .map((o) => o.venue)
+      .map((order) => order.venue)
       .filter((value): value is string => Boolean(value));
     return ["All", ...new Set(values)];
   }, [orders]);
@@ -276,494 +324,677 @@ export default function OrdersClient() {
     soldFilter,
   ]);
 
+  const selectedOrder =
+    orders.find((order) => order.id === selectedOrderId) ?? null;
+
+  const metrics = useMemo(() => {
+    const totalOrders = filteredOrders.length;
+    const totalCost = filteredOrders.reduce(
+      (sum, order) => sum + (order.total_cost ?? 0),
+      0,
+    );
+    const totalSold = filteredOrders.reduce(
+      (sum, order) => sum + (order.sold_total ?? 0),
+      0,
+    );
+    const totalProfit = filteredOrders.reduce((sum, order) => {
+      if (order.sold_total == null || order.total_cost == null) {
+        return sum;
+      }
+      return sum + (order.sold_total - order.total_cost);
+    }, 0);
+
+    const roi = totalCost > 0 ? (totalProfit / totalCost) * 100 : 0;
+
+    return [
+      {
+        label: "Tickets",
+        value: String(totalOrders),
+        detail: totalOrders > 0 ? `${totalOrders} live rows` : "No rows yet",
+        trend: "+2 this week",
+      },
+      {
+        label: "Spent",
+        value: formatCurrency(totalCost),
+        detail:
+          totalOrders > 0
+            ? formatCurrency(totalCost / totalOrders)
+            : "No buys yet",
+      },
+      {
+        label: "Sales",
+        value: formatCurrency(totalSold),
+        detail: totalSold > 0 ? "Sales logged" : "No sales yet",
+      },
+      {
+        label: "ROI",
+        value: `${roi.toFixed(1)}%`,
+        detail:
+          totalProfit !== 0 ? `${formatCurrency(totalProfit)} net` : "Flat book",
+      },
+    ];
+  }, [filteredOrders]);
+
   return (
-    <main
-      style={{
-        padding: "40px",
-        fontFamily: "Arial, sans-serif",
-        background: "#f7f7f7",
-        minHeight: "100vh",
-      }}
-    >
-      <div style={{ maxWidth: "1600px", margin: "0 auto" }}>
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            marginBottom: "24px",
-          }}
-        >
-          <div>
-            <h1 style={{ margin: 0, fontSize: "32px" }}>Orders</h1>
-            <p style={{ marginTop: "8px", color: "#555" }}>
-              Filter, edit and track ticket performance
-            </p>
-          </div>
+    <div className="orders-shell">
+      <aside className="orders-sidebar">
+        <div>
+          <div className="brand-mark">TA</div>
+          <div className="sidebar-brand">
 
-          <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
-            <button
-              onClick={scanGmailNow}
-              style={scanButtonStyle}
-              disabled={scanning}
-            >
-              {scanning ? "Scanning..." : "Scan Gmail Now"}
-            </button>
-
-            <button
-              onClick={() => loadOrders(true)}
-              style={refreshButtonStyle}
-              disabled={refreshing}
-            >
-              {refreshing ? "Refreshing..." : "Refresh"}
-            </button>
-
-            <button onClick={addRow} style={addButtonStyle}>
-              Add Row
-            </button>
-
-            <Link
-              href="/"
-              style={{
-                textDecoration: "none",
-                color: "#111",
-                fontWeight: 600,
-              }}
-            >
-              Back Home
-            </Link>
+            <h1>TicketAuto</h1>
           </div>
         </div>
 
+        <nav className="sidebar-nav">
+          {navItems.map((item) => (
+            <Link
+              key={item.label}
+              href={item.href}
+              className={`nav-item${item.active ? " nav-item-active" : ""}`}
+            >
+              <span>{item.label}</span>
+            </Link>
+          ))}
+        </nav>
+
+        <div className="sidebar-panel">
+          <p className="sidebar-panel-label">Desk status</p>
+          <strong>Inbox sync live</strong>
+          <span>
+            Refresh data, scan Gmail, and manage inventory from one premium
+            workspace.
+          </span>
+          <Link href="/connections" className="sidebar-panel-link">
+            Open connections
+          </Link>
+        </div>
+      </aside>
+
+      <main className="orders-main">
+        <header className="topbar">
+          <div>
+            <p className="eyebrow">Ticket desk</p>
+            <h2>Dashboard</h2>
+          </div>
+
+          <div className="topbar-actions">
+            <button
+              className="secondary-button"
+              onClick={() => loadOrders(true)}
+              disabled={refreshing}
+              type="button"
+            >
+              {refreshing ? "Refreshing..." : "Refresh"}
+            </button>
+            <button
+              className="secondary-button"
+              onClick={scanGmailNow}
+              disabled={scanning}
+              type="button"
+            >
+              {scanning ? "Scanning..." : "Scan Gmail"}
+            </button>
+            <button className="primary-button" onClick={addRow} type="button">
+              Add Order
+            </button>
+          </div>
+        </header>
+
+        <section className="hero-card">
+          <div>
+            <p className="section-tag">Overview</p>
+            <h3>Track stock, sales, and profit.</h3>
+          </div>
+
+          <div className="hero-meta">
+            <div>
+              <span className="hero-meta-label">Sync</span>
+              <strong>{loading ? "Pulling" : "Ready"}</strong>
+            </div>
+            <div>
+              <span className="hero-meta-label">Rows</span>
+              <strong>{filteredOrders.length}</strong>
+            </div>
+            <Link href="/" className="text-link">
+              Home
+            </Link>
+          </div>
+        </section>
+
         {message ? (
-          <div
-            style={{
-              marginBottom: "16px",
-              background: "#fff",
-              borderRadius: "10px",
-              padding: "12px 16px",
-            }}
-          >
-            {message}
+          <div className="feedback-banner" role="status">
+            <span className="feedback-dot" />
+            <span>{message}</span>
           </div>
         ) : null}
 
-        <div
-          style={{
-            background: "#fff",
-            borderRadius: "16px",
-            padding: "20px",
-            marginBottom: "20px",
-            boxShadow: "0 8px 30px rgba(0,0,0,0.06)",
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              marginBottom: "16px",
-              gap: "12px",
-            }}
-          >
-            <h2 style={{ margin: 0 }}>Filters</h2>
+        <section className="kpi-grid">
+          {metrics.map((metric) => (
+            <article key={metric.label} className="kpi-card">
+              <span className="kpi-accent" />
+              <p>{metric.label}</p>
+              <strong>{metric.value}</strong>
+              <span>{metric.detail}</span>
+            </article>
+          ))}
+        </section>
 
-            <button onClick={resetFilters} style={resetButtonStyle}>
+        <section className="command-card">
+          <div className="command-header">
+            <div>
+              <p className="section-tag">Filters</p>
+              <h4>Filter your inventory instantly</h4>
+            </div>
+            <button className="ghost-button" onClick={resetFilters} type="button">
               Reset Filters
             </button>
           </div>
 
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(6, minmax(220px, 1fr))",
-              gap: "16px",
-            }}
-          >
-            <input
-              placeholder="Search anything..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              style={inputStyle}
-            />
+          <div className="command-grid">
+            <label className="filter-field">
+              <span className="filter-label">Search</span>
+              <input
+                className="field field-search"
+                placeholder="Search ref, event, venue, account..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+            </label>
 
-            <select
-              value={eventFilter}
-              onChange={(e) => setEventFilter(e.target.value)}
-              style={inputStyle}
-            >
-              {eventOptions.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </select>
+            <label className="filter-field">
+              <span className="filter-label">Event</span>
+              <select
+                className="field"
+                value={eventFilter}
+                onChange={(e) => setEventFilter(e.target.value)}
+              >
+                {eventOptions.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </label>
 
-            <select
-              value={venueFilter}
-              onChange={(e) => setVenueFilter(e.target.value)}
-              style={inputStyle}
-            >
-              {venueOptions.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </select>
+            <label className="filter-field">
+              <span className="filter-label">Venue</span>
+              <select
+                className="field"
+                value={venueFilter}
+                onChange={(e) => setVenueFilter(e.target.value)}
+              >
+                {venueOptions.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </label>
 
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              style={inputStyle}
-            >
-              {statusOptions.map((status) => (
-                <option key={status} value={status}>
-                  {status}
-                </option>
-              ))}
-            </select>
+            <label className="filter-field">
+              <span className="filter-label">Status</span>
+              <select
+                className="field"
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+              >
+                {statusOptions.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </label>
 
-            <select
-              value={sourceFilter}
-              onChange={(e) => setSourceFilter(e.target.value)}
-              style={inputStyle}
-            >
-              {sourceOptions.map((source) => (
-                <option key={source} value={source}>
-                  {source}
-                </option>
-              ))}
-            </select>
+            <label className="filter-field">
+              <span className="filter-label">Source</span>
+              <select
+                className="field"
+                value={sourceFilter}
+                onChange={(e) => setSourceFilter(e.target.value)}
+              >
+                {sourceOptions.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </label>
 
-            <select
-              value={soldFilter}
-              onChange={(e) => setSoldFilter(e.target.value)}
-              style={inputStyle}
-            >
-              <option value="All">All</option>
-              <option value="Sold">Sold</option>
-              <option value="Unsold">Unsold</option>
-            </select>
+            <label className="filter-field">
+              <span className="filter-label">Sold</span>
+              <select
+                className="field"
+                value={soldFilter}
+                onChange={(e) => setSoldFilter(e.target.value)}
+              >
+                <option value="All">All sold states</option>
+                <option value="Sold">Sold</option>
+                <option value="Unsold">Unsold</option>
+              </select>
+            </label>
           </div>
-        </div>
+        </section>
 
-        {loading ? (
-          <p>Loading orders...</p>
-        ) : (
-          <div
-            style={{
-              background: "#fff",
-              borderRadius: "16px",
-              padding: "20px",
-              boxShadow: "0 8px 30px rgba(0,0,0,0.06)",
-              overflowX: "auto",
-            }}
-          >
-            <table
-              style={{
-                width: "100%",
-                borderCollapse: "collapse",
-                minWidth: "1800px",
-              }}
-            >
-              <thead>
-                <tr>
-                  <th style={cellStyle}>Booking Ref</th>
-                  <th style={cellStyle}>Event</th>
-                  <th style={cellStyle}>Venue</th>
-                  <th style={cellStyle}>Date</th>
-                  <th style={cellStyle}>Bought At</th>
-                  <th style={cellStyle}>Account</th>
-                  <th style={cellStyle}>Section</th>
-                  <th style={cellStyle}>Row</th>
-                  <th style={cellStyle}>Seat From</th>
-                  <th style={cellStyle}>Seat To</th>
-                  <th style={cellStyle}>Qty</th>
-                  <th style={cellStyle}>Cost</th>
-                  <th style={cellStyle}>Status</th>
-                  <th style={cellStyle}>Sold Total</th>
-                  <th style={cellStyle}>Profit</th>
-                  <th style={cellStyle}>ROI %</th>
-                  <th style={cellStyle}>Source</th>
-                  <th style={cellStyle}>Save</th>
-                  <th style={cellStyle}>Delete</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredOrders.map((order) => {
-                  const totalCost = order.total_cost ?? 0;
-                  const soldTotal = order.sold_total ?? 0;
-                  const profit =
-                    order.sold_total != null ? soldTotal - totalCost : null;
-                  const roi =
-                    profit != null && totalCost > 0
-                      ? (profit / totalCost) * 100
-                      : null;
+        <section className="table-card">
+          <div className="table-card-header">
+            <div>
+              <p className="section-tag">Tickets</p>
+              <h4>Tickets</h4>
+            </div>
+            <span className="table-count">{filteredOrders.length} rows</span>
+          </div>
 
-                  return (
-                    <tr key={order.id}>
-                      <td style={cellStyle}>
-                        <input
-                          value={order.booking_ref ?? ""}
-                          onChange={(e) =>
-                            updateOrder(order.id, "booking_ref", e.target.value)
-                          }
-                          style={inputStyle}
-                        />
-                      </td>
-                      <td style={cellStyle}>
-                        <input
-                          value={order.event_name ?? ""}
-                          onChange={(e) =>
-                            updateOrder(order.id, "event_name", e.target.value)
-                          }
-                          style={inputStyle}
-                        />
-                      </td>
-                      <td style={cellStyle}>
-                        <input
-                          value={order.venue ?? ""}
-                          onChange={(e) =>
-                            updateOrder(order.id, "venue", e.target.value)
-                          }
-                          style={inputStyle}
-                        />
-                      </td>
-                      <td style={cellStyle}>
-                        <input
-                          value={order.event_date ?? ""}
-                          onChange={(e) =>
-                            updateOrder(order.id, "event_date", e.target.value)
-                          }
-                          style={inputStyle}
-                        />
-                      </td>
-                      <td style={cellStyle}>
-                        {formatBoughtAt(order.purchased_at)}
-                      </td>
-                      <td style={cellStyle}>
-                        <input
-                          value={order.account_email ?? ""}
-                          onChange={(e) =>
-                            updateOrder(
-                              order.id,
-                              "account_email",
-                              e.target.value,
-                            )
-                          }
-                          style={inputStyle}
-                        />
-                      </td>
-                      <td style={cellStyle}>
-                        <input
-                          value={order.section ?? ""}
-                          onChange={(e) =>
-                            updateOrder(order.id, "section", e.target.value)
-                          }
-                          style={inputStyle}
-                        />
-                      </td>
-                      <td style={cellStyle}>
-                        <input
-                          value={order.row ?? ""}
-                          onChange={(e) =>
-                            updateOrder(order.id, "row", e.target.value)
-                          }
-                          style={inputStyle}
-                        />
-                      </td>
-                      <td style={cellStyle}>
-                        <input
-                          value={order.seat_from ?? ""}
-                          onChange={(e) =>
-                            updateOrder(order.id, "seat_from", e.target.value)
-                          }
-                          style={inputStyle}
-                        />
-                      </td>
-                      <td style={cellStyle}>
-                        <input
-                          value={order.seat_to ?? ""}
-                          onChange={(e) =>
-                            updateOrder(order.id, "seat_to", e.target.value)
-                          }
-                          style={inputStyle}
-                        />
-                      </td>
-                      <td style={cellStyle}>
-                        <input
-                          type="number"
-                          value={order.qty_bought ?? ""}
-                          onChange={(e) =>
-                            updateOrder(order.id, "qty_bought", e.target.value)
-                          }
-                          style={inputStyle}
-                        />
-                      </td>
-                      <td style={cellStyle}>
-                        <input
-                          type="number"
-                          step="0.01"
-                          value={order.total_cost ?? ""}
-                          onChange={(e) =>
-                            updateOrder(order.id, "total_cost", e.target.value)
-                          }
-                          style={inputStyle}
-                        />
-                      </td>
-                      <td style={cellStyle}>
-                        <select
-                          value={order.listing_status ?? "Unlisted"}
-                          onChange={(e) =>
-                            updateOrder(
-                              order.id,
-                              "listing_status",
-                              e.target.value,
-                            )
-                          }
-                          style={inputStyle}
-                        >
-                          {statusOptions
-                            .filter((s) => s !== "All")
-                            .map((status) => (
+          {loading ? (
+            <div className="state-card">
+              <div className="state-orb" />
+              <h5>Loading tickets</h5>
+              <p>Pulling your latest rows, seats, and sales numbers.</p>
+            </div>
+          ) : filteredOrders.length === 0 ? (
+            <div className="state-card">
+              <div className="state-orb state-orb-muted" />
+              <h5>No tickets match these filters</h5>
+              <p>
+                Reset the command bar or add a new order to start building your
+                inventory.
+              </p>
+            </div>
+          ) : (
+            <div className="table-scroll">
+              <table className="premium-table">
+                <thead>
+                  <tr>
+                    <th>Event</th>
+                    <th>Booking Ref</th>
+                    <th>Seats</th>
+                    <th>Account</th>
+                    <th>Bought</th>
+                    <th>Cost</th>
+                    <th>Status</th>
+                    <th>Sold Total</th>
+                    <th>Profit</th>
+                    <th>ROI</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredOrders.map((order) => {
+                    const totalCost = order.total_cost ?? 0;
+                    const soldTotal = order.sold_total ?? 0;
+                    const profit =
+                      order.sold_total != null ? soldTotal - totalCost : null;
+                    const roi =
+                      profit != null && totalCost > 0
+                        ? (profit / totalCost) * 100
+                        : null;
+                    const active = selectedOrderId === order.id;
+                    const statusTone = getStatusTone(order.listing_status);
+
+                    return (
+                      <tr
+                        key={order.id}
+                        className={active ? "row-active" : ""}
+                        onClick={() => setSelectedOrderId(order.id)}
+                      >
+                        <td>
+                          <div className="event-cell">
+                            <strong>{order.event_name || "Untitled ticket"}</strong>
+                            <span>{order.venue || "Venue missing"}</span>
+                            <small>{order.event_date || "Date missing"}</small>
+                          </div>
+                        </td>
+                        <td>
+                          <span className="mono-text">
+                            {order.booking_ref || "No ref"}
+                          </span>
+                        </td>
+                        <td>
+                          <div className="seat-stack">
+                            <strong>{order.section || "Section -"}</strong>
+                            <span>
+                              {formatSeatLabel(
+                                order.row,
+                                order.seat_from,
+                                order.seat_to,
+                              )}
+                            </span>
+                          </div>
+                        </td>
+                        <td>
+                          <span
+                            className="truncate-text"
+                            title={order.account_email || ""}
+                          >
+                            {order.account_email || "No account"}
+                          </span>
+                        </td>
+                        <td>{formatBoughtAt(order.purchased_at)}</td>
+                        <td>{formatCurrency(order.total_cost)}</td>
+                        <td onClick={(event) => event.stopPropagation()}>
+                          <select
+                            className="field field-compact"
+                            value={order.listing_status ?? "Unlisted"}
+                            onChange={(e) =>
+                              void saveQuickField(
+                                order,
+                                "listing_status",
+                                e.target.value,
+                              )
+                            }
+                          >
+                            {quickStatusOptions.map((status) => (
                               <option key={status} value={status}>
                                 {status}
                               </option>
                             ))}
-                        </select>
-                      </td>
-                      <td style={cellStyle}>
-                        <input
-                          type="number"
-                          step="0.01"
-                          value={order.sold_total ?? ""}
-                          onChange={(e) =>
-                            updateOrder(order.id, "sold_total", e.target.value)
-                          }
-                          style={inputStyle}
-                        />
-                      </td>
-                      <td style={cellStyle}>
-                        {profit == null ? "" : `£${profit.toFixed(2)}`}
-                      </td>
-                      <td style={cellStyle}>
-                        {roi == null ? "" : `${roi.toFixed(1)}%`}
-                      </td>
-                      <td style={cellStyle}>
-                        <input
-                          value={order.source_type ?? ""}
-                          onChange={(e) =>
-                            updateOrder(order.id, "source_type", e.target.value)
-                          }
-                          style={inputStyle}
-                        />
-                      </td>
-                      <td style={cellStyle}>
-                        <button
-                          onClick={() => saveOrder(order)}
-                          style={buttonStyle}
-                        >
-                          Save
-                        </button>
-                      </td>
-                      <td style={cellStyle}>
-                        <button
-                          onClick={() => deleteOrder(order.id)}
-                          style={deleteButtonStyle}
-                        >
-                          Delete
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                          </select>
+                        </td>
+                        <td onClick={(event) => event.stopPropagation()}>
+                          <input
+                            className="field field-compact"
+                            type="number"
+                            step="0.01"
+                            value={order.sold_total ?? ""}
+                            onChange={(e) =>
+                              updateOrder(order.id, "sold_total", e.target.value)
+                            }
+                            onBlur={(e) =>
+                              void saveQuickField(
+                                order,
+                                "sold_total",
+                                e.target.value,
+                              )
+                            }
+                          />
+                        </td>
+                        <td className={profit != null && profit > 0 ? "value-up" : ""}>
+                          {profit == null ? "—" : formatCurrency(profit)}
+                        </td>
+                        <td className={roi != null && roi > 0 ? "value-up" : ""}>
+                          {roi == null ? "—" : `${roi.toFixed(1)}%`}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      </main>
+
+      <aside className={`details-drawer${selectedOrder ? " details-drawer-open" : ""}`}>
+        <div className="drawer-header">
+          <div>
+            <p className="eyebrow">Ticket detail</p>
+            <h4>{selectedOrder?.event_name || "Select a ticket"}</h4>
+          </div>
+          <button
+            className="drawer-close"
+            type="button"
+            onClick={() => setSelectedOrderId(null)}
+          >
+            ×
+          </button>
+        </div>
+
+        {selectedOrder ? (
+          <div className="drawer-content">
+            <section className="drawer-hero">
+              <div className="drawer-hero-copy">
+                <strong>{selectedOrder.event_name || "Untitled ticket"}</strong>
+                <span>{selectedOrder.venue || "Venue missing"}</span>
+                <small>{selectedOrder.event_date || "Date missing"}</small>
+              </div>
+              <div className="drawer-hero-meta">
+                <span className={`status-badge status-static ${getStatusTone(selectedOrder.listing_status)}`}>
+                  {selectedOrder.listing_status || "Unlisted"}
+                </span>
+                <strong className={`drawer-profit ${getDeltaTone((selectedOrder.sold_total ?? 0) - (selectedOrder.total_cost ?? 0))}`}>
+                  {renderDeltaValue((selectedOrder.sold_total ?? 0) - (selectedOrder.total_cost ?? 0), true)}
+                </strong>
+              </div>
+            </section>
+            <div className="drawer-grid">
+              <label>
+                <span>Booking ref</span>
+                <input
+                  className="field"
+                  value={selectedOrder.booking_ref ?? ""}
+                  onChange={(e) =>
+                    updateOrder(selectedOrder.id, "booking_ref", e.target.value)
+                  }
+                />
+              </label>
+              <label>
+                <span>Event</span>
+                <input
+                  className="field"
+                  value={selectedOrder.event_name ?? ""}
+                  onChange={(e) =>
+                    updateOrder(selectedOrder.id, "event_name", e.target.value)
+                  }
+                />
+              </label>
+              <label>
+                <span>Venue</span>
+                <input
+                  className="field"
+                  value={selectedOrder.venue ?? ""}
+                  onChange={(e) =>
+                    updateOrder(selectedOrder.id, "venue", e.target.value)
+                  }
+                />
+              </label>
+              <label>
+                <span>Event date</span>
+                <input
+                  className="field"
+                  value={selectedOrder.event_date ?? ""}
+                  onChange={(e) =>
+                    updateOrder(selectedOrder.id, "event_date", e.target.value)
+                  }
+                />
+              </label>
+              <label>
+                <span>Account</span>
+                <input
+                  className="field"
+                  value={selectedOrder.account_email ?? ""}
+                  onChange={(e) =>
+                    updateOrder(selectedOrder.id, "account_email", e.target.value)
+                  }
+                />
+              </label>
+              <label>
+                <span>Source</span>
+                <input
+                  className="field"
+                  value={selectedOrder.source_type ?? ""}
+                  onChange={(e) =>
+                    updateOrder(selectedOrder.id, "source_type", e.target.value)
+                  }
+                />
+              </label>
+              <label>
+                <span>Section</span>
+                <input
+                  className="field"
+                  value={selectedOrder.section ?? ""}
+                  onChange={(e) =>
+                    updateOrder(selectedOrder.id, "section", e.target.value)
+                  }
+                />
+              </label>
+              <label>
+                <span>Row</span>
+                <input
+                  className="field"
+                  value={selectedOrder.row ?? ""}
+                  onChange={(e) =>
+                    updateOrder(selectedOrder.id, "row", e.target.value)
+                  }
+                />
+              </label>
+              <label>
+                <span>Seat from</span>
+                <input
+                  className="field"
+                  value={selectedOrder.seat_from ?? ""}
+                  onChange={(e) =>
+                    updateOrder(selectedOrder.id, "seat_from", e.target.value)
+                  }
+                />
+              </label>
+              <label>
+                <span>Seat to</span>
+                <input
+                  className="field"
+                  value={selectedOrder.seat_to ?? ""}
+                  onChange={(e) =>
+                    updateOrder(selectedOrder.id, "seat_to", e.target.value)
+                  }
+                />
+              </label>
+              <label>
+                <span>Quantity</span>
+                <input
+                  className="field"
+                  type="number"
+                  value={selectedOrder.qty_bought ?? ""}
+                  onChange={(e) =>
+                    updateOrder(selectedOrder.id, "qty_bought", e.target.value)
+                  }
+                />
+              </label>
+              <label>
+                <span>Buy cost</span>
+                <input
+                  className="field"
+                  type="number"
+                  step="0.01"
+                  value={selectedOrder.total_cost ?? ""}
+                  onChange={(e) =>
+                    updateOrder(selectedOrder.id, "total_cost", e.target.value)
+                  }
+                />
+              </label>
+              <label>
+                <span>Total sales</span>
+                <input
+                  className="field"
+                  type="number"
+                  step="0.01"
+                  value={selectedOrder.sold_total ?? ""}
+                  onChange={(e) =>
+                    updateOrder(selectedOrder.id, "sold_total", e.target.value)
+                  }
+                />
+              </label>
+              <label>
+                <span>Status</span>
+                <select
+                  className="field"
+                  value={selectedOrder.listing_status ?? "Unlisted"}
+                  onChange={(e) =>
+                    updateOrder(
+                      selectedOrder.id,
+                      "listing_status",
+                      e.target.value,
+                    )
+                  }
+                >
+                  {quickStatusOptions.map((status) => (
+                    <option key={status} value={status}>
+                      {status}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
+            <div className="drawer-summary">
+              <div>
+                <span>Purchased</span>
+                <strong>{formatBoughtAt(selectedOrder.purchased_at) || "—"}</strong>
+              </div>
+              <div>
+                <span>Profit</span>
+                <strong>
+                  {formatCurrency(
+                    (selectedOrder.sold_total ?? 0) - (selectedOrder.total_cost ?? 0),
+                  )}
+                </strong>
+              </div>
+            </div>
+
+            <div className="drawer-actions">
+              <button
+                className="danger-button"
+                type="button"
+                onClick={() => void deleteOrder(selectedOrder.id)}
+              >
+                Delete
+              </button>
+              <button
+                className="primary-button"
+                type="button"
+                onClick={() => void saveOrder(selectedOrder)}
+              >
+                Save Row
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="drawer-empty">
+            <div className="state-orb state-orb-muted" />
+            <span className="drawer-empty-label">No order selected</span>
+            <h5>Open any row to edit it</h5>
+            <p>
+              Review editable fields, seat data, cost structure, and status from
+              a focused side panel.
+            </p>
           </div>
         )}
-      </div>
-    </main>
+      </aside>
+    </div>
   );
 }
 
-const cellStyle = {
-  borderBottom: "1px solid #eee",
-  padding: "12px",
-  textAlign: "left" as const,
-  verticalAlign: "top" as const,
-};
+function formatCurrency(value: number | null) {
+  if (value == null) {
+    return "—";
+  }
 
-const inputStyle = {
-  width: "100%",
-  minWidth: "180px",
-  border: "1px solid #d1d5db",
-  borderRadius: "8px",
-  padding: "10px 12px",
-  fontSize: "15px",
-  boxSizing: "border-box" as const,
-};
+  return new Intl.NumberFormat("en-GB", {
+    style: "currency",
+    currency: "GBP",
+    maximumFractionDigits: 2,
+  }).format(value);
+}
 
-const buttonStyle = {
-  border: "none",
-  borderRadius: "8px",
-  background: "#111827",
-  color: "#fff",
-  padding: "10px 14px",
-  cursor: "pointer",
-};
+function formatSeatLabel(
+  row: string | null,
+  seatFrom: string | null,
+  seatTo: string | null,
+) {
+  const rowLabel = row ? `Row ${row}` : "Row —";
 
-const deleteButtonStyle = {
-  border: "none",
-  borderRadius: "8px",
-  background: "#dc2626",
-  color: "#fff",
-  padding: "10px 14px",
-  cursor: "pointer",
-};
+  if (seatFrom && seatTo) {
+    return `${rowLabel} • Seats ${seatFrom}–${seatTo}`;
+  }
 
-const addButtonStyle = {
-  border: "none",
-  borderRadius: "8px",
-  background: "#2563eb",
-  color: "#fff",
-  padding: "10px 14px",
-  cursor: "pointer",
-  fontWeight: 600,
-};
+  if (seatFrom) {
+    return `${rowLabel} • Seat ${seatFrom}`;
+  }
 
-const refreshButtonStyle = {
-  border: "1px solid #d1d5db",
-  borderRadius: "8px",
-  background: "#fff",
-  color: "#111827",
-  padding: "10px 14px",
-  cursor: "pointer",
-  fontWeight: 600,
-};
-
-const scanButtonStyle = {
-  border: "none",
-  borderRadius: "8px",
-  background: "#059669",
-  color: "#fff",
-  padding: "10px 14px",
-  cursor: "pointer",
-  fontWeight: 600,
-};
-
-const resetButtonStyle = {
-  border: "1px solid #d1d5db",
-  borderRadius: "8px",
-  background: "#fff",
-  color: "#111827",
-  padding: "10px 14px",
-  cursor: "pointer",
-  fontWeight: 600,
-};
+  return rowLabel;
+}
 
 function formatBoughtAt(value: string | null) {
   if (!value) {
-    return "";
+    return "—";
   }
 
   const isoMatch = value.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
@@ -777,11 +1008,67 @@ function formatBoughtAt(value: string | null) {
     return value;
   }
 
-  const month = parsed.getUTCMonth() + 1;
   const day = parsed.getUTCDate();
+  const month = parsed.getUTCMonth() + 1;
   const year = parsed.getUTCFullYear();
   const hours = String(parsed.getUTCHours()).padStart(2, "0");
   const minutes = String(parsed.getUTCMinutes()).padStart(2, "0");
 
   return `${day}/${month}/${year} ${hours}:${minutes}`;
 }
+
+
+
+
+
+function getStatusTone(status: string | null) {
+  switch (status) {
+    case "Listed":
+      return "status-listed";
+    case "Sold":
+      return "status-sold";
+    case "Problem / Missing":
+      return "status-problem";
+    default:
+      return "status-unlisted";
+  }
+}
+
+function getDeltaTone(value: number | null) {
+  if (value == null) {
+    return "delta-flat";
+  }
+  if (value > 0) {
+    return "delta-up";
+  }
+  if (value < 0) {
+    return "delta-down";
+  }
+  return "delta-flat";
+}
+
+function renderDeltaValue(value: number | null, currency: boolean) {
+  if (value == null) {
+    return "—";
+  }
+
+  const arrow = value > 0 ? "↑" : value < 0 ? "↓" : "•";
+  const formatted = currency ? formatCurrency(Math.abs(value)) : `${Math.abs(value).toFixed(1)}%`;
+
+  return `${arrow} ${formatted}`;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

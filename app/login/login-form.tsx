@@ -1,105 +1,132 @@
-"use client";
+﻿"use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { supabase } from "@/src/lib/supabase";
 
 export default function LoginForm() {
   const router = useRouter();
-  const [licenseKey, setLicenseKey] = useState("");
+  const searchParams = useSearchParams();
+  const nextPath = useMemo(() => searchParams.get("next") || "/orders", [searchParams]);
+
+  const [mode, setMode] = useState<"signin" | "signup">("signin");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setLoading(true);
     setError("");
+    setMessage("");
+
+    const trimmedEmail = email.trim().toLowerCase();
 
     try {
-      const response = await fetch("/api/auth/whop-login", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ licenseKey }),
-      });
+      if (mode === "signup") {
+        const { error: signUpError } = await supabase.auth.signUp({
+          email: trimmedEmail,
+          password,
+        });
 
-      const result = await response.json();
+        if (signUpError) {
+          setError(signUpError.message);
+          setLoading(false);
+          return;
+        }
 
-      if (!response.ok) {
-        setError(result.error || "Unable to verify license key");
+        setMessage("Account created. You can sign in now.");
+        setMode("signin");
         setLoading(false);
         return;
       }
 
-      router.push("/orders");
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email: trimmedEmail,
+        password,
+      });
+
+      if (signInError) {
+        setError(signInError.message);
+        setLoading(false);
+        return;
+      }
+
+      router.push(nextPath);
       router.refresh();
     } catch {
-      setError("Unable to verify license key");
+      setError("Unable to continue right now");
       setLoading(false);
+      return;
     }
+
+    setLoading(false);
   }
 
   return (
-    <form
-      onSubmit={handleSubmit}
-      style={{
-        background: "#fff",
-        borderRadius: "16px",
-        padding: "24px",
-        boxShadow: "0 12px 40px rgba(0,0,0,0.08)",
-        width: "100%",
-        maxWidth: "420px",
-      }}
-    >
-      <h1 style={{ marginTop: 0, marginBottom: "8px" }}>TicketAuto Login</h1>
-      <p style={{ marginTop: 0, marginBottom: "20px", color: "#555" }}>
-        Enter your Whop license key to access the dashboard.
-      </p>
-
-      <input
-        value={licenseKey}
-        onChange={(event) => setLicenseKey(event.target.value)}
-        placeholder="Paste your Whop license key"
-        style={{
-          width: "100%",
-          border: "1px solid #d1d5db",
-          borderRadius: "10px",
-          padding: "12px 14px",
-          fontSize: "15px",
-          boxSizing: "border-box",
-        }}
-      />
-
-      {error ? (
-        <div
-          style={{
-            marginTop: "14px",
-            color: "#b91c1c",
-            fontSize: "14px",
-          }}
-        >
-          {error}
+    <div className="auth-card">
+      <div className="auth-brand">
+        <div className="brand-mark">TA</div>
+        <div>
+          <p className="auth-eyebrow">Member access</p>
+          <h1>TicketAuto</h1>
         </div>
-      ) : null}
+      </div>
 
-      <button
-        type="submit"
-        disabled={loading || !licenseKey.trim()}
-        style={{
-          marginTop: "18px",
-          width: "100%",
-          border: "none",
-          borderRadius: "10px",
-          background: "#111827",
-          color: "#fff",
-          padding: "12px 14px",
-          fontWeight: 600,
-          cursor: "pointer",
-          opacity: loading || !licenseKey.trim() ? 0.7 : 1,
-        }}
-      >
-        {loading ? "Checking..." : "Unlock Dashboard"}
-      </button>
-    </form>
+      <div className="auth-toggle">
+        <button
+          type="button"
+          className={`auth-toggle-button${mode === "signin" ? " auth-toggle-button-active" : ""}`}
+          onClick={() => setMode("signin")}
+        >
+          Sign in
+        </button>
+        <button
+          type="button"
+          className={`auth-toggle-button${mode === "signup" ? " auth-toggle-button-active" : ""}`}
+          onClick={() => setMode("signup")}
+        >
+          Create account
+        </button>
+      </div>
+
+      <form className="auth-form" onSubmit={handleSubmit}>
+        <label className="auth-field">
+          <span>Email</span>
+          <input
+            className="field"
+            type="email"
+            autoComplete="email"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            placeholder="you@example.com"
+            required
+          />
+        </label>
+
+        <label className="auth-field">
+          <span>Password</span>
+          <input
+            className="field"
+            type="password"
+            autoComplete={mode === "signin" ? "current-password" : "new-password"}
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            placeholder="Enter your password"
+            required
+            minLength={6}
+          />
+        </label>
+
+        {error ? <div className="auth-error">{error}</div> : null}
+        {message ? <div className="auth-message">{message}</div> : null}
+
+        <button className="primary-button auth-submit" type="submit" disabled={loading}>
+          {loading ? "Working..." : mode === "signin" ? "Open dashboard" : "Create account"}
+        </button>
+      </form>
+    </div>
   );
 }

@@ -1,4 +1,4 @@
-import Link from "next/link";
+﻿import Link from "next/link";
 
 export default async function HomePage() {
   return (
@@ -18,9 +18,10 @@ export default async function HomePage() {
             borderRadius: "8px",
           }}
         >
-          View Orders
+          View Dashboard
         </Link>
       </div>
     </main>
   );
 }
+
