@@ -3,7 +3,7 @@ import { setSession } from "@/src/lib/whop-auth";
 
 export const runtime = "nodejs";
 
-const WHOP_API_BASE_URL = process.env.WHOP_API_BASE_URL || "https://api.whop.com/api/v5";
+const WHOP_API_BASE_URL = process.env.WHOP_API_BASE_URL || "https://api.whop.com";
 const ALLOWED_STATUSES = new Set(["active", "trialing", "canceling"]);
 
 export async function POST(request: Request) {
