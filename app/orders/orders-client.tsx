@@ -126,6 +126,10 @@ export default function OrdersClient() {
     loadOrders();
   }, []);
 
+  async function handleLogout() {
+    await fetch("/api/auth/logout", { method: "POST" });
+    window.location.href = "/login";
+  }
   function updateOrder(id: number, field: keyof Order, value: string) {
     setOrders((current) =>
       current.map((order) =>
@@ -398,16 +402,27 @@ export default function OrdersClient() {
           ))}
         </nav>
 
-        <div className="sidebar-panel">
-          <p className="sidebar-panel-label">Desk status</p>
-          <strong>Inbox sync live</strong>
-          <span>
-            Refresh data, scan Gmail, and manage inventory from one premium
-            workspace.
-          </span>
-          <Link href="/connections" className="sidebar-panel-link">
-            Open connections
-          </Link>
+        <div className="sidebar-footer">
+          <div className="sidebar-panel">
+            <p className="sidebar-panel-label">Desk status</p>
+            <strong>Inbox sync live</strong>
+            <span>
+              Refresh data, scan Gmail, and manage inventory from one premium
+              workspace.
+            </span>
+          </div>
+
+          <div className="sidebar-settings-box">
+            <p className="sidebar-panel-label">Settings</p>
+            <div className="sidebar-settings-actions">
+              <Link href="/connections" className="sidebar-panel-link">
+                Connections
+              </Link>
+              <button type="button" className="sidebar-panel-link sidebar-logout-button" onClick={handleLogout}>
+                Log out
+              </button>
+            </div>
+          </div>
         </div>
       </aside>
 
@@ -1057,6 +1072,8 @@ function renderDeltaValue(value: number | null, currency: boolean) {
 
   return `${arrow} ${formatted}`;
 }
+
+
 
 
 

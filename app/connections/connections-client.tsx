@@ -46,6 +46,10 @@ export default function ConnectionsClient() {
     void loadAccounts();
   }, []);
 
+  async function handleLogout() {
+    await fetch("/api/auth/logout", { method: "POST" });
+    window.location.href = "/login";
+  }
   useEffect(() => {
     const connected = searchParams.get("connected");
     const error = searchParams.get("error");
@@ -248,13 +252,24 @@ export default function ConnectionsClient() {
           </nav>
         </div>
 
-        <div className="sidebar-panel">
-          <p className="sidebar-panel-label">Connections</p>
-          <strong>Inbox access</strong>
-          <span>Each member keeps their own Gmail links, sync state, and mailbox list.</span>
-          <Link href="/connections" className="sidebar-panel-link">
-            Open connections
-          </Link>
+        <div className="sidebar-footer">
+          <div className="sidebar-panel">
+            <p className="sidebar-panel-label">Connections</p>
+            <strong>Inbox access</strong>
+            <span>Each member keeps their own Gmail links, sync state, and mailbox list.</span>
+          </div>
+
+          <div className="sidebar-settings-box">
+            <p className="sidebar-panel-label">Settings</p>
+            <div className="sidebar-settings-actions">
+              <Link href="/connections" className="sidebar-panel-link">
+                Connections
+              </Link>
+              <button type="button" className="sidebar-panel-link sidebar-logout-button" onClick={handleLogout}>
+                Log out
+              </button>
+            </div>
+          </div>
         </div>
       </aside>
 
@@ -521,3 +536,5 @@ function formatOAuthError(error: string) {
       return error.replaceAll("-", " ");
   }
 }
+
+

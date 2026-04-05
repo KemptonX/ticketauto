@@ -2044,3 +2044,46 @@ select {
     align-items: stretch;
   }
 }
+
+.sidebar-footer {
+  display: grid;
+  gap: 14px;
+}
+
+.sidebar-settings-box {
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 18px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 24%),
+    linear-gradient(180deg, rgba(17, 17, 22, 0.98), rgba(11, 11, 15, 0.98));
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.03) inset,
+    0 18px 40px rgba(0, 0, 0, 0.28);
+}
+
+.sidebar-settings-actions {
+  display: grid;
+  gap: 10px;
+}
+
+.sidebar-settings-actions .sidebar-panel-link,
+.sidebar-logout-button {
+  width: 100%;
+  justify-content: center;
+}
+
+.sidebar-logout-button {
+  appearance: none;
+  cursor: pointer;
+  color: #ffb2bc;
+  background: rgba(255, 77, 109, 0.08);
+  border-color: rgba(255, 77, 109, 0.2);
+}
+
+.sidebar-logout-button:hover {
+  color: #ffd4da;
+  background: rgba(255, 77, 109, 0.12);
+  border-color: rgba(255, 77, 109, 0.32);
+  box-shadow: 0 0 22px rgba(255, 77, 109, 0.12);
+}

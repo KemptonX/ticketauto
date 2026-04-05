@@ -66,6 +66,10 @@ export default function AnalyticsClient() {
     void loadOrders();
   }, []);
 
+  async function handleLogout() {
+    await fetch("/api/auth/logout", { method: "POST" });
+    window.location.href = "/login";
+  }
   async function loadOrders(showRefreshing = false) {
     if (showRefreshing) {
       setRefreshing(true);
@@ -667,5 +671,7 @@ function EmptyChartState({ label }: { label: string }) {
     </div>
   );
 }
+
+
 
 

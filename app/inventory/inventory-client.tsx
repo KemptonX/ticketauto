@@ -69,6 +69,10 @@ export default function InventoryClient() {
     void loadOrders();
   }, []);
 
+  async function handleLogout() {
+    await fetch("/api/auth/logout", { method: "POST" });
+    window.location.href = "/login";
+  }
   async function loadOrders(showRefreshing = false) {
     if (showRefreshing) {
       setRefreshing(true);
@@ -663,6 +667,8 @@ function formatEventDate(value: string) {
     year: "numeric",
   }).format(date);
 }
+
+
 
 
 
