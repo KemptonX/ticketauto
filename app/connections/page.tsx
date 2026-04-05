@@ -1,5 +1,10 @@
-﻿import ConnectionsClient from "./connections-client";
+﻿import { Suspense } from "react";
+import ConnectionsClient from "./connections-client";
 
 export default function ConnectionsPage() {
-  return <ConnectionsClient />;
+  return (
+    <Suspense fallback={null}>
+      <ConnectionsClient />
+    </Suspense>
+  );
 }
