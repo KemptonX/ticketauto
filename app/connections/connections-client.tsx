@@ -27,7 +27,7 @@ type GmailAccount = {
 
 const navItems = [
   { label: "Dashboard", href: "/orders", active: false },
-  { label: "Listings", href: "#", active: false },
+  { label: "Sales", href: "/sales", active: false },
   { label: "Inventory", href: "/inventory", active: false },
   { label: "Analytics", href: "/analytics", active: false },
 ];
@@ -536,5 +536,6 @@ function formatOAuthError(error: string) {
       return error.replaceAll("-", " ");
   }
 }
+
 
 

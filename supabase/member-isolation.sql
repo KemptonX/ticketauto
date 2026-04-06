@@ -4,6 +4,7 @@ alter table public.orders
 add column if not exists user_id uuid references auth.users(id) on delete cascade;
 
 create index if not exists orders_user_id_idx on public.orders(user_id);
+create unique index if not exists orders_user_booking_ref_idx on public.orders(user_id, booking_ref) where booking_ref is not null;
 
 alter table public.orders
 alter column user_id set default auth.uid();
@@ -32,3 +33,4 @@ with check (auth.uid() = user_id);
 create policy if not exists "orders_delete_own"
 on public.orders for delete
 using (auth.uid() = user_id);
+

@@ -44,7 +44,7 @@ type InventoryGroup = {
 
 const navItems = [
   { label: "Dashboard", href: "/orders", active: false },
-  { label: "Listings", href: "#", active: false },
+  { label: "Sales", href: "/sales", active: false },
   { label: "Inventory", href: "/inventory", active: true },
   { label: "Analytics", href: "/analytics", active: false },
 ];
@@ -667,6 +667,7 @@ function formatEventDate(value: string) {
     year: "numeric",
   }).format(date);
 }
+
 
 
 

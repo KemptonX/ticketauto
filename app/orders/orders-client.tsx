@@ -35,7 +35,7 @@ const sourceOptions = [
 
 const navItems = [
   { label: "Dashboard", href: "/orders", active: true },
-  { label: "Listings", href: "#", active: false },
+  { label: "Sales", href: "/sales", active: false },
   { label: "Inventory", href: "/inventory", active: false },
   { label: "Analytics", href: "/analytics", active: false },
 ];
@@ -1072,6 +1072,7 @@ function renderDeltaValue(value: number | null, currency: boolean) {
 
   return `${arrow} ${formatted}`;
 }
+
 
 
 

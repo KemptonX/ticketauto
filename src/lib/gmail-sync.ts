@@ -82,7 +82,6 @@ export async function syncGmailInbox({
     const accountEmail = extractAccount(headers, combined);
     const duplicate = await isDuplicateOrder(supabase, {
       bookingRef,
-      accountEmail,
       userId,
     });
 
@@ -281,19 +280,15 @@ async function isDuplicateOrder(
   supabase: SupabaseClient,
   {
     bookingRef,
-    accountEmail,
     userId,
-  }: { bookingRef: string; accountEmail: string; userId: string },
+  }: { bookingRef: string; userId: string },
 ) {
-  const query = supabase
+  const { data, error } = await supabase
     .from("orders")
     .select("id")
     .eq("booking_ref", bookingRef)
     .eq("user_id", userId)
     .limit(1);
-
-  const finalQuery = accountEmail ? query.eq("account_email", accountEmail) : query;
-  const { data, error } = await finalQuery;
   if (error) {
     throw new Error(error.message);
   }
@@ -584,4 +579,5 @@ function parseSeats(text: string): [string, string] {
 function parsePurchasedAt(headers: GmailHeader[], text: string) {
   return getHeader(headers, "Date") || text.match(/Date:\s*(.+)/i)?.[1]?.trim() || "";
 }
+
 

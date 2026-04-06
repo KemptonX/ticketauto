@@ -1,7 +1,15 @@
 ﻿import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 
-const protectedRoutes = ["/orders", "/inventory", "/analytics", "/connections", "/api/scan-gmail"];
+const protectedRoutes = [
+  "/orders",
+  "/sales",
+  "/inventory",
+  "/analytics",
+  "/connections",
+  "/api/scan-gmail",
+  "/api/scan-sales",
+];
 
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({ request });
@@ -17,9 +25,7 @@ export async function middleware(request: NextRequest) {
         setAll(cookiesToSet) {
           cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
           response = NextResponse.next({ request });
-          cookiesToSet.forEach(({ name, value, options }) =>
-            response.cookies.set(name, value, options),
-          );
+          cookiesToSet.forEach(({ name, value, options }) => response.cookies.set(name, value, options));
         },
       },
     },
@@ -46,6 +52,14 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/login", "/orders/:path*", "/inventory/:path*", "/analytics/:path*", "/connections/:path*", "/api/scan-gmail"],
+  matcher: [
+    "/login",
+    "/orders/:path*",
+    "/sales/:path*",
+    "/inventory/:path*",
+    "/analytics/:path*",
+    "/connections/:path*",
+    "/api/scan-gmail",
+    "/api/scan-sales",
+  ],
 };
-

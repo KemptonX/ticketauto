@@ -53,11 +53,9 @@ export async function GET(request: NextRequest) {
     return redirectToConnections({ error: "state-mismatch" });
   }
 
-  const clientId = process.env.GOOGLE_CLIENT_ID;
-  const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
-  const callbackUrl =
-    process.env.GOOGLE_OAUTH_REDIRECT_URI ||
-    new URL("/api/gmail/callback", request.url).toString();
+  const clientId = process.env.GOOGLE_CLIENT_ID?.trim();
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET?.trim();
+  const callbackUrl = new URL("/api/gmail/callback", request.url).toString();
 
   if (!clientId || !clientSecret) {
     return redirectToConnections({ error: "missing-google-config" });

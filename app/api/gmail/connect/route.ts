@@ -27,13 +27,11 @@ export async function GET(request: Request) {
     return NextResponse.redirect(new URL("/connections?error=missing-google-client", request.url));
   }
 
-  const callbackUrl =
-    process.env.GOOGLE_OAUTH_REDIRECT_URI ||
-    new URL("/api/gmail/callback", request.url).toString();
+  const callbackUrl = new URL("/api/gmail/callback", request.url).toString();
 
   const state = randomUUID();
   const authUrl = new URL("https://accounts.google.com/o/oauth2/v2/auth");
-  authUrl.searchParams.set("client_id", clientId);
+  authUrl.searchParams.set("client_id", clientId.trim());
   authUrl.searchParams.set("redirect_uri", callbackUrl);
   authUrl.searchParams.set("response_type", "code");
   authUrl.searchParams.set("access_type", "offline");
@@ -44,7 +42,7 @@ export async function GET(request: Request) {
 
   if (requestUrl.searchParams.get("debug") === "1") {
     return NextResponse.json({
-      clientId,
+      clientId: clientId.trim(),
       callbackUrl,
       scopes: GOOGLE_SCOPES,
       authUrl: authUrl.toString(),
