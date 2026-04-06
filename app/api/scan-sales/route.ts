@@ -1,6 +1,6 @@
 ﻿import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/src/lib/supabase-server";
-import { syncViagogoSalesInbox } from "@/src/lib/viagogo-sales-sync";
+import { rematchViagogoSales, syncViagogoSalesInbox } from "@/src/lib/viagogo-sales-sync";
 
 export const runtime = "nodejs";
 
@@ -53,6 +53,11 @@ export async function POST() {
       totals.inserted += result.inserted;
       totals.matched += result.matched;
     }
+
+    totals.matched += await rematchViagogoSales({
+      supabase,
+      userId: user.id,
+    });
 
     return NextResponse.json({ ok: true, ...totals });
   } catch (error) {

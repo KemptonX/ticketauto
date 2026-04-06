@@ -87,6 +87,20 @@ type ExistingSale = {
   qty_sold: number | null;
 };
 
+type UnmatchedSale = {
+  id: number;
+  event_name: string | null;
+  venue: string | null;
+  event_date: string | null;
+  qty_sold: number | null;
+  payout_total: number | null;
+  sale_total: number | null;
+  section: string | null;
+  row: string | null;
+  seat_from: string | null;
+  seat_to: string | null;
+};
+
 type ParsedSale = {
   externalSaleId: string;
   subject: string;
@@ -233,6 +247,73 @@ export async function syncViagogoSalesInbox({
   };
 }
 
+export async function rematchViagogoSales({
+  supabase,
+  userId,
+}: {
+  supabase: SupabaseClient;
+  userId: string;
+}) {
+  const candidateOrders = await loadCandidateOrders(supabase, userId);
+  const orderUsage = await loadOrderUsage(supabase, userId);
+  const unmatchedSales = await loadUnmatchedSales(supabase, userId);
+
+  let matched = 0;
+
+  for (const sale of unmatchedSales) {
+    const match = findBestInventoryMatch({
+      orders: candidateOrders,
+      orderUsage,
+      sale: {
+        externalSaleId: "",
+        subject: "",
+        eventName: sale.event_name || "",
+        venue: sale.venue || "",
+        eventDate: sale.event_date || "",
+        soldAt: "",
+        buyerEmail: "",
+        qtySold: sale.qty_sold,
+        pricePerTicket: null,
+        payoutTotal: sale.payout_total,
+        saleTotal: sale.sale_total,
+        section: sale.section || "",
+        row: sale.row || "",
+        seatFrom: sale.seat_from || "",
+        seatTo: sale.seat_to || "",
+      },
+    });
+
+    if (!match) {
+      continue;
+    }
+
+    const { error } = await supabase
+      .from("sales")
+      .update({
+        inventory_order_id: match.order.id,
+        match_confidence: Number(match.score.toFixed(2)),
+      })
+      .eq("id", sale.id)
+      .eq("user_id", userId);
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    const currentUsed = orderUsage.get(match.order.id) ?? 0;
+    orderUsage.set(match.order.id, currentUsed + (sale.qty_sold ?? 1));
+
+    matched += 1;
+    await updateMatchedOrder(supabase, {
+      userId,
+      order: match.order,
+      payoutTotal: sale.payout_total,
+    });
+  }
+
+  return matched;
+}
+
 async function findExistingSale(
   supabase: SupabaseClient,
   {
@@ -333,6 +414,22 @@ async function loadOrderUsage(supabase: SupabaseClient, userId: string) {
   return usage;
 }
 
+async function loadUnmatchedSales(supabase: SupabaseClient, userId: string) {
+  const { data, error } = await supabase
+    .from("sales")
+    .select("id, event_name, venue, event_date, qty_sold, payout_total, sale_total, section, row, seat_from, seat_to")
+    .eq("user_id", userId)
+    .is("inventory_order_id", null)
+    .order("sold_at", { ascending: true })
+    .order("created_at", { ascending: true });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return (data as UnmatchedSale[]) || [];
+}
+
 async function loadCandidateOrders(supabase: SupabaseClient, userId: string) {
   const { data, error } = await supabase
     .from("orders")
@@ -390,6 +487,13 @@ function findBestInventoryMatch({
 function compareSection(left?: string | null, right?: string | null) {
   if (isGeneralAdmissionLabel(left) && isGeneralAdmissionLabel(right)) {
     return 1;
+  }
+
+  const leftSectionNumber = extractSectionNumber(left);
+  const rightSectionNumber = extractSectionNumber(right);
+
+  if (leftSectionNumber && rightSectionNumber && leftSectionNumber === rightSectionNumber) {
+    return 0.9;
   }
 
   return compareText(left, right);
@@ -509,6 +613,15 @@ function isGeneralAdmissionLabel(value?: string | null) {
     "unreserved",
     "pit",
   ].some((label) => normalized === label || normalized.includes(label));
+}
+
+function extractSectionNumber(value?: string | null) {
+  if (!value) {
+    return null;
+  }
+
+  const match = value.match(/(\d{1,4})/);
+  return match?.[1] || null;
 }
 
 function parseSale({
