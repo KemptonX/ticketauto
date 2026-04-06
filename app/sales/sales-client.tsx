@@ -208,7 +208,7 @@ export default function SalesClient() {
 
   const monthOptions = useMemo(() => {
     const values = sales
-      .map((sale) => getMonthLabel(sale.sold_at || sale.event_date))
+      .map((sale) => getMonthLabel(sale.event_date || sale.sold_at))
       .filter((value): value is string => Boolean(value));
 
     return ["All", ...new Set(values)];
@@ -236,7 +236,7 @@ export default function SalesClient() {
         (matchFilter === "Unmatched" && sale.inventory_order_id == null);
 
       const matchesMonth =
-        monthFilter === "All" || getMonthLabel(sale.sold_at || sale.event_date) === monthFilter;
+        monthFilter === "All" || getMonthLabel(sale.event_date || sale.sold_at) === monthFilter;
 
       const matchesAccount = accountFilter === "All" || sale.account_email === accountFilter;
 

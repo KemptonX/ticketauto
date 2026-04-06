@@ -84,6 +84,7 @@ type ExistingSale = {
   source_message_id: string | null;
   inventory_order_id: number | null;
   match_confidence: number | null;
+  qty_sold: number | null;
 };
 
 type ParsedSale = {
@@ -117,7 +118,7 @@ export async function syncViagogoSalesInbox({
   const labelId = await getOrCreateLabel(accessToken, PROCESSED_LABEL);
   const messages = await listMessages(accessToken, GMAIL_QUERY);
   const candidateOrders = await loadCandidateOrders(supabase, userId);
-  const usedOrderIds = new Set<number>();
+  const orderUsage = await loadOrderUsage(supabase, userId);
 
   let inserted = 0;
   let matched = 0;
@@ -150,7 +151,7 @@ export async function syncViagogoSalesInbox({
       ? null
       : findBestInventoryMatch({
           orders: candidateOrders,
-          usedOrderIds,
+          orderUsage,
           sale: parsed,
         });
 
@@ -202,7 +203,8 @@ export async function syncViagogoSalesInbox({
     }
 
     if (match) {
-      usedOrderIds.add(match.order.id);
+      const currentUsed = orderUsage.get(match.order.id) ?? 0;
+      orderUsage.set(match.order.id, currentUsed + (parsed.qtySold ?? 1));
       matched += 1;
       await updateMatchedOrder(supabase, {
         userId,
@@ -246,7 +248,7 @@ async function findExistingSale(
   if (externalSaleId) {
     const { data, error } = await supabase
       .from("sales")
-      .select("id, external_sale_id, source_message_id, inventory_order_id, match_confidence")
+      .select("id, external_sale_id, source_message_id, inventory_order_id, match_confidence, qty_sold")
       .eq("user_id", userId)
       .eq("source", "viagogo")
       .eq("external_sale_id", externalSaleId)
@@ -264,7 +266,7 @@ async function findExistingSale(
 
   const { data, error } = await supabase
     .from("sales")
-    .select("id, external_sale_id, source_message_id, inventory_order_id, match_confidence")
+    .select("id, external_sale_id, source_message_id, inventory_order_id, match_confidence, qty_sold")
     .eq("user_id", userId)
     .eq("source_message_id", sourceMessageId)
     .limit(1)
@@ -292,8 +294,8 @@ async function updateMatchedOrder(
     listing_status: "Sold",
   };
 
-  if (order.sold_total == null && payoutTotal != null) {
-    payload.sold_total = payoutTotal;
+  if (payoutTotal != null) {
+    payload.sold_total = (order.sold_total ?? 0) + payoutTotal;
   }
 
   const { error } = await supabase
@@ -305,6 +307,30 @@ async function updateMatchedOrder(
   if (error) {
     throw new Error(error.message);
   }
+}
+
+async function loadOrderUsage(supabase: SupabaseClient, userId: string) {
+  const { data, error } = await supabase
+    .from("sales")
+    .select("inventory_order_id, qty_sold")
+    .eq("user_id", userId)
+    .not("inventory_order_id", "is", null);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const usage = new Map<number, number>();
+
+  for (const row of (data as Array<{ inventory_order_id: number | null; qty_sold: number | null }>) || []) {
+    if (row.inventory_order_id == null) {
+      continue;
+    }
+
+    usage.set(row.inventory_order_id, (usage.get(row.inventory_order_id) ?? 0) + (row.qty_sold ?? 1));
+  }
+
+  return usage;
 }
 
 async function loadCandidateOrders(supabase: SupabaseClient, userId: string) {
@@ -322,17 +348,21 @@ async function loadCandidateOrders(supabase: SupabaseClient, userId: string) {
 
 function findBestInventoryMatch({
   orders,
-  usedOrderIds,
+  orderUsage,
   sale,
 }: {
   orders: CandidateOrder[];
-  usedOrderIds: Set<number>;
+  orderUsage: Map<number, number>;
   sale: ParsedSale;
 }) {
   let best: { order: CandidateOrder; score: number } | null = null;
 
   for (const order of orders) {
-    if (usedOrderIds.has(order.id)) {
+    const soldQty = orderUsage.get(order.id) ?? 0;
+    const orderQty = order.qty_bought ?? 1;
+    const requestedQty = sale.qtySold ?? 1;
+
+    if (soldQty + requestedQty > orderQty) {
       continue;
     }
 
@@ -344,7 +374,7 @@ function findBestInventoryMatch({
     let score = eventScore * 0.4;
     score += compareText(order.venue, sale.venue) * 0.15;
     score += compareEventDay(order.event_date, sale.eventDate) * 0.2;
-    score += compareText(order.section, sale.section) * 0.1;
+    score += compareSection(order.section, sale.section) * 0.1;
     score += compareExact(order.row, sale.row) * 0.05;
     score += compareSeats(order.seat_from, order.seat_to, sale.seatFrom, sale.seatTo) * 0.15;
     score += compareQuantity(order.qty_bought, sale.qtySold) * 0.05;
@@ -355,6 +385,14 @@ function findBestInventoryMatch({
   }
 
   return best && best.score >= 0.55 ? best : null;
+}
+
+function compareSection(left?: string | null, right?: string | null) {
+  if (isGeneralAdmissionLabel(left) && isGeneralAdmissionLabel(right)) {
+    return 1;
+  }
+
+  return compareText(left, right);
 }
 
 function compareText(left?: string | null, right?: string | null) {
@@ -454,6 +492,23 @@ function normalizeText(value?: string | null) {
     .replace(/[^a-z0-9]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function isGeneralAdmissionLabel(value?: string | null) {
+  const normalized = normalizeText(value);
+  if (!normalized) {
+    return false;
+  }
+
+  return [
+    "ticket",
+    "general admission",
+    "ga",
+    "standing",
+    "floor",
+    "unreserved",
+    "pit",
+  ].some((label) => normalized === label || normalized.includes(label));
 }
 
 function parseSale({
