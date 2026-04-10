@@ -26,10 +26,9 @@ type GmailAccount = {
 };
 
 const navItems = [
-  { label: "Dashboard", href: "/orders", active: false },
-  { label: "Inventory", href: "/inventory", active: false },
+  { label: "Dashboard", href: "/", active: false },
+  { label: "Tickets", href: "/orders", active: false },
   { label: "Sales", href: "/sales", active: false },
-  { label: "Archived Sales", href: "/archived-sales", active: false },
   { label: "Analytics", href: "/analytics", active: false },
 ];
 
@@ -293,9 +292,6 @@ export default function ConnectionsClient() {
             <Link href="/api/gmail/connect" className="primary-button">
               Connect Gmail
             </Link>
-            <Link href="/orders" className="secondary-button">
-              Back to dashboard
-            </Link>
           </div>
         </header>
 
@@ -305,14 +301,14 @@ export default function ConnectionsClient() {
             <h3>Connect Gmail per member</h3>
           </div>
 
-          <div className="hero-meta-grid">
+          <div className="hero-meta">
             <div>
-              <p className="hero-meta-label">OAuth</p>
-              <strong>Live</strong>
+              <span className="hero-meta-label">Inboxes</span>
+              <strong>{accounts.length}</strong>
             </div>
             <div>
-              <p className="hero-meta-label">Protection</p>
-              <strong>Per user</strong>
+              <span className="hero-meta-label">OAuth ready</span>
+              <strong>{accounts.filter((a) => a.status === "Ready").length}</strong>
             </div>
           </div>
         </section>
@@ -467,27 +463,6 @@ export default function ConnectionsClient() {
         </section>
       </main>
 
-      <aside className="details-drawer connections-drawer">
-        <div className="drawer-header">
-          <div>
-            <p className="eyebrow">Connection detail</p>
-            <h4>What comes next</h4>
-          </div>
-        </div>
-
-        <div className="drawer-empty connections-drawer-content">
-          <div className="empty-orb" />
-          <span className="empty-chip">Per-member ready</span>
-          <h5>OAuth now stores the mailbox</h5>
-          <p>Google can now hand back the member's Gmail identity and tokens into <code>gmail_accounts</code>. The final sync step is switching the parser off the shared <code>token.json</code> file and onto these saved tokens.</p>
-          <ul className="connections-checklist">
-            <li>Private mailbox rows via RLS</li>
-            <li>Google OAuth start and callback</li>
-            <li>Primary inbox selection</li>
-            <li>Ready for token-driven sync</li>
-          </ul>
-        </div>
-      </aside>
     </div>
   );
 }

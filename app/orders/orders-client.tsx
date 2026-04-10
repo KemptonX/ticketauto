@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { autoArchiveExpiredOrders } from "@/src/lib/archive-rules";
 import { supabase } from "@/src/lib/supabase";
 
 type Order = {
@@ -25,6 +24,7 @@ type Order = {
   created_at: string | null;
 };
 
+
 const statusOptions = ["All", "Unlisted", "Listed", "Sold", "Problem / Missing"];
 const quickStatusOptions = ["Unlisted", "Listed", "Sold", "Problem / Missing"];
 const sourceOptions = [
@@ -34,21 +34,87 @@ const sourceOptions = [
   "manual",
 ];
 
+type OrderGroup = {
+  key: string;
+  eventName: string;
+  venue: string;
+  eventDate: string;
+  dateValue: Date | null;
+  orders: Order[];
+  totalQty: number;
+  totalCost: number;
+  totalSold: number;
+  soldCount: number;
+  listedCount: number;
+  unlistedCount: number;
+  problemCount: number;
+};
+
+const sourceLabels: Record<string, string> = {
+  All: "All",
+  ticketmaster_direct: "TM Direct",
+  ticketmaster_resale: "TM Resale",
+  manual: "Manual",
+};
+
+const sourceTypeOptions = [
+  { value: "manual", label: "Manual" },
+  { value: "ticketmaster_direct", label: "TM Direct" },
+  { value: "ticketmaster_resale", label: "TM Resale" },
+];
+
+type NewTicketForm = {
+  event_name: string;
+  venue: string;
+  event_date: string;
+  booking_ref: string;
+  account_email: string;
+  section: string;
+  row: string;
+  seat_from: string;
+  seat_to: string;
+  qty_bought: number;
+  total_cost: string;
+  listing_status: string;
+  source_type: string;
+};
+
+const defaultNewTicket: NewTicketForm = {
+  event_name: "",
+  venue: "",
+  event_date: "",
+  booking_ref: "",
+  account_email: "",
+  section: "",
+  row: "",
+  seat_from: "",
+  seat_to: "",
+  qty_bought: 2,
+  total_cost: "",
+  listing_status: "Unlisted",
+  source_type: "manual",
+};
+
 const navItems = [
-  { label: "Dashboard", href: "/orders", active: true },
-  { label: "Inventory", href: "/inventory", active: false },
+  { label: "Dashboard", href: "/", active: false },
+  { label: "Tickets", href: "/orders", active: true },
   { label: "Sales", href: "/sales", active: false },
-  { label: "Archived Sales", href: "/archived-sales", active: false },
   { label: "Analytics", href: "/analytics", active: false },
 ];
 
 export default function OrdersClient() {
   const [orders, setOrders] = useState<Order[]>([]);
+  const [accounts, setAccounts] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [scanning, setScanning] = useState(false);
+  const [submittingNew, setSubmittingNew] = useState(false);
   const [message, setMessage] = useState("");
   const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null);
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [newTicket, setNewTicket] = useState<NewTicketForm>(defaultNewTicket);
+
+  const [showArchived, setShowArchived] = useState(false);
 
   const [search, setSearch] = useState("");
   const [eventFilter, setEventFilter] = useState("All");
@@ -66,29 +132,17 @@ export default function OrdersClient() {
     setSoldFilter("All");
   }
 
-  async function loadOrders(showRefreshing = false) {
+  async function loadOrders(showRefreshing = false, archived = showArchived) {
     if (showRefreshing) {
       setRefreshing(true);
     } else {
       setLoading(true);
     }
 
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (user) {
-      await autoArchiveExpiredOrders({
-        supabase,
-        userId: user.id,
-      });
-    }
-
-    const { data, error } = await supabase
-      .from("orders")
-      .select("*")
-      .or("listing_status.is.null,listing_status.neq.Archived")
-      .order("created_at", { ascending: false });
+    const query = supabase.from("orders").select("*").order("created_at", { ascending: false });
+    const { data, error } = await (archived
+      ? query.eq("listing_status", "Archived")
+      : query.or("listing_status.is.null,listing_status.neq.Archived"));
 
     if (error) {
       setMessage(error.message);
@@ -150,8 +204,65 @@ export default function OrdersClient() {
   }
 
   useEffect(() => {
-    loadOrders();
-  }, []);
+    if (!showArchived) {
+      void autoArchivePastEvents();
+    }
+    loadOrders(false, showArchived);
+    void loadAccounts();
+  }, [showArchived]);
+
+  async function autoArchivePastEvents() {
+    const { data } = await supabase
+      .from("orders")
+      .select("id, event_date, listing_status")
+      .neq("listing_status", "Archived");
+
+    if (!data) return;
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const toArchive = (data as { id: number; event_date: string | null; listing_status: string | null }[])
+      .filter((o) => {
+        if (!o.event_date) return false;
+        const d = parseAnyDate(o.event_date);
+        return d !== null && d < today;
+      })
+      .map((o) => o.id);
+
+    if (toArchive.length === 0) return;
+
+    await supabase
+      .from("orders")
+      .update({ listing_status: "Archived" })
+      .in("id", toArchive);
+  }
+
+  function parseAnyDate(value: string): Date | null {
+    if (/^\d{4}-\d{2}-\d{2}/.test(value)) {
+      const [y, m, d] = value.slice(0, 10).split("-").map(Number);
+      return new Date(y, m - 1, d);
+    }
+    const match = value.match(/(\d{1,2})\s+([A-Za-z]{3,9})\s+(\d{4})/);
+    if (match) {
+      const months = ["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"];
+      const monthIndex = months.indexOf(match[2].slice(0, 3).toLowerCase());
+      if (monthIndex !== -1) return new Date(Number(match[3]), monthIndex, Number(match[1]));
+    }
+    return null;
+  }
+
+  async function loadAccounts() {
+    const { data } = await supabase
+      .from("gmail_accounts")
+      .select("email")
+      .eq("is_active", true)
+      .order("is_primary", { ascending: false });
+    if (data) {
+      setAccounts((data as { email: string }[]).map((a) => a.email));
+    }
+  }
+
 
   async function handleLogout() {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -180,6 +291,11 @@ export default function OrdersClient() {
   async function saveOrder(order: Order) {
     setMessage("");
 
+    const derivedStatus =
+      (order.sold_total ?? 0) > 0 && order.listing_status !== "Sold"
+        ? "Sold"
+        : order.listing_status;
+
     const { error } = await supabase
       .from("orders")
       .update({
@@ -195,10 +311,14 @@ export default function OrdersClient() {
         qty_bought: order.qty_bought,
         total_cost: order.total_cost,
         sold_total: order.sold_total,
-        listing_status: order.listing_status,
+        listing_status: derivedStatus,
         source_type: order.source_type,
       })
       .eq("id", order.id);
+
+    if (!error && derivedStatus !== order.listing_status) {
+      updateOrder(order.id, "listing_status", derivedStatus ?? "Unlisted");
+    }
 
     setMessage(error ? error.message : `Saved ${order.booking_ref || "ticket"}`);
   }
@@ -210,10 +330,18 @@ export default function OrdersClient() {
   ) {
     updateOrder(order.id, field, value);
 
-    const payload =
-      field === "sold_total"
-        ? { sold_total: value === "" ? null : Number(value) }
-        : { listing_status: value };
+    let payload: Record<string, string | number | null>;
+
+    if (field === "sold_total") {
+      const numeric = value === "" ? null : Number(value);
+      payload = { sold_total: numeric };
+      if (numeric != null && numeric > 0 && order.listing_status !== "Sold") {
+        payload.listing_status = "Sold";
+        updateOrder(order.id, "listing_status", "Sold");
+      }
+    } else {
+      payload = { listing_status: value };
+    }
 
     const { error } = await supabase
       .from("orders")
@@ -228,6 +356,34 @@ export default function OrdersClient() {
     setMessage(
       field === "listing_status" ? "Status saved" : "Sales total saved",
     );
+  }
+
+  async function archiveOrder(id: number) {
+    const { error } = await supabase
+      .from("orders")
+      .update({ listing_status: "Archived" })
+      .eq("id", id);
+
+    if (error) {
+      setMessage(error.message);
+      return;
+    }
+
+    setOrders((current) => current.filter((o) => o.id !== id));
+    setSelectedOrderId(null);
+    setMessage("Ticket archived");
+  }
+
+  async function restoreOrder(id: number) {
+    const order = orders.find((o) => o.id === id);
+    const nextStatus = (order?.sold_total ?? 0) > 0 ? "Sold" : "Unlisted";
+    const { error } = await supabase
+      .from("orders")
+      .update({ listing_status: nextStatus })
+      .eq("id", id);
+    if (error) { setMessage(error.message); return; }
+    setOrders((current) => current.filter((o) => o.id !== id));
+    setMessage("Ticket restored");
   }
 
   async function deleteOrder(id: number) {
@@ -252,39 +408,54 @@ export default function OrdersClient() {
     setMessage("Ticket row deleted");
   }
 
-  async function addRow() {
+  function openAddForm() {
+    setNewTicket(defaultNewTicket);
+    setShowAddForm(true);
+    setSelectedOrderId(null);
+  }
+
+  async function submitNewTicket() {
+    if (!newTicket.event_name.trim()) {
+      setMessage("Event name is required");
+      return;
+    }
+
+    setSubmittingNew(true);
     setMessage("");
 
     const { data, error } = await supabase
       .from("orders")
       .insert({
-        booking_ref: "",
-        event_name: "",
-        venue: "",
-        event_date: "",
-        account_email: "",
-        section: "",
-        row: "",
-        seat_from: "",
-        seat_to: "",
-        qty_bought: null,
-        total_cost: null,
+        booking_ref: newTicket.booking_ref.trim() || null,
+        event_name: newTicket.event_name.trim() || null,
+        venue: newTicket.venue.trim() || null,
+        event_date: newTicket.event_date || null,
+        account_email: newTicket.account_email || null,
+        section: newTicket.section.trim() || null,
+        row: newTicket.row.trim() || null,
+        seat_from: newTicket.seat_from.trim() || null,
+        seat_to: newTicket.seat_to.trim() || null,
+        qty_bought: newTicket.qty_bought > 0 ? newTicket.qty_bought : null,
+        total_cost: newTicket.total_cost !== "" ? Number(newTicket.total_cost) : null,
         sold_total: null,
-        listing_status: "Unlisted",
-        source_type: "manual",
+        listing_status: newTicket.listing_status,
+        source_type: newTicket.source_type,
       })
       .select()
       .single();
+
+    setSubmittingNew(false);
 
     if (error) {
       setMessage(error.message);
       return;
     }
 
-    const newOrder = data as Order;
-    setOrders((current) => [newOrder, ...current]);
-    setSelectedOrderId(newOrder.id);
-    setMessage("New ticket row added");
+    const created = data as Order;
+    setOrders((current) => [created, ...current]);
+    setShowAddForm(false);
+    setSelectedOrderId(created.id);
+    setMessage("Ticket added");
   }
 
   const eventOptions = useMemo(() => {
@@ -355,17 +526,131 @@ export default function OrdersClient() {
     soldFilter,
   ]);
 
+  const [expandedGroups, setExpandedGroups] = useState<string[]>([]);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [bulkStatus, setBulkStatus] = useState("Listed");
+
+  function toggleSelect(id: number) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleSelectGroup(ids: number[]) {
+    setSelectedIds((prev) => {
+      const allSelected = ids.every((id) => prev.has(id));
+      const next = new Set(prev);
+      if (allSelected) {
+        ids.forEach((id) => next.delete(id));
+      } else {
+        ids.forEach((id) => next.add(id));
+      }
+      return next;
+    });
+  }
+
+  function clearSelection() {
+    setSelectedIds(new Set());
+  }
+
+  async function bulkArchive() {
+    const ids = [...selectedIds];
+    if (ids.length === 0) return;
+    const { error } = await supabase
+      .from("orders")
+      .update({ listing_status: "Archived" })
+      .in("id", ids);
+    if (error) { setMessage(error.message); return; }
+    setOrders((current) => current.filter((o) => !selectedIds.has(o.id)));
+    clearSelection();
+    setMessage(`${ids.length} ticket${ids.length !== 1 ? "s" : ""} archived`);
+  }
+
+  async function bulkSetStatus(status: string) {
+    const ids = [...selectedIds];
+    if (ids.length === 0) return;
+    const { error } = await supabase
+      .from("orders")
+      .update({ listing_status: status })
+      .in("id", ids);
+    if (error) { setMessage(error.message); return; }
+    setOrders((current) =>
+      current.map((o) => selectedIds.has(o.id) ? { ...o, listing_status: status } : o),
+    );
+    clearSelection();
+    setMessage(`${ids.length} ticket${ids.length !== 1 ? "s" : ""} set to ${status}`);
+  }
+
+  function toggleGroup(key: string) {
+    setExpandedGroups((current) =>
+      current.includes(key) ? current.filter((k) => k !== key) : [...current, key],
+    );
+  }
+
+  const groupedOrders = useMemo(() => {
+    const map = new Map<string, OrderGroup>();
+
+    for (const order of filteredOrders) {
+      const eventName = order.event_name || "Untitled ticket";
+      const venue = order.venue || "Venue missing";
+      const eventDate = order.event_date || "Date missing";
+      const key = `${eventName}__${venue}__${eventDate}`;
+
+      if (!map.has(key)) {
+        map.set(key, {
+          key,
+          eventName,
+          venue,
+          eventDate,
+          dateValue: parseOrderDate(order.event_date),
+          orders: [],
+          totalQty: 0,
+          totalCost: 0,
+          totalSold: 0,
+          soldCount: 0,
+          listedCount: 0,
+          unlistedCount: 0,
+          problemCount: 0,
+        });
+      }
+
+      const group = map.get(key)!;
+      group.orders.push(order);
+      group.totalQty += order.qty_bought ?? 0;
+      group.totalCost += order.total_cost ?? 0;
+      group.totalSold += order.sold_total ?? 0;
+
+      const status = order.listing_status;
+      const qty = order.qty_bought ?? 0;
+      if (status === "Sold") group.soldCount += qty;
+      else if (status === "Listed") group.listedCount += qty;
+      else if (status === "Problem / Missing") group.problemCount += qty;
+      else group.unlistedCount += qty;
+    }
+
+    return Array.from(map.values()).sort((a, b) => {
+      if (a.dateValue && b.dateValue) return a.dateValue.getTime() - b.dateValue.getTime();
+      if (a.dateValue) return -1;
+      if (b.dateValue) return 1;
+      return a.eventName.localeCompare(b.eventName);
+    });
+  }, [filteredOrders]);
+
   const selectedOrder =
     orders.find((order) => order.id === selectedOrderId) ?? null;
 
   const metrics = useMemo(() => {
-    const totalOrders = filteredOrders.length;
+    const availableCount = filteredOrders.filter(
+      (o) => o.listing_status !== "Sold",
+    ).length;
+    const soldCount = filteredOrders.filter(
+      (o) => o.listing_status === "Sold",
+    ).length;
     const totalCost = filteredOrders.reduce(
       (sum, order) => sum + (order.total_cost ?? 0),
-      0,
-    );
-    const totalSold = filteredOrders.reduce(
-      (sum, order) => sum + (order.sold_total ?? 0),
       0,
     );
     const totalProfit = filteredOrders.reduce((sum, order) => {
@@ -379,35 +664,34 @@ export default function OrdersClient() {
 
     return [
       {
-        label: "Tickets",
-        value: String(totalOrders),
-        detail: totalOrders > 0 ? `${totalOrders} live rows` : "No rows yet",
-        trend: "+2 this week",
+        label: "Tickets Available",
+        value: String(availableCount),
+        detail: availableCount > 0 ? "not yet sold" : "All tickets sold",
       },
       {
-        label: "Spent",
+        label: "Tickets Sold",
+        value: String(soldCount),
+        detail: soldCount > 0 ? `of ${filteredOrders.length} total` : "No tickets sold yet",
+      },
+      {
+        label: "Capital In",
         value: formatCurrency(totalCost),
         detail:
-          totalOrders > 0
-            ? formatCurrency(totalCost / totalOrders)
-            : "No buys yet",
-      },
-      {
-        label: "Sales",
-        value: formatCurrency(totalSold),
-        detail: totalSold > 0 ? "Sales logged" : "No sales yet",
+          filteredOrders.length > 0
+            ? `${formatCurrency(totalCost / filteredOrders.length)} avg per ticket`
+            : "No spend yet",
       },
       {
         label: "ROI",
         value: `${roi.toFixed(1)}%`,
         detail:
-          totalProfit !== 0 ? `${formatCurrency(totalProfit)} net` : "Flat book",
+          totalProfit !== 0 ? `${formatCurrency(totalProfit)} net profit` : "No profit yet",
       },
     ];
   }, [filteredOrders]);
 
   return (
-    <div className="orders-shell">
+    <div className={`orders-shell${(selectedOrder || showAddForm) ? " orders-shell-drawer-open" : ""}`}>
       <aside className="orders-sidebar">
         <div>
           <div className="brand-mark">TA</div>
@@ -430,15 +714,6 @@ export default function OrdersClient() {
         </nav>
 
         <div className="sidebar-footer">
-          <div className="sidebar-panel">
-            <p className="sidebar-panel-label">Desk status</p>
-            <strong>Inbox sync live</strong>
-            <span>
-              Refresh data, scan Gmail, and manage inventory from one premium
-              workspace.
-            </span>
-          </div>
-
           <div className="sidebar-settings-box">
             <p className="sidebar-panel-label">Settings</p>
             <div className="sidebar-settings-actions">
@@ -457,52 +732,24 @@ export default function OrdersClient() {
         <header className="topbar">
           <div>
             <p className="eyebrow">Ticket desk</p>
-            <h2>Dashboard</h2>
+            <h2>Tickets</h2>
           </div>
-
           <div className="topbar-actions">
-            <button
-              className="secondary-button"
-              onClick={() => loadOrders(true)}
-              disabled={refreshing}
-              type="button"
-            >
+            <button className="secondary-button" onClick={() => loadOrders(true)} disabled={refreshing} type="button">
               {refreshing ? "Refreshing..." : "Refresh"}
             </button>
-            <button
-              className="secondary-button"
-              onClick={scanGmailNow}
-              disabled={scanning}
-              type="button"
-            >
-              {scanning ? "Scanning..." : "Scan Gmail"}
-            </button>
-            <button className="primary-button" onClick={addRow} type="button">
-              Add Order
-            </button>
+            {!showArchived && (
+              <>
+                <button className="secondary-button" onClick={scanGmailNow} disabled={scanning} type="button">
+                  {scanning ? "Scanning..." : "Scan Gmail"}
+                </button>
+                <button className="primary-button" onClick={openAddForm} type="button">
+                  Add Ticket
+                </button>
+              </>
+            )}
           </div>
         </header>
-
-        <section className="hero-card">
-          <div>
-            <p className="section-tag">Overview</p>
-            <h3>Track stock, sales, and profit.</h3>
-          </div>
-
-          <div className="hero-meta">
-            <div>
-              <span className="hero-meta-label">Sync</span>
-              <strong>{loading ? "Pulling" : "Ready"}</strong>
-            </div>
-            <div>
-              <span className="hero-meta-label">Rows</span>
-              <strong>{filteredOrders.length}</strong>
-            </div>
-            <Link href="/" className="text-link">
-              Home
-            </Link>
-          </div>
-        </section>
 
         {message ? (
           <div className="feedback-banner" role="status">
@@ -511,25 +758,26 @@ export default function OrdersClient() {
           </div>
         ) : null}
 
-        <section className="kpi-grid">
-          {metrics.map((metric) => (
-            <article key={metric.label} className="kpi-card">
-              <span className="kpi-accent" />
-              <p>{metric.label}</p>
-              <strong>{metric.value}</strong>
-              <span>{metric.detail}</span>
-            </article>
-          ))}
-        </section>
-
         <section className="command-card">
           <div className="command-header">
-            <div>
-              <p className="section-tag">Filters</p>
-              <h4>Filter your inventory instantly</h4>
+            <div className="view-toggle">
+              <button
+                type="button"
+                className={showArchived ? "toggle-btn" : "toggle-btn toggle-btn-active"}
+                onClick={() => { setShowArchived(false); clearSelection(); }}
+              >
+                Active
+              </button>
+              <button
+                type="button"
+                className={showArchived ? "toggle-btn toggle-btn-active" : "toggle-btn"}
+                onClick={() => { setShowArchived(true); clearSelection(); setSelectedOrderId(null); setShowAddForm(false); }}
+              >
+                Archived
+              </button>
             </div>
             <button className="ghost-button" onClick={resetFilters} type="button">
-              Reset Filters
+              Reset
             </button>
           </div>
 
@@ -598,7 +846,7 @@ export default function OrdersClient() {
               >
                 {sourceOptions.map((option) => (
                   <option key={option} value={option}>
-                    {option}
+                    {sourceLabels[option] ?? option}
                   </option>
                 ))}
               </select>
@@ -619,156 +867,328 @@ export default function OrdersClient() {
           </div>
         </section>
 
-        <section className="table-card">
-          <div className="table-card-header">
+        <section className="table-card inventory-board">
+          <div className="table-card-header inventory-board-header">
             <div>
-              <p className="section-tag">Tickets</p>
-              <h4>Tickets</h4>
+              <p className="section-tag">{showArchived ? "Archive" : "Tickets"}</p>
+              <h4>{showArchived ? "Archived tickets" : "Tickets by event"}</h4>
             </div>
-            <span className="table-count">{filteredOrders.length} rows</span>
+            <span className="table-count">{groupedOrders.length} events · {filteredOrders.length} tickets</span>
           </div>
+
+          {!showArchived && selectedIds.size > 0 ? (
+            <div className="bulk-action-bar">
+              <span className="bulk-count">{selectedIds.size} selected</span>
+              <div className="bulk-actions">
+                <div className="bulk-status-group">
+                  <select
+                    className="field field-compact"
+                    value={bulkStatus}
+                    onChange={(e) => setBulkStatus(e.target.value)}
+                  >
+                    {quickStatusOptions.map((s) => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </select>
+                  <button className="secondary-button" type="button" onClick={() => void bulkSetStatus(bulkStatus)}>
+                    Set status
+                  </button>
+                </div>
+                <button className="secondary-button" type="button" onClick={() => void bulkArchive()}>
+                  Archive selected
+                </button>
+                <button className="ghost-button" type="button" onClick={clearSelection}>
+                  Clear
+                </button>
+              </div>
+            </div>
+          ) : null}
 
           {loading ? (
             <div className="state-card">
               <div className="state-orb" />
               <h5>Loading tickets</h5>
-              <p>Pulling your latest rows, seats, and sales numbers.</p>
             </div>
-          ) : filteredOrders.length === 0 ? (
+          ) : groupedOrders.length === 0 ? (
             <div className="state-card">
               <div className="state-orb state-orb-muted" />
-              <h5>No tickets match these filters</h5>
-              <p>
-                Reset the command bar or add a new order to start building your
-                inventory.
-              </p>
+              <h5>{showArchived ? "No archived tickets" : "No tickets match these filters"}</h5>
+              <p>{showArchived ? "Archive a ticket to store it here." : "Reset the filters or add a new ticket."}</p>
             </div>
           ) : (
-            <div className="table-scroll">
-              <table className="premium-table">
-                <thead>
-                  <tr>
-                    <th>Event</th>
-                    <th>Booking Ref</th>
-                    <th>Seats</th>
-                    <th>Account</th>
-                    <th>Qty</th>
-                    <th>Bought For</th>
-                    <th>Sold For</th>
-                    <th>Profit</th>
-                    <th>ROI</th>
-                    <th>Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredOrders.map((order) => {
-                    const totalCost = order.total_cost ?? 0;
-                    const soldTotal = order.sold_total ?? 0;
-                    const quantity = order.qty_bought ?? null;
-                    const profit =
-                      order.sold_total != null ? soldTotal - totalCost : null;
-                    const roi =
-                      profit != null && totalCost > 0
-                        ? (profit / totalCost) * 100
-                        : null;
-                    const active = selectedOrderId === order.id;
-                    const statusTone = getStatusTone(order.listing_status);
+            <div className="inventory-group-list">
+              {groupedOrders.map((group) => {
+                const expanded = expandedGroups.includes(group.key);
+                const groupProfit = group.orders.some((o) => o.sold_total != null)
+                  ? group.totalSold - group.totalCost
+                  : null;
+                const soldRatio = group.totalQty > 0 ? (group.soldCount / group.totalQty) * 100 : 0;
 
-                    return (
-                      <tr
-                        key={order.id}
-                        className={active ? "row-active" : ""}
-                        onClick={() => setSelectedOrderId(order.id)}
-                      >
-                        <td>
-                          <div className="event-cell">
-                            <strong>{order.event_name || "Untitled ticket"}</strong>
-                            <span>{order.venue || "Venue missing"}</span>
-                            <small>{order.event_date || "Date missing"}</small>
+                const groupIds = group.orders.map((o) => o.id);
+                const allGroupSelected = groupIds.length > 0 && groupIds.every((id) => selectedIds.has(id));
+                const someGroupSelected = groupIds.some((id) => selectedIds.has(id));
+
+                return (
+                  <article
+                    key={group.key}
+                    className={`inventory-group-card${expanded ? " inventory-group-open" : ""}`}
+                  >
+                    <div className="inventory-group-header-row">
+                    <label
+                      className="group-checkbox-label"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={allGroupSelected}
+                        ref={(el) => { if (el) el.indeterminate = someGroupSelected && !allGroupSelected; }}
+                        onChange={() => toggleSelectGroup(groupIds)}
+                      />
+                    </label>
+                    <button
+                      className="inventory-group-toggle"
+                      type="button"
+                      onClick={() => toggleGroup(group.key)}
+                    >
+                      <div className="inventory-group-main">
+                        <div className="inventory-group-title">
+                          <strong>{group.eventName}</strong>
+                          <span>{group.venue}</span>
+                          <small>{group.eventDate}</small>
+                          {(() => { const d = formatDaysAway(group.dateValue); return d ? <span className={`days-chip ${d.tone}`}>{d.label}</span> : null; })()}
+                        </div>
+                        <div className="inventory-group-metrics">
+                          <div className="inventory-metric-chip">
+                            <span>Tickets</span>
+                            <strong>{group.totalQty}</strong>
                           </div>
-                        </td>
-                        <td>
-                          <span className="mono-text">
-                            {order.booking_ref || "No ref"}
-                          </span>
-                        </td>
-                        <td>
-                          <div className="seat-stack">
-                            <strong>{order.section || "Section -"}</strong>
-                            <span>
-                              {formatSeatLabel(
-                                order.row,
-                                order.seat_from,
-                                order.seat_to,
-                              )}
-                            </span>
+                          <div className="inventory-metric-chip">
+                            <span>Cost</span>
+                            <strong>{formatCurrency(group.totalCost)}</strong>
                           </div>
-                        </td>
-                        <td>
-                          <span className="truncate-text" title={order.account_email || ""}>
-                            {order.account_email || "No account"}
-                          </span>
-                        </td>
-                        <td>{quantity ?? "—"}</td>
-                        <td>{formatCurrency(order.total_cost)}</td>
-                        <td onClick={(event) => event.stopPropagation()}>
-                          <input
-                            className="field field-compact"
-                            type="number"
-                            step="0.01"
-                            value={order.sold_total ?? ""}
-                            onChange={(e) =>
-                              updateOrder(order.id, "sold_total", e.target.value)
-                            }
-                            onBlur={(e) =>
-                              void saveQuickField(
-                                order,
-                                "sold_total",
-                                e.target.value,
-                              )
-                            }
-                          />
-                        </td>
-                        <td className={profit != null && profit > 0 ? "value-up" : ""}>
-                          {profit == null ? "—" : formatCurrency(profit)}
-                        </td>
-                        <td className={roi != null && roi > 0 ? "value-up" : ""}>
-                          {roi == null ? "—" : `${roi.toFixed(1)}%`}
-                        </td>
-                        <td onClick={(event) => event.stopPropagation()}>
-                          <select
-                            className="field field-compact"
-                            value={order.listing_status ?? "Unlisted"}
-                            onChange={(e) =>
-                              void saveQuickField(
-                                order,
-                                "listing_status",
-                                e.target.value,
-                              )
-                            }
-                          >
-                            {quickStatusOptions.map((status) => (
-                              <option key={status} value={status}>
-                                {status}
-                              </option>
-                            ))}
-                          </select>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                          <div className="inventory-metric-chip">
+                            <span>Profit</span>
+                            <strong className={groupProfit != null && groupProfit > 0 ? "delta-up" : groupProfit != null && groupProfit < 0 ? "delta-down" : ""}>
+                              {groupProfit != null ? formatCurrency(groupProfit) : "—"}
+                            </strong>
+                          </div>
+                          <div className="inventory-status-row">
+                            <span className="status-badge status-static status-unlisted">Unlisted {group.unlistedCount}</span>
+                            <span className="status-badge status-static status-listed">Listed {group.listedCount}</span>
+                            <span className="status-badge status-static status-sold">Sold {group.soldCount}</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="inventory-group-side">
+                        <div className="inventory-progress-block">
+                          <span>{group.soldCount}/{group.totalQty} sold</span>
+                          <div className="inventory-progress-track">
+                            <div className="inventory-progress-fill" style={{ width: `${Math.max(soldRatio, 6)}%` }} />
+                          </div>
+                        </div>
+                        <span className="inventory-chevron">{expanded ? "−" : "+"}</span>
+                      </div>
+                    </button>
+                    </div>
+
+                    {expanded ? (
+                      <div className="table-scroll">
+                        <table className="premium-table">
+                          <thead>
+                            <tr>
+                              {!showArchived && <th className="col-check" />}
+                              <th>Ref</th>
+                              <th>Seats</th>
+                              <th>Account</th>
+                              <th>Qty</th>
+                              <th>Cost</th>
+                              <th>Sold For</th>
+                              <th>Profit</th>
+                              <th>ROI</th>
+                              <th>{showArchived ? "Actions" : "Status"}</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {group.orders.map((order) => {
+                              const cost = order.total_cost ?? 0;
+                              const sold = order.sold_total ?? 0;
+                              const profit = order.sold_total != null ? sold - cost : null;
+                              const roi = profit != null && cost > 0 ? (profit / cost) * 100 : null;
+                              const active = selectedOrderId === order.id;
+
+                              return (
+                                <tr
+                                  key={order.id}
+                                  className={`${active ? "row-active" : ""}${selectedIds.has(order.id) ? " row-selected" : ""}`}
+                                  onClick={() => setSelectedOrderId(order.id)}
+                                >
+                                  {!showArchived && (
+                                    <td className="col-check" onClick={(e) => { e.stopPropagation(); toggleSelect(order.id); }}>
+                                      <input
+                                        type="checkbox"
+                                        checked={selectedIds.has(order.id)}
+                                        onChange={() => toggleSelect(order.id)}
+                                      />
+                                    </td>
+                                  )}
+                                  <td><span className="mono-text">{order.booking_ref || "No ref"}</span></td>
+                                  <td>
+                                    <div className="seat-stack">
+                                      <strong>{order.section || "—"}</strong>
+                                      <span>{formatSeatLabel(order.row, order.seat_from, order.seat_to)}</span>
+                                    </div>
+                                  </td>
+                                  <td>
+                                    <span className="truncate-text" title={order.account_email || ""}>
+                                      {order.account_email || "—"}
+                                    </span>
+                                  </td>
+                                  <td>{order.qty_bought ?? "—"}</td>
+                                  <td>{formatCurrency(order.total_cost)}</td>
+                                  <td onClick={(e) => e.stopPropagation()}>
+                                    <input
+                                      className="field field-compact"
+                                      type="number"
+                                      step="0.01"
+                                      value={order.sold_total ?? ""}
+                                      onChange={(e) => updateOrder(order.id, "sold_total", e.target.value)}
+                                      onBlur={(e) => void saveQuickField(order, "sold_total", e.target.value)}
+                                    />
+                                  </td>
+                                  <td className={profit != null && profit > 0 ? "value-up" : profit != null && profit < 0 ? "value-down" : ""}>
+                                    {profit == null ? "—" : formatCurrency(profit)}
+                                  </td>
+                                  <td className={roi != null && roi > 0 ? "value-up" : ""}>
+                                    {roi == null ? "—" : `${roi.toFixed(1)}%`}
+                                  </td>
+                                  <td onClick={(e) => e.stopPropagation()}>
+                                    {showArchived ? (
+                                      <button className="secondary-button" type="button" onClick={() => void restoreOrder(order.id)}>
+                                        Restore
+                                      </button>
+                                    ) : (
+                                      <select
+                                        className="field field-compact"
+                                        value={order.listing_status ?? "Unlisted"}
+                                        onChange={(e) => void saveQuickField(order, "listing_status", e.target.value)}
+                                      >
+                                        {quickStatusOptions.map((status) => (
+                                          <option key={status} value={status}>{status}</option>
+                                        ))}
+                                      </select>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : null}
+                  </article>
+                );
+              })}
             </div>
           )}
         </section>
+
       </main>
 
-      <aside className={`details-drawer${selectedOrder ? " details-drawer-open" : ""}`}>
+      {showAddForm ? (
+        <aside className="details-drawer details-drawer-open">
+          <div className="drawer-header">
+            <div>
+              <p className="eyebrow">New ticket</p>
+              <h4>Add ticket</h4>
+            </div>
+            <button className="drawer-close" type="button" onClick={() => setShowAddForm(false)}>×</button>
+          </div>
+          <div className="drawer-content">
+            <div className="drawer-grid">
+              <label>
+                <span>Event name *</span>
+                <input className="field" placeholder="Artist / event name" value={newTicket.event_name} onChange={(e) => setNewTicket((t) => ({ ...t, event_name: e.target.value }))} />
+              </label>
+              <label>
+                <span>Venue</span>
+                <input className="field" placeholder="Venue name" value={newTicket.venue} onChange={(e) => setNewTicket((t) => ({ ...t, venue: e.target.value }))} />
+              </label>
+              <label>
+                <span>Event date</span>
+                <input className="field" type="date" value={newTicket.event_date} onChange={(e) => setNewTicket((t) => ({ ...t, event_date: e.target.value }))} />
+              </label>
+              <label>
+                <span>Booking ref</span>
+                <input className="field" placeholder="Order / booking reference" value={newTicket.booking_ref} onChange={(e) => setNewTicket((t) => ({ ...t, booking_ref: e.target.value }))} />
+              </label>
+              <label>
+                <span>Account</span>
+                {accounts.length > 0 ? (
+                  <select className="field" value={newTicket.account_email} onChange={(e) => setNewTicket((t) => ({ ...t, account_email: e.target.value }))}>
+                    <option value="">— Select account —</option>
+                    {accounts.map((email) => (
+                      <option key={email} value={email}>{email}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <input className="field" placeholder="buyer@email.com" value={newTicket.account_email} onChange={(e) => setNewTicket((t) => ({ ...t, account_email: e.target.value }))} />
+                )}
+              </label>
+              <label>
+                <span>Source</span>
+                <select className="field" value={newTicket.source_type} onChange={(e) => setNewTicket((t) => ({ ...t, source_type: e.target.value }))}>
+                  {sourceTypeOptions.map((opt) => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span>Section</span>
+                <input className="field" placeholder="e.g. Floor A" value={newTicket.section} onChange={(e) => setNewTicket((t) => ({ ...t, section: e.target.value }))} />
+              </label>
+              <label>
+                <span>Row</span>
+                <input className="field" placeholder="e.g. D" value={newTicket.row} onChange={(e) => setNewTicket((t) => ({ ...t, row: e.target.value }))} />
+              </label>
+              <label>
+                <span>Seat from</span>
+                <input className="field" placeholder="e.g. 14" value={newTicket.seat_from} onChange={(e) => setNewTicket((t) => ({ ...t, seat_from: e.target.value }))} />
+              </label>
+              <label>
+                <span>Seat to</span>
+                <input className="field" placeholder="e.g. 15" value={newTicket.seat_to} onChange={(e) => setNewTicket((t) => ({ ...t, seat_to: e.target.value }))} />
+              </label>
+              <label>
+                <span>Quantity</span>
+                <input className="field" type="number" min="1" value={newTicket.qty_bought} onChange={(e) => setNewTicket((t) => ({ ...t, qty_bought: Number(e.target.value) }))} />
+              </label>
+              <label>
+                <span>Buy cost (£)</span>
+                <input className="field" type="number" step="0.01" min="0" placeholder="0.00" value={newTicket.total_cost} onChange={(e) => setNewTicket((t) => ({ ...t, total_cost: e.target.value }))} />
+              </label>
+              <label>
+                <span>Status</span>
+                <select className="field" value={newTicket.listing_status} onChange={(e) => setNewTicket((t) => ({ ...t, listing_status: e.target.value }))}>
+                  {quickStatusOptions.map((s) => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <div className="drawer-actions">
+              <button className="ghost-button" type="button" onClick={() => setShowAddForm(false)}>Cancel</button>
+              <button className="primary-button" type="button" onClick={() => void submitNewTicket()} disabled={submittingNew}>
+                {submittingNew ? "Adding..." : "Add Ticket"}
+              </button>
+            </div>
+          </div>
+        </aside>
+      ) : selectedOrder ? (
+      <aside className="details-drawer details-drawer-open">
         <div className="drawer-header">
           <div>
             <p className="eyebrow">Ticket detail</p>
-            <h4>{selectedOrder?.event_name || "Select a ticket"}</h4>
+            <h4>{selectedOrder.event_name || "Untitled ticket"}</h4>
           </div>
           <button
             className="drawer-close"
@@ -779,8 +1199,7 @@ export default function OrdersClient() {
           </button>
         </div>
 
-        {selectedOrder ? (
-          <div className="drawer-content">
+        <div className="drawer-content">
             <section className="drawer-hero">
               <div className="drawer-hero-copy">
                 <strong>{selectedOrder.event_name || "Untitled ticket"}</strong>
@@ -831,7 +1250,8 @@ export default function OrdersClient() {
                 <span>Event date</span>
                 <input
                   className="field"
-                  value={selectedOrder.event_date ?? ""}
+                  type="date"
+                  value={toDateInputValue(selectedOrder.event_date)}
                   onChange={(e) =>
                     updateOrder(selectedOrder.id, "event_date", e.target.value)
                   }
@@ -839,23 +1259,42 @@ export default function OrdersClient() {
               </label>
               <label>
                 <span>Account</span>
-                <input
-                  className="field"
-                  value={selectedOrder.account_email ?? ""}
-                  onChange={(e) =>
-                    updateOrder(selectedOrder.id, "account_email", e.target.value)
-                  }
-                />
+                {accounts.length > 0 ? (
+                  <select
+                    className="field"
+                    value={selectedOrder.account_email ?? ""}
+                    onChange={(e) =>
+                      updateOrder(selectedOrder.id, "account_email", e.target.value)
+                    }
+                  >
+                    <option value="">— Select account —</option>
+                    {accounts.map((email) => (
+                      <option key={email} value={email}>{email}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    className="field"
+                    value={selectedOrder.account_email ?? ""}
+                    onChange={(e) =>
+                      updateOrder(selectedOrder.id, "account_email", e.target.value)
+                    }
+                  />
+                )}
               </label>
               <label>
                 <span>Source</span>
-                <input
+                <select
                   className="field"
-                  value={selectedOrder.source_type ?? ""}
+                  value={selectedOrder.source_type ?? "manual"}
                   onChange={(e) =>
                     updateOrder(selectedOrder.id, "source_type", e.target.value)
                   }
-                />
+                >
+                  {sourceTypeOptions.map((opt) => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
               </label>
               <label>
                 <span>Section</span>
@@ -977,6 +1416,23 @@ export default function OrdersClient() {
               >
                 Delete
               </button>
+              {showArchived ? (
+                <button
+                  className="secondary-button"
+                  type="button"
+                  onClick={() => void restoreOrder(selectedOrder.id)}
+                >
+                  Restore
+                </button>
+              ) : (
+                <button
+                  className="secondary-button"
+                  type="button"
+                  onClick={() => void archiveOrder(selectedOrder.id)}
+                >
+                  Archive
+                </button>
+              )}
               <button
                 className="primary-button"
                 type="button"
@@ -986,20 +1442,39 @@ export default function OrdersClient() {
               </button>
             </div>
           </div>
-        ) : (
-          <div className="drawer-empty">
-            <div className="state-orb state-orb-muted" />
-            <span className="drawer-empty-label">No order selected</span>
-            <h5>Open any row to edit it</h5>
-            <p>
-              Review editable fields, seat data, cost structure, and status from
-              a focused side panel.
-            </p>
-          </div>
-        )}
-      </aside>
+        </aside>
+      ) : null}
     </div>
   );
+}
+
+function getDaysAway(date: Date | null): number | null {
+  if (!date) return null;
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+  return Math.floor((date.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+}
+
+function formatDaysAway(date: Date | null): { label: string; tone: string } | null {
+  const days = getDaysAway(date);
+  if (days == null) return null;
+  if (days < 0) return { label: "Past", tone: "days-past" };
+  if (days === 0) return { label: "Today", tone: "days-urgent" };
+  if (days === 1) return { label: "Tomorrow", tone: "days-urgent" };
+  if (days <= 7) return { label: `${days}d`, tone: "days-soon" };
+  return { label: `${days}d`, tone: "days-ok" };
+}
+
+function parseOrderDate(value: string | null): Date | null {
+  if (!value) return null;
+  const parsed = new Date(value);
+  if (!Number.isNaN(parsed.getTime())) return parsed;
+  const match = value.match(/(\d{1,2})\s+([A-Za-z]{3,9})\s+(\d{4})/);
+  if (!match) return null;
+  const [, day, monthName, year] = match;
+  const monthIndex = ["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"].indexOf(monthName.slice(0,3).toLowerCase());
+  if (monthIndex === -1) return null;
+  return new Date(Number(year), monthIndex, Number(day));
 }
 
 function formatCurrency(value: number | null) {
@@ -1010,6 +1485,7 @@ function formatCurrency(value: number | null) {
   return new Intl.NumberFormat("en-GB", {
     style: "currency",
     currency: "GBP",
+    minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(value);
 }
@@ -1059,6 +1535,25 @@ function formatBoughtAt(value: string | null) {
 
 
 
+
+
+// Converts any stored date string (ISO "2025-06-14", "14 Jun 2025", etc.) to
+// the YYYY-MM-DD format required by <input type="date">. Falls back to "" so
+// the field shows empty rather than a broken value.
+function toDateInputValue(value: string | null): string {
+  if (!value) return "";
+  // Already ISO date
+  if (/^\d{4}-\d{2}-\d{2}/.test(value)) return value.slice(0, 10);
+  // Try parsing natural-language dates like "14 Jun 2025"
+  const parsed = new Date(value);
+  if (!Number.isNaN(parsed.getTime())) {
+    const y = parsed.getFullYear();
+    const m = String(parsed.getMonth() + 1).padStart(2, "0");
+    const d = String(parsed.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+  }
+  return "";
+}
 
 
 function getStatusTone(status: string | null) {

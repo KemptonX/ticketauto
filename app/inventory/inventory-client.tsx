@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { autoArchiveExpiredOrders } from "@/src/lib/archive-rules";
 import { supabase } from "@/src/lib/supabase";
 
 type Order = {
@@ -49,7 +48,8 @@ type InventoryGroup = {
 };
 
 const navItems = [
-  { label: "Dashboard", href: "/orders", active: false },
+  { label: "Tickets", href: "/orders", active: false },
+  { label: "Archived Tickets", href: "/archived-orders", active: false },
   { label: "Inventory", href: "/inventory", active: true },
   { label: "Sales", href: "/sales", active: false },
   { label: "Archived Sales", href: "/archived-sales", active: false },
@@ -87,17 +87,6 @@ export default function InventoryClient() {
       setRefreshing(true);
     } else {
       setLoading(true);
-    }
-
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (user) {
-      await autoArchiveExpiredOrders({
-        supabase,
-        userId: user.id,
-      });
     }
 
     const { data, error } = await supabase
@@ -209,12 +198,14 @@ export default function InventoryClient() {
       const matchesDate =
         dateFilter === "All" ||
         (dateFilter === "This week" && daysAway != null && daysAway >= 0 && daysAway <= 7) ||
-        (dateFilter === "Upcoming" && daysAway != null && daysAway > 7);
+        (dateFilter === "This month" && eventDate != null && isThisMonth(eventDate));
+
+      const matchesMonth = monthFilter === "All" || monthLabel === monthFilter;
 
       const matchesAccount =
         accountFilter === "All" || order.account_email === accountFilter;
 
-      return matchesSearch && matchesStatus && matchesDate && matchesAccount;
+      return matchesSearch && matchesStatus && matchesDate && matchesMonth && matchesAccount;
     });
   }, [orders, archivedSalesByOrder, search, artistFilter, statusFilter, dateFilter, monthFilter, accountFilter]);
 
@@ -338,27 +329,30 @@ export default function InventoryClient() {
           <div className="sidebar-brand">
             <h1>TicketAuto</h1>
           </div>
+
+          <nav className="sidebar-nav">
+            {navItems.map((item) => (
+              <Link
+                key={item.label}
+                href={item.href}
+                className={`nav-item${item.active ? " nav-item-active" : ""}`}
+              >
+                <span>{item.label}</span>
+              </Link>
+            ))}
+          </nav>
         </div>
 
-        <nav className="sidebar-nav">
-          {navItems.map((item) => (
-            <Link
-              key={item.label}
-              href={item.href}
-              className={`nav-item${item.active ? " nav-item-active" : ""}`}
-            >
-              <span>{item.label}</span>
+        <div className="sidebar-footer">
+          <div className="sidebar-settings-box">
+            <p className="sidebar-settings-title">Settings</p>
+            <Link href="/connections" className="sidebar-settings-link">
+              Connections
             </Link>
-          ))}
-        </nav>
-
-        <div className="sidebar-panel">
-          <p className="sidebar-panel-label">Inventory</p>
-          <strong>Stock visibility</strong>
-          <span>Group live tickets by event, risk, and value.</span>
-          <Link href="/connections" className="sidebar-panel-link">
-            Open connections
-          </Link>
+            <button className="sidebar-settings-link sidebar-settings-button" type="button" onClick={handleLogout}>
+              Log out
+            </button>
+          </div>
         </div>
       </aside>
 
@@ -378,9 +372,6 @@ export default function InventoryClient() {
             >
               {refreshing ? "Refreshing..." : "Refresh"}
             </button>
-            <Link href="/orders" className="primary-button">
-              Back to Dashboard
-            </Link>
           </div>
         </header>
 
@@ -423,7 +414,7 @@ export default function InventoryClient() {
           <div className="command-header">
             <div>
               <p className="section-tag">Filters</p>
-              <h4>Scan stock in seconds</h4>
+              <h4>Filter your stock</h4>
             </div>
             <button className="ghost-button" onClick={resetFilters} type="button">
               Reset Filters
@@ -712,6 +703,7 @@ function formatCurrency(value: number | null) {
   return new Intl.NumberFormat("en-GB", {
     style: "currency",
     currency: "GBP",
+    minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(value);
 }

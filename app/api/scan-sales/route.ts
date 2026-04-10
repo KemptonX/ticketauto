@@ -1,5 +1,4 @@
 ﻿import { NextResponse } from "next/server";
-import { autoArchiveExpiredSales } from "@/src/lib/archive-rules";
 import { createSupabaseServerClient } from "@/src/lib/supabase-server";
 import { rematchViagogoSales, syncViagogoSalesInbox } from "@/src/lib/viagogo-sales-sync";
 
@@ -36,11 +35,6 @@ export async function POST() {
       );
     }
 
-    await autoArchiveExpiredSales({
-      supabase,
-      userId: user.id,
-    });
-
     const totals = {
       scanned: 0,
       inserted: 0,
@@ -63,6 +57,15 @@ export async function POST() {
     totals.matched += await rematchViagogoSales({
       supabase,
       userId: user.id,
+    });
+
+    await supabase.from("sync_log").insert({
+      user_id: user.id,
+      scan_type: "sales",
+      scanned: totals.scanned,
+      inserted: totals.inserted,
+      matched: totals.matched,
+      accounts_scanned: totals.accounts,
     });
 
     return NextResponse.json({ ok: true, ...totals });

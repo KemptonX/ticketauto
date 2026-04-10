@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { autoArchiveExpiredSales } from "@/src/lib/archive-rules";
 import { supabase } from "@/src/lib/supabase";
 
 type Sale = {
@@ -66,14 +65,14 @@ type SaleGroup = {
 };
 
 const navItems = [
-  { label: "Dashboard", href: "/orders", active: false },
-  { label: "Inventory", href: "/inventory", active: false },
+  { label: "Dashboard", href: "/", active: false },
+  { label: "Tickets", href: "/orders", active: false },
   { label: "Sales", href: "/sales", active: true },
-  { label: "Archived Sales", href: "/archived-sales", active: false },
   { label: "Analytics", href: "/analytics", active: false },
 ];
 
 const matchFilterOptions = ["All", "Matched", "Unmatched"];
+
 
 export default function SalesClient() {
   const [sales, setSales] = useState<Sale[]>([]);
@@ -85,47 +84,85 @@ export default function SalesClient() {
   const [message, setMessage] = useState("");
   const [search, setSearch] = useState("");
   const [matchFilter, setMatchFilter] = useState("All");
-  const [monthFilter, setMonthFilter] = useState("All");
   const [accountFilter, setAccountFilter] = useState("All");
-  const [sortByDate, setSortByDate] = useState<"closest" | "latest">("closest");
+  const sortByDate = "closest";
   const [expandedGroups, setExpandedGroups] = useState<string[]>([]);
   const [selectedSaleId, setSelectedSaleId] = useState<number | null>(null);
   const [matchingOrderId, setMatchingOrderId] = useState<number | null>(null);
   const [unmatching, setUnmatching] = useState(false);
+  const [savingSale, setSavingSale] = useState(false);
+  const [saleEdits, setSaleEdits] = useState<{ qty_sold: string; price_per_ticket: string; sale_total: string } | null>(null);
+  const [showArchived, setShowArchived] = useState(false);
 
   useEffect(() => {
-    void loadSales();
-  }, []);
+    void loadSales(false, showArchived);
+  }, [showArchived]);
+
+  const selectedSaleRaw = sales.find((s) => s.id === selectedSaleId) || null;
+
+  useEffect(() => {
+    if (selectedSaleRaw) {
+      setSaleEdits({
+        qty_sold: selectedSaleRaw.qty_sold != null ? String(selectedSaleRaw.qty_sold) : "",
+        price_per_ticket: selectedSaleRaw.price_per_ticket != null ? String(selectedSaleRaw.price_per_ticket) : "",
+        sale_total: selectedSaleRaw.sale_total != null ? String(selectedSaleRaw.sale_total) : "",
+      });
+    } else {
+      setSaleEdits(null);
+    }
+  }, [selectedSaleId]);
+
+  async function saveSaleEdits() {
+    if (!selectedSaleRaw || !saleEdits) return;
+    setSavingSale(true);
+    setMessage("");
+
+    const qty_sold = saleEdits.qty_sold !== "" ? Number(saleEdits.qty_sold) : null;
+    const price_per_ticket = saleEdits.price_per_ticket !== "" ? Number(saleEdits.price_per_ticket) : null;
+    const sale_total = saleEdits.sale_total !== "" ? Number(saleEdits.sale_total) : null;
+
+    const { error } = await supabase
+      .from("sales")
+      .update({ qty_sold, price_per_ticket, sale_total })
+      .eq("id", selectedSaleRaw.id);
+
+    if (error) {
+      setMessage(error.message);
+      setSavingSale(false);
+      return;
+    }
+
+    setSales((current) =>
+      current.map((s) =>
+        s.id === selectedSaleRaw.id ? { ...s, qty_sold, price_per_ticket, sale_total } : s,
+      ),
+    );
+
+    if (selectedSaleRaw.inventory_order_id != null) {
+      await syncOrderFromSales(selectedSaleRaw.inventory_order_id);
+    }
+
+    setSavingSale(false);
+    setMessage("Sale updated");
+  }
+
 
   async function handleLogout() {
     await fetch("/api/auth/logout", { method: "POST" });
     window.location.href = "/login";
   }
 
-  async function loadSales(showRefreshing = false) {
+  async function loadSales(showRefreshing = false, archived = showArchived) {
     if (showRefreshing) {
       setRefreshing(true);
     } else {
       setLoading(true);
     }
 
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (user) {
-      await autoArchiveExpiredSales({
-        supabase,
-        userId: user.id,
-      });
-    }
-
-    const { data, error } = await supabase
-      .from("sales")
-      .select("*")
-      .neq("sale_status", "Archived")
-      .order("sold_at", { ascending: false })
-      .order("created_at", { ascending: false });
+    const query = supabase.from("sales").select("*").order("sold_at", { ascending: false }).order("created_at", { ascending: false });
+    const { data, error } = await (archived
+      ? query.eq("sale_status", "Archived")
+      : query.neq("sale_status", "Archived"));
 
     if (error) {
       setMessage(error.message);
@@ -343,18 +380,8 @@ export default function SalesClient() {
   function resetFilters() {
     setSearch("");
     setMatchFilter("All");
-    setMonthFilter("All");
     setAccountFilter("All");
-    setSortByDate("closest");
   }
-
-  const monthOptions = useMemo(() => {
-    const values = sales
-      .map((sale) => getMonthLabel(sale.event_date || sale.sold_at))
-      .filter((value): value is string => Boolean(value));
-
-    return ["All", ...new Set(values)];
-  }, [sales]);
 
   const accountOptions = useMemo(() => {
     const values = sales
@@ -377,14 +404,11 @@ export default function SalesClient() {
         (matchFilter === "Matched" && sale.inventory_order_id != null) ||
         (matchFilter === "Unmatched" && sale.inventory_order_id == null);
 
-      const matchesMonth =
-        monthFilter === "All" || getMonthLabel(sale.event_date || sale.sold_at) === monthFilter;
-
       const matchesAccount = accountFilter === "All" || sale.account_email === accountFilter;
 
-      return matchesSearch && matchesMatch && matchesMonth && matchesAccount;
+      return matchesSearch && matchesMatch && matchesAccount;
     });
-  }, [sales, search, matchFilter, monthFilter, accountFilter]);
+  }, [sales, search, matchFilter, accountFilter]);
 
   const groupedSales = useMemo(() => {
     const map = new Map<string, SaleGroup>();
@@ -452,45 +476,8 @@ export default function SalesClient() {
     });
   }, [filteredSales, matchedOrders, allOrders, sortByDate]);
 
-  const metrics = useMemo(() => {
-    const totalSales = filteredSales.length;
-    const totalSoldFor = filteredSales.reduce((sum, sale) => {
-      if (sale.inventory_order_id == null) {
-        return sum;
-      }
-      return sum + (sale.sale_total ?? sale.payout_total ?? 0);
-    }, 0);
-    const ticketsSold = filteredSales.reduce((sum, sale) => sum + (sale.qty_sold ?? 0), 0);
-    const totalProfit = filteredSales.reduce((sum, sale) => {
-      const order = getReferenceOrderForSale(sale, matchedOrders, allOrders);
-      return sum + (getSaleProfit(sale, order) ?? 0);
-    }, 0);
 
-    return [
-      {
-        label: "Sales Logged",
-        value: String(totalSales),
-        detail: totalSales > 0 ? `${groupedSales.length} events covered` : "No sales logged yet",
-      },
-      {
-        label: "Total Sold For",
-        value: formatCurrency(totalSoldFor),
-        detail: totalSoldFor > 0 ? "Matched sales only" : "No matched sales yet",
-      },
-      {
-        label: "Tickets Sold",
-        value: String(ticketsSold),
-        detail: ticketsSold > 0 ? "From Viagogo sales emails" : "No sold tickets yet",
-      },
-      {
-        label: "Profit",
-        value: renderDeltaValue(totalProfit, true),
-        detail: totalProfit !== 0 ? "Matched sales only" : "No matched profit yet",
-      },
-    ];
-  }, [filteredSales, groupedSales.length, matchedOrders, allOrders]);
-
-  const selectedSale = sales.find((sale) => sale.id === selectedSaleId) || null;
+  const selectedSale = selectedSaleRaw;
   const selectedOrder = selectedSale ? getReferenceOrderForSale(selectedSale, matchedOrders, allOrders) : null;
   const selectedProfit = selectedSale ? getSaleProfit(selectedSale, selectedOrder) : null;
   const matchSuggestions = useMemo(
@@ -499,7 +486,7 @@ export default function SalesClient() {
   );
 
   return (
-    <div className="orders-shell">
+    <div className={`orders-shell${selectedSale ? " orders-shell-drawer-open" : ""}`}>
       <aside className="orders-sidebar">
         <div>
           <div className="brand-mark">TA</div>
@@ -521,12 +508,6 @@ export default function SalesClient() {
         </div>
 
         <div className="sidebar-footer">
-          <div className="sidebar-panel">
-            <p className="sidebar-panel-label">Sales desk</p>
-            <strong>Viagogo sync live</strong>
-            <span>Import sold tickets, review matches, and keep sold numbers clean.</span>
-          </div>
-
           <div className="sidebar-settings-box">
             <p className="sidebar-panel-label">Settings</p>
             <div className="sidebar-settings-actions">
@@ -552,31 +533,13 @@ export default function SalesClient() {
             <button className="secondary-button" onClick={() => void loadSales(true)} disabled={refreshing} type="button">
               {refreshing ? "Refreshing..." : "Refresh"}
             </button>
-            <button className="secondary-button" onClick={() => void scanSalesNow()} disabled={scanning} type="button">
-              {scanning ? "Scanning..." : "Scan Sales"}
-            </button>
-            <Link href="/orders" className="primary-button">
-              Back to Dashboard
-            </Link>
+            {!showArchived && (
+              <button className="secondary-button" onClick={() => void scanSalesNow()} disabled={scanning} type="button">
+                {scanning ? "Scanning..." : "Scan Sales"}
+              </button>
+            )}
           </div>
         </header>
-
-        <section className="hero-card">
-          <div>
-            <p className="section-tag">Sales</p>
-            <h3>Log sold tickets, sold values, and profit.</h3>
-          </div>
-          <div className="hero-meta">
-            <div>
-              <span className="hero-meta-label">Profit</span>
-              <strong>{metrics[3]?.value || "£0.00"}</strong>
-            </div>
-            <div>
-              <span className="hero-meta-label">Total sold for</span>
-              <strong>{metrics[1]?.value || "£0.00"}</strong>
-            </div>
-          </div>
-        </section>
 
         {message ? (
           <div className="feedback-banner" role="status">
@@ -585,31 +548,32 @@ export default function SalesClient() {
           </div>
         ) : null}
 
-        <section className="kpi-grid">
-          {metrics.map((metric) => (
-            <article key={metric.label} className="kpi-card">
-              <span className="kpi-accent" />
-              <p>{metric.label}</p>
-              <strong>{metric.value}</strong>
-              <span>{metric.detail}</span>
-            </article>
-          ))}
-        </section>
-
         <section className="command-card">
           <div className="command-header">
-            <div>
-              <p className="section-tag">Filters</p>
-              <h4>Filter sales instantly</h4>
+            <div className="view-toggle">
+              <button
+                type="button"
+                className={showArchived ? "toggle-btn" : "toggle-btn toggle-btn-active"}
+                onClick={() => { setShowArchived(false); setSelectedSaleId(null); }}
+              >
+                Active
+              </button>
+              <button
+                type="button"
+                className={showArchived ? "toggle-btn toggle-btn-active" : "toggle-btn"}
+                onClick={() => { setShowArchived(true); setSelectedSaleId(null); }}
+              >
+                Archived
+              </button>
             </div>
             <button className="ghost-button" type="button" onClick={resetFilters}>
-              Reset Filters
+              Reset
             </button>
           </div>
 
-          <div className="filter-grid">
-            <label className="field-label">
-              <span>Search</span>
+          <div className="command-grid">
+            <label className="filter-field">
+              <span className="filter-label">Search</span>
               <input
                 className="field field-search"
                 placeholder="Search event, venue, account, section..."
@@ -617,9 +581,9 @@ export default function SalesClient() {
                 onChange={(event) => setSearch(event.target.value)}
               />
             </label>
-            <label className="field-label">
-              <span>Match</span>
-              <select className="field field-compact" value={matchFilter} onChange={(event) => setMatchFilter(event.target.value)}>
+            <label className="filter-field">
+              <span className="filter-label">Match</span>
+              <select className="field" value={matchFilter} onChange={(event) => setMatchFilter(event.target.value)}>
                 {matchFilterOptions.map((option) => (
                   <option key={option} value={option}>
                     {option}
@@ -627,31 +591,14 @@ export default function SalesClient() {
                 ))}
               </select>
             </label>
-            <label className="field-label">
-              <span>Month</span>
-              <select className="field field-compact" value={monthFilter} onChange={(event) => setMonthFilter(event.target.value)}>
-                {monthOptions.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="field-label">
-              <span>Account</span>
-              <select className="field field-compact" value={accountFilter} onChange={(event) => setAccountFilter(event.target.value)}>
+            <label className="filter-field">
+              <span className="filter-label">Account</span>
+              <select className="field" value={accountFilter} onChange={(event) => setAccountFilter(event.target.value)}>
                 {accountOptions.map((option) => (
                   <option key={option} value={option}>
                     {option}
                   </option>
                 ))}
-              </select>
-            </label>
-            <label className="field-label">
-              <span>Sort By</span>
-              <select className="field field-compact" value={sortByDate} onChange={(event) => setSortByDate(event.target.value as "closest" | "latest")}>
-                <option value="closest">Event Date: Closest to Latest</option>
-                <option value="latest">Event Date: Latest to Closest</option>
               </select>
             </label>
           </div>
@@ -699,18 +646,12 @@ export default function SalesClient() {
 
                         <div className="inventory-group-metrics">
                           <div className="inventory-metric-chip">
-                            <span>Sales</span>
-                            <strong>{group.salesCount}</strong>
-                          </div>
-                          <div className="inventory-metric-chip">
                             <span>Tickets</span>
                             <strong>{group.ticketsSold}</strong>
                           </div>
                           <div className="inventory-metric-chip">
-                            <span>{group.matchedCount > 0 ? "Sold for" : "Cost"}</span>
-                            <strong>
-                              {group.matchedCount > 0 ? formatCurrency(group.soldFor) : formatCurrency(group.cost)}
-                            </strong>
+                            <span>Sold for</span>
+                            <strong>{formatCurrency(group.soldFor)}</strong>
                           </div>
                           <div className="inventory-metric-chip">
                             <span>Profit</span>
@@ -720,13 +661,14 @@ export default function SalesClient() {
                           </div>
                           <div className="inventory-status-row">
                             <span className="status-badge status-static status-sold">Matched {group.matchedCount}</span>
-                            <span className="status-badge status-static status-problem">Review {group.unmatchedCount}</span>
+                            {group.unmatchedCount > 0 && (
+                              <span className="status-badge status-static status-problem">Review {group.unmatchedCount}</span>
+                            )}
                           </div>
                         </div>
                       </div>
 
                       <div className="inventory-group-side">
-                        {group.unmatchedCount > 0 ? <span className="inventory-risk-badge">Needs review</span> : null}
                         <div className="inventory-progress-block">
                           <span>{group.matchedCount}/{group.salesCount} matched</span>
                           <div className="inventory-progress-track">
@@ -788,21 +730,22 @@ export default function SalesClient() {
             </div>
           )}
         </section>
+
       </main>
 
-      <aside className={`details-drawer${selectedSale ? " details-drawer-open" : ""}`}>
+      {selectedSale ? (
+      <aside className="details-drawer details-drawer-open">
         <div className="drawer-header">
           <div>
             <p className="eyebrow">Sale detail</p>
-            <h4>{selectedSale?.event_name || "Select a sale"}</h4>
+            <h4>{selectedSale.event_name || "Untitled sale"}</h4>
           </div>
           <button className="drawer-close" type="button" onClick={() => setSelectedSaleId(null)}>
             ×
           </button>
         </div>
 
-        {selectedSale ? (
-          <div className="drawer-content">
+        <div className="drawer-content">
             <section className="drawer-hero">
               <div className="drawer-hero-copy">
                 <strong>{selectedSale.event_name || "Untitled sale"}</strong>
@@ -846,19 +789,35 @@ export default function SalesClient() {
               </label>
               <label>
                 <span>Tickets sold</span>
-                <div className="field">{selectedSale.qty_sold ?? 0}</div>
+                <input
+                  className="field"
+                  type="number"
+                  min="1"
+                  value={saleEdits?.qty_sold ?? ""}
+                  onChange={(e) => setSaleEdits((prev) => prev ? { ...prev, qty_sold: e.target.value } : prev)}
+                />
               </label>
               <label>
                 <span>Price per ticket</span>
-                <div className="field">{formatCurrency(selectedSale.price_per_ticket)}</div>
+                <input
+                  className="field"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={saleEdits?.price_per_ticket ?? ""}
+                  onChange={(e) => setSaleEdits((prev) => prev ? { ...prev, price_per_ticket: e.target.value } : prev)}
+                />
               </label>
               <label>
-                <span>{selectedSale.inventory_order_id != null ? "Total sold for" : "Cost"}</span>
-                <div className="field">
-                  {selectedSale.inventory_order_id != null
-                    ? formatCurrency(selectedSale.sale_total ?? selectedSale.payout_total)
-                    : formatCurrency(getSaleCost(selectedSale, selectedOrder))}
-                </div>
+                <span>Total sold for</span>
+                <input
+                  className="field"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={saleEdits?.sale_total ?? ""}
+                  onChange={(e) => setSaleEdits((prev) => prev ? { ...prev, sale_total: e.target.value } : prev)}
+                />
               </label>
               <label>
                 <span>Profit</span>
@@ -916,6 +875,14 @@ export default function SalesClient() {
               >
                 Delete Sale
               </button>
+              <button
+                className="primary-button"
+                type="button"
+                onClick={() => void saveSaleEdits()}
+                disabled={savingSale}
+              >
+                {savingSale ? "Saving..." : "Save"}
+              </button>
             </div>
 
             <section className="drawer-summary">
@@ -972,15 +939,8 @@ export default function SalesClient() {
               )}
             </div>
           </div>
-        ) : (
-          <div className="drawer-empty">
-            <div className="drawer-empty-orb" />
-            <span className="status-badge status-static status-unlisted">No sale selected</span>
-            <h5>Open any sale to review it</h5>
-            <p>Check buyer details, sold value, and profit against inventory.</p>
-          </div>
-        )}
       </aside>
+      ) : null}
     </div>
   );
 }
@@ -1233,6 +1193,7 @@ function formatCurrency(value: number | null | undefined) {
   return new Intl.NumberFormat("en-GB", {
     style: "currency",
     currency: "GBP",
+    minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(value);
 }
@@ -1271,19 +1232,4 @@ function formatSeatLabel(row: string | null, seatFrom: string | null, seatTo: st
   return row ? `Row ${row} • ${seatLabel}` : seatLabel;
 }
 
-function getMonthLabel(value: string | null) {
-  if (!value) {
-    return null;
-  }
-
-  const parsed = new Date(value.replace(/\|/g, " "));
-  if (Number.isNaN(parsed.getTime())) {
-    return null;
-  }
-
-  return new Intl.DateTimeFormat("en-GB", {
-    month: "long",
-    year: "numeric",
-  }).format(parsed);
-}
 

@@ -228,7 +228,6 @@ export async function syncViagogoSalesInbox({
     }
 
     await markMessageProcessed(accessToken, message.id, labelId);
-    await markMessageProcessed(accessToken, message.id, labelId);
   }
 
   await supabase

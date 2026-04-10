@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { autoArchiveExpiredSales } from "@/src/lib/archive-rules";
 import { supabase } from "@/src/lib/supabase";
 
 type Sale = {
@@ -28,7 +27,8 @@ type MatchedOrder = {
 };
 
 const navItems = [
-  { label: "Dashboard", href: "/orders", active: false },
+  { label: "Tickets", href: "/orders", active: false },
+  { label: "Archived Tickets", href: "/archived-orders", active: false },
   { label: "Inventory", href: "/inventory", active: false },
   { label: "Sales", href: "/sales", active: false },
   { label: "Archived Sales", href: "/archived-sales", active: true },
@@ -59,16 +59,6 @@ export default function ArchivedSalesClient() {
       setLoading(true);
     }
 
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (user) {
-      await autoArchiveExpiredSales({
-        supabase,
-        userId: user.id,
-      });
-    }
 
     const { data, error } = await supabase
       .from("sales")
@@ -201,9 +191,6 @@ export default function ArchivedSalesClient() {
             <button className="secondary-button" type="button" onClick={() => void loadSales(true)} disabled={refreshing}>
               {refreshing ? "Refreshing..." : "Refresh"}
             </button>
-            <Link href="/sales" className="primary-button">
-              Back to Sales
-            </Link>
           </div>
         </header>
 
@@ -339,6 +326,7 @@ function formatCurrency(value: number | null | undefined) {
   return new Intl.NumberFormat("en-GB", {
     style: "currency",
     currency: "GBP",
+    minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(value);
 }

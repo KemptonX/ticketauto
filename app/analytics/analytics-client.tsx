@@ -39,29 +39,36 @@ type SeriesPoint = {
 };
 
 type EventProfit = {
+  key: string;
   name: string;
   profit: number;
   sales: number;
   cost: number;
   tickets: number;
   venue: string;
+  roi: number;
 };
 
 const navItems = [
-  { label: "Dashboard", href: "/orders", active: false },
-  { label: "Inventory", href: "/inventory", active: false },
+  { label: "Dashboard", href: "/", active: false },
+  { label: "Tickets", href: "/orders", active: false },
   { label: "Sales", href: "/sales", active: false },
-  { label: "Archived Sales", href: "/archived-sales", active: false },
   { label: "Analytics", href: "/analytics", active: true },
 ];
 
 const accentColors = ["#FF4FA3", "#9B5CFF", "#4FC3FF", "#67F0A5", "#FFB84F", "#FF7D7D"];
+
+type DatePreset = "all" | "this-week" | "this-month" | "custom";
 
 export default function AnalyticsClient() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [message, setMessage] = useState("");
+  const [inlineEdits, setInlineEdits] = useState<Record<number, string>>({});
+  const [datePreset, setDatePreset] = useState<DatePreset>("all");
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
 
   useEffect(() => {
     void loadOrders();
@@ -71,6 +78,92 @@ export default function AnalyticsClient() {
     await fetch("/api/auth/logout", { method: "POST" });
     window.location.href = "/login";
   }
+
+  function setInlineEdit(id: number, value: string) {
+    setInlineEdits((prev) => ({ ...prev, [id]: value }));
+  }
+
+  async function saveSoldTotal(order: Order, raw: string) {
+    const numeric = raw === "" ? null : Number(raw);
+    const newStatus =
+      numeric != null && numeric > 0 && order.listing_status !== "Sold" ? "Sold" : order.listing_status;
+
+    const { error } = await supabase
+      .from("orders")
+      .update({ sold_total: numeric, listing_status: newStatus })
+      .eq("id", order.id);
+
+    if (error) { setMessage(error.message); return; }
+
+    setOrders((current) =>
+      current.map((o) =>
+        o.id === order.id ? { ...o, sold_total: numeric, listing_status: newStatus } : o,
+      ),
+    );
+    setMessage("Sold total updated");
+  }
+
+  async function saveStatus(order: Order, status: string) {
+    const { error } = await supabase
+      .from("orders")
+      .update({ listing_status: status })
+      .eq("id", order.id);
+
+    if (error) { setMessage(error.message); return; }
+
+    setOrders((current) =>
+      current.map((o) => (o.id === order.id ? { ...o, listing_status: status } : o)),
+    );
+    setMessage("Status updated");
+  }
+
+  function exportCSV() {
+    const soldOrders = orders.filter((order) => isSold(order));
+
+    if (soldOrders.length === 0) {
+      setMessage("No sold tickets to export");
+      return;
+    }
+
+    const headers = ["Event", "Venue", "Event Date", "Account", "Section", "Row", "Seat From", "Seat To", "Qty", "Source", "Booking Ref", "Cost (£)", "Sold For (£)", "Profit (£)", "ROI (%)"];
+
+    const rows = soldOrders.map((order) => {
+      const cost = order.total_cost ?? 0;
+      const soldFor = order.sold_total ?? 0;
+      const profit = soldFor - cost;
+      const roi = cost > 0 ? ((profit / cost) * 100).toFixed(1) : "";
+      return [
+        order.event_name ?? "",
+        order.venue ?? "",
+        order.event_date ?? "",
+        order.account_email ?? "",
+        order.section ?? "",
+        order.row ?? "",
+        order.seat_from ?? "",
+        order.seat_to ?? "",
+        order.qty_bought ?? "",
+        order.source_type ?? "",
+        order.booking_ref ?? "",
+        cost.toFixed(2),
+        soldFor.toFixed(2),
+        profit.toFixed(2),
+        roi,
+      ];
+    });
+
+    const csv = [headers, ...rows]
+      .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(","))
+      .join("\n");
+
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `ticketauto-sold-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
   async function loadOrders(showRefreshing = false) {
     if (showRefreshing) {
       setRefreshing(true);
@@ -96,8 +189,44 @@ export default function AnalyticsClient() {
     setRefreshing(false);
   }
 
+  const dateRange = useMemo(() => {
+    const now = new Date();
+    if (datePreset === "this-week") {
+      const start = new Date(now);
+      start.setDate(now.getDate() - ((now.getDay() + 6) % 7));
+      start.setHours(0, 0, 0, 0);
+      const end = new Date(start);
+      end.setDate(start.getDate() + 6);
+      end.setHours(23, 59, 59, 999);
+      return { start, end };
+    }
+    if (datePreset === "this-month") {
+      const start = new Date(now.getFullYear(), now.getMonth(), 1);
+      const end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+      return { start, end };
+    }
+    if (datePreset === "custom" && customFrom && customTo) {
+      const start = parseDMY(customFrom);
+      const end = parseDMY(customTo);
+      if (!start || !end) return null;
+      start.setHours(0, 0, 0, 0);
+      end.setHours(23, 59, 59, 999);
+      return { start, end };
+    }
+    return null;
+  }, [datePreset, customFrom, customTo]);
+
+  const filteredOrders = useMemo(() => {
+    if (!dateRange) return orders;
+    return orders.filter((order) => {
+      const date = parseEventDate(order.event_date) ?? parseDate(order.purchased_at) ?? parseDate(order.created_at);
+      if (!date) return false;
+      return date >= dateRange.start && date <= dateRange.end;
+    });
+  }, [orders, dateRange]);
+
   const analytics = useMemo(() => {
-    const soldOrders = orders.filter((order) => isSold(order));
+    const soldOrders = filteredOrders.filter((order) => isSold(order));
     const soldTickets = soldOrders.reduce((sum, order) => sum + getTicketQuantity(order), 0);
     const totalProfit = soldOrders.reduce((sum, order) => sum + getProfit(order), 0);
     const totalSales = soldOrders.reduce((sum, order) => sum + (order.sold_total ?? 0), 0);
@@ -112,10 +241,7 @@ export default function AnalyticsClient() {
       : null;
 
     const profitSeries = buildProfitSeries(soldOrders);
-    const eventProfit = buildEventProfit(soldOrders);
-    const topEvents = [...eventProfit].sort((a, b) => b.profit - a.profit);
-    const worstEvents = [...eventProfit].sort((a, b) => a.profit - b.profit).slice(0, 5);
-    const statusBreakdown = buildStatusBreakdown(orders);
+    const eventRows = buildEventProfit(soldOrders).sort((a, b) => b.profit - a.profit);
 
     const metrics: MetricCard[] = [
       {
@@ -142,16 +268,8 @@ export default function AnalyticsClient() {
       },
     ];
 
-    return {
-      metrics,
-      profitSeries,
-      comparisonSeries: topEvents.slice(0, 6),
-      donutSeries: topEvents.slice(0, 5),
-      rankingSeries: topEvents.slice(0, 6),
-      worstEvents,
-      statusBreakdown,
-    };
-  }, [orders]);
+    return { metrics, profitSeries, eventRows };
+  }, [filteredOrders]);
 
   return (
     <div className="orders-shell analytics-shell">
@@ -161,27 +279,30 @@ export default function AnalyticsClient() {
           <div className="sidebar-brand">
             <h1>TicketAuto</h1>
           </div>
+
+          <nav className="sidebar-nav">
+            {navItems.map((item) => (
+              <Link
+                key={item.label}
+                href={item.href}
+                className={`nav-item${item.active ? " nav-item-active" : ""}`}
+              >
+                <span>{item.label}</span>
+              </Link>
+            ))}
+          </nav>
         </div>
 
-        <nav className="sidebar-nav">
-          {navItems.map((item) => (
-            <Link
-              key={item.label}
-              href={item.href}
-              className={`nav-item${item.active ? " nav-item-active" : ""}`}
-            >
-              <span>{item.label}</span>
+        <div className="sidebar-footer">
+          <div className="sidebar-settings-box">
+            <p className="sidebar-settings-title">Settings</p>
+            <Link href="/connections" className="sidebar-settings-link">
+              Connections
             </Link>
-          ))}
-        </nav>
-
-        <div className="sidebar-panel">
-          <p className="sidebar-panel-label">Analytics</p>
-          <strong>Profit visibility</strong>
-          <span>See what wins, what drags, and where money is tied up.</span>
-          <Link href="/connections" className="sidebar-panel-link">
-            Open connections
-          </Link>
+            <button className="sidebar-settings-link sidebar-settings-button" type="button" onClick={handleLogout}>
+              Log out
+            </button>
+          </div>
         </div>
       </aside>
 
@@ -201,9 +322,14 @@ export default function AnalyticsClient() {
             >
               {refreshing ? "Refreshing..." : "Refresh"}
             </button>
-            <Link href="/orders" className="primary-button">
-              Back to Dashboard
-            </Link>
+            <button
+              className="secondary-button"
+              onClick={exportCSV}
+              disabled={loading || orders.length === 0}
+              type="button"
+            >
+              Export CSV
+            </button>
           </div>
         </header>
 
@@ -231,6 +357,40 @@ export default function AnalyticsClient() {
           </div>
         ) : null}
 
+        <section className="command-card">
+          <div className="command-header">
+            <div className="view-toggle">
+              {(["all", "this-week", "this-month", "custom"] as DatePreset[]).map((preset) => (
+                <button
+                  key={preset}
+                  type="button"
+                  className={`toggle-btn${datePreset === preset ? " toggle-btn-active" : ""}`}
+                  onClick={() => setDatePreset(preset)}
+                >
+                  {preset === "all" ? "All Time" : preset === "this-week" ? "This Week" : preset === "this-month" ? "This Month" : "Custom"}
+                </button>
+              ))}
+            </div>
+            <span className="table-count">
+              {dateRange
+                ? `${filteredOrders.length} of ${orders.length} tickets · ${dateRange.start.toLocaleDateString("en-GB")} – ${dateRange.end.toLocaleDateString("en-GB")}`
+                : `${orders.length} tickets · All time`}
+            </span>
+          </div>
+          {datePreset === "custom" && (
+            <div className="analytics-date-range">
+              <label className="filter-field">
+                <span className="filter-label">From</span>
+                <input className="field" type="text" placeholder="DDMMYYYY" maxLength={10} value={customFrom} onChange={(e) => setCustomFrom(e.target.value)} />
+              </label>
+              <label className="filter-field">
+                <span className="filter-label">To</span>
+                <input className="field" type="text" placeholder="DDMMYYYY" maxLength={10} value={customTo} onChange={(e) => setCustomTo(e.target.value)} />
+              </label>
+            </div>
+          )}
+        </section>
+
         <section className="kpi-grid">
           {analytics.metrics.map((metric) => (
             <article key={metric.label} className={`kpi-card${metric.tone === "profit" ? " analytics-kpi-profit" : ""}${metric.tone === "risk" ? " analytics-kpi-risk" : ""}`}>
@@ -247,13 +407,102 @@ export default function AnalyticsClient() {
             <div className="state-card">
               <div className="state-orb" />
               <h5>Loading analytics</h5>
-              <p>Crunching profit, sales, and stock performance.</p>
             </div>
           </section>
         ) : (
-          <section className="analytics-grid">
-            <article className="table-card analytics-card analytics-card-wide">
-              <div className="table-card-header analytics-card-header">
+          <>
+            {analytics.eventRows.length >= 2 && (
+              <>
+                <section className="table-card">
+                  <div className="table-card-header">
+                    <div>
+                      <p className="section-tag">Top performers</p>
+                      <h4>Best events</h4>
+                    </div>
+                    <span className="table-count">Top 3</span>
+                  </div>
+                  <div className="table-scroll">
+                    <table className="premium-table">
+                      <thead>
+                        <tr>
+                          <th>#</th>
+                          <th>Event</th>
+                          <th>Tickets</th>
+                          <th>Cost</th>
+                          <th>Sold For</th>
+                          <th>Profit</th>
+                          <th>ROI</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {analytics.eventRows.slice(0, 3).map((row, i) => (
+                          <tr key={row.key}>
+                            <td>{i + 1}</td>
+                            <td>
+                              <div className="event-cell">
+                                <strong>{row.name}</strong>
+                                <span>{row.venue}</span>
+                              </div>
+                            </td>
+                            <td>{row.tickets}</td>
+                            <td>{formatCurrency(row.cost)}</td>
+                            <td>{formatCurrency(row.sales)}</td>
+                            <td className={row.profit >= 0 ? "value-up" : "value-down"}>{formatCurrency(row.profit)}</td>
+                            <td className={row.roi >= 0 ? "value-up" : "value-down"}>{row.cost > 0 ? `${row.roi.toFixed(1)}%` : "—"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+
+                <section className="table-card">
+                  <div className="table-card-header">
+                    <div>
+                      <p className="section-tag">Underperformers</p>
+                      <h4>Worst events</h4>
+                    </div>
+                    <span className="table-count">Bottom 3</span>
+                  </div>
+                  <div className="table-scroll">
+                    <table className="premium-table">
+                      <thead>
+                        <tr>
+                          <th>#</th>
+                          <th>Event</th>
+                          <th>Tickets</th>
+                          <th>Cost</th>
+                          <th>Sold For</th>
+                          <th>Profit</th>
+                          <th>ROI</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {[...analytics.eventRows].reverse().slice(0, 3).map((row, i) => (
+                          <tr key={row.key}>
+                            <td>{i + 1}</td>
+                            <td>
+                              <div className="event-cell">
+                                <strong>{row.name}</strong>
+                                <span>{row.venue}</span>
+                              </div>
+                            </td>
+                            <td>{row.tickets}</td>
+                            <td>{formatCurrency(row.cost)}</td>
+                            <td>{formatCurrency(row.sales)}</td>
+                            <td className={row.profit >= 0 ? "value-up" : "value-down"}>{formatCurrency(row.profit)}</td>
+                            <td className={row.roi >= 0 ? "value-up" : "value-down"}>{row.cost > 0 ? `${row.roi.toFixed(1)}%` : "—"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+              </>
+            )}
+
+            <section className="table-card">
+              <div className="table-card-header">
                 <div>
                   <p className="section-tag">Trend</p>
                   <h4>Profit over time</h4>
@@ -261,62 +510,159 @@ export default function AnalyticsClient() {
                 <span className="table-count">By week</span>
               </div>
               <LineChartCard data={analytics.profitSeries} />
-            </article>
+            </section>
 
-            <article className="table-card analytics-card">
-              <div className="table-card-header analytics-card-header">
+            <section className="table-card">
+              <div className="table-card-header">
                 <div>
-                  <p className="section-tag">Status</p>
-                  <h4>Inventory status</h4>
+                  <p className="section-tag">Events</p>
+                  <h4>Breakdown by event</h4>
                 </div>
+                <span className="table-count">{analytics.eventRows.length} events</span>
               </div>
-              <DonutChartCard data={analytics.statusBreakdown} centerLabel="Stock" />
-            </article>
+              {analytics.eventRows.length === 0 ? (
+                <div className="state-card">
+                  <div className="state-orb state-orb-muted" />
+                  <h5>No sold events yet</h5>
+                  <p>Mark tickets as sold to see event performance here.</p>
+                </div>
+              ) : (
+                <div className="table-scroll">
+                  <table className="premium-table">
+                    <thead>
+                      <tr>
+                        <th>Event</th>
+                        <th>Tickets</th>
+                        <th>Cost</th>
+                        <th>Sold For</th>
+                        <th>Profit</th>
+                        <th>ROI</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {analytics.eventRows.map((row) => (
+                        <tr key={row.key}>
+                          <td>
+                            <div className="event-cell">
+                              <strong>{row.name}</strong>
+                              <span>{row.venue}</span>
+                            </div>
+                          </td>
+                          <td>{row.tickets}</td>
+                          <td>{formatCurrency(row.cost)}</td>
+                          <td>{formatCurrency(row.sales)}</td>
+                          <td className={row.profit >= 0 ? "value-up" : "value-down"}>
+                            {formatCurrency(row.profit)}
+                          </td>
+                          <td className={row.roi >= 0 ? "value-up" : "value-down"}>
+                            {row.cost > 0 ? `${row.roi.toFixed(1)}%` : "—"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
+          </>
+        )}
 
-            <article className="table-card analytics-card analytics-card-wide">
-              <div className="table-card-header analytics-card-header">
-                <div>
-                  <p className="section-tag">Margin</p>
-                  <h4>Sales vs cost</h4>
-                </div>
-                <span className="table-count">Top events</span>
+        {!loading && (
+          <section className="table-card">
+            <div className="table-card-header">
+              <div>
+                <p className="section-tag">Sold tickets</p>
+                <h4>Edit sold totals &amp; status</h4>
               </div>
-              <ComparisonBarChart data={analytics.comparisonSeries} />
-            </article>
+              <span className="table-count">
+                {filteredOrders.filter(isSold).length} sold
+              </span>
+            </div>
 
-            <article className="table-card analytics-card">
-              <div className="table-card-header analytics-card-header">
-                <div>
-                  <p className="section-tag">Winners</p>
-                  <h4>Profit by event</h4>
-                </div>
+            {filteredOrders.filter(isSold).length === 0 ? (
+              <div className="state-card">
+                <div className="state-orb state-orb-muted" />
+                <h5>No sold tickets yet</h5>
+                <p>Mark tickets as sold on the Tickets page to see them here.</p>
               </div>
-              <DonutChartCard
-                data={analytics.donutSeries.map((item) => ({ label: item.name, value: Math.max(item.profit, 0) }))}
-                centerLabel="Profit"
-              />
-            </article>
+            ) : (
+              <div className="table-scroll">
+                <table className="premium-table">
+                  <thead>
+                    <tr>
+                      <th>Event</th>
+                      <th>Ref</th>
+                      <th>Seat</th>
+                      <th>Qty</th>
+                      <th>Cost</th>
+                      <th>Sold For</th>
+                      <th>Profit</th>
+                      <th>ROI</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredOrders.filter(isSold).map((order) => {
+                      const cost = order.total_cost ?? 0;
+                      const soldVal = inlineEdits[order.id] !== undefined
+                        ? (inlineEdits[order.id] === "" ? 0 : Number(inlineEdits[order.id]))
+                        : (order.sold_total ?? 0);
+                      const profit = soldVal - cost;
+                      const roi = cost > 0 ? (profit / cost) * 100 : null;
 
-            <article className="table-card analytics-card analytics-card-wide">
-              <div className="table-card-header analytics-card-header">
-                <div>
-                  <p className="section-tag">Ranking</p>
-                  <h4>Profit by artist</h4>
-                </div>
-                <span className="table-count">Highest to lowest</span>
+                      return (
+                        <tr key={order.id}>
+                          <td>
+                            <div className="event-cell">
+                              <strong>{order.event_name || "Untitled"}</strong>
+                              <span>{order.venue || "—"}</span>
+                              <small>{order.event_date || "—"}</small>
+                            </div>
+                          </td>
+                          <td><span className="mono-text">{order.booking_ref || "—"}</span></td>
+                          <td>
+                            <div className="seat-stack">
+                              <strong>{order.section || "—"}</strong>
+                              <span>{order.row ? `Row ${order.row}` : "—"}</span>
+                            </div>
+                          </td>
+                          <td>{order.qty_bought ?? "—"}</td>
+                          <td>{formatCurrency(order.total_cost)}</td>
+                          <td onClick={(e) => e.stopPropagation()}>
+                            <input
+                              className="field field-compact"
+                              type="number"
+                              step="0.01"
+                              value={inlineEdits[order.id] !== undefined ? inlineEdits[order.id] : (order.sold_total ?? "")}
+                              onChange={(e) => setInlineEdit(order.id, e.target.value)}
+                              onBlur={(e) => void saveSoldTotal(order, e.target.value)}
+                            />
+                          </td>
+                          <td className={profit > 0 ? "value-up" : profit < 0 ? "value-down" : ""}>
+                            {formatCurrency(profit)}
+                          </td>
+                          <td className={roi != null && roi > 0 ? "value-up" : ""}>
+                            {roi != null ? `${roi.toFixed(1)}%` : "—"}
+                          </td>
+                          <td onClick={(e) => e.stopPropagation()}>
+                            <select
+                              className="field field-compact"
+                              value={order.listing_status ?? "Sold"}
+                              onChange={(e) => void saveStatus(order, e.target.value)}
+                            >
+                              <option value="Unlisted">Unlisted</option>
+                              <option value="Listed">Listed</option>
+                              <option value="Sold">Sold</option>
+                              <option value="Problem / Missing">Problem / Missing</option>
+                            </select>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
-              <RankingBars data={analytics.rankingSeries} />
-            </article>
-
-            <article className="table-card analytics-card">
-              <div className="table-card-header analytics-card-header">
-                <div>
-                  <p className="section-tag">Drag</p>
-                  <h4>Worst performers</h4>
-                </div>
-              </div>
-              <WorstPerformersList data={analytics.worstEvents} />
-            </article>
+            )}
           </section>
         )}
       </main>
@@ -361,13 +707,37 @@ function getApproxDaysToSell(order: Order) {
   return Math.max(0, Math.round((now.getTime() - buyDate.getTime()) / (1000 * 60 * 60 * 24)));
 }
 
+function parseDMY(value: string): Date | null {
+  const clean = value.replace(/\//g, "").trim();
+  if (clean.length !== 8 || !/^\d{8}$/.test(clean)) return null;
+  const d = Number(clean.slice(0, 2));
+  const m = Number(clean.slice(2, 4));
+  const y = Number(clean.slice(4, 8));
+  if (m < 1 || m > 12 || d < 1 || d > 31) return null;
+  const date = new Date(y, m - 1, d);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
 function parseDate(value: string | null) {
-  if (!value) {
-    return null;
-  }
+  if (!value) return null;
   const parsed = new Date(value);
-  if (!Number.isNaN(parsed.getTime())) {
-    return parsed;
+  if (!Number.isNaN(parsed.getTime())) return parsed;
+  return null;
+}
+
+function parseEventDate(value: string | null): Date | null {
+  if (!value) return null;
+  // ISO date
+  if (/^\d{4}-\d{2}-\d{2}/.test(value)) {
+    const [y, m, d] = value.slice(0, 10).split("-").map(Number);
+    return new Date(y, m - 1, d);
+  }
+  // "Friday 29 May 2026 18:30" or "29 May 2026"
+  const match = value.match(/(\d{1,2})\s+([A-Za-z]{3,9})\s+(\d{4})/);
+  if (match) {
+    const months = ["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"];
+    const monthIndex = months.indexOf(match[2].slice(0,3).toLowerCase());
+    if (monthIndex !== -1) return new Date(Number(match[3]), monthIndex, Number(match[1]));
   }
   return null;
 }
@@ -398,12 +768,14 @@ function buildEventProfit(orders: Order[]): EventProfit[] {
     const name = order.event_name || "Untitled event";
     const key = `${name}__${order.venue || "Venue missing"}`;
     const current = map.get(key) ?? {
+      key,
       name,
       venue: order.venue || "Venue missing",
       profit: 0,
       sales: 0,
       cost: 0,
       tickets: 0,
+      roi: 0,
     };
 
     current.profit += getProfit(order);
@@ -413,19 +785,10 @@ function buildEventProfit(orders: Order[]): EventProfit[] {
     map.set(key, current);
   }
 
-  return Array.from(map.values());
-}
-
-function buildStatusBreakdown(orders: Order[]) {
-  const counts = new Map<string, number>();
-  for (const order of orders) {
-    const status = normalizeStatus(order.listing_status);
-    counts.set(status, (counts.get(status) ?? 0) + getTicketQuantity(order));
-  }
-
-  return ["Unlisted", "Listed", "Sold", "Problem / Missing"]
-    .map((label) => ({ label, value: counts.get(label) ?? 0 }))
-    .filter((item) => item.value > 0);
+  return Array.from(map.values()).map((row) => ({
+    ...row,
+    roi: row.cost > 0 ? (row.profit / row.cost) * 100 : 0,
+  }));
 }
 
 function getWeekLabel(date: Date) {
@@ -445,7 +808,8 @@ function formatCurrency(value: number | null) {
   return new Intl.NumberFormat("en-GB", {
     style: "currency",
     currency: "GBP",
-    maximumFractionDigits: 0,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
   }).format(value);
 }
 
@@ -455,6 +819,8 @@ function formatCompactCurrency(value: number) {
     maximumFractionDigits: 1,
   }).format(value);
 }
+
+// ── Chart components ──────────────────────────────────────────────────────────
 
 function getDonutSegments(data: { label: string; value: number }[]) {
   const total = data.reduce((sum, item) => sum + item.value, 0);
