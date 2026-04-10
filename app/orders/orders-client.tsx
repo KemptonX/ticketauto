@@ -115,6 +115,7 @@ export default function OrdersClient() {
   const [newTicket, setNewTicket] = useState<NewTicketForm>(defaultNewTicket);
 
   const [showArchived, setShowArchived] = useState(false);
+  const [sortBy, setSortBy] = useState<"event-date" | "added-newest" | "added-oldest">("event-date");
 
   const [search, setSearch] = useState("");
   const [eventFilter, setEventFilter] = useState("All");
@@ -591,7 +592,7 @@ export default function OrdersClient() {
   }
 
   const groupedOrders = useMemo(() => {
-    const map = new Map<string, OrderGroup>();
+    const map = new Map<string, OrderGroup & { latestAddedAt: number }>();
 
     for (const order of filteredOrders) {
       const eventName = order.event_name || "Untitled ticket";
@@ -614,6 +615,7 @@ export default function OrdersClient() {
           listedCount: 0,
           unlistedCount: 0,
           problemCount: 0,
+          latestAddedAt: 0,
         });
       }
 
@@ -622,6 +624,9 @@ export default function OrdersClient() {
       group.totalQty += order.qty_bought ?? 0;
       group.totalCost += order.total_cost ?? 0;
       group.totalSold += order.sold_total ?? 0;
+
+      const addedAt = order.created_at ? new Date(order.created_at).getTime() : 0;
+      if (addedAt > group.latestAddedAt) group.latestAddedAt = addedAt;
 
       const status = order.listing_status;
       const qty = order.qty_bought ?? 0;
@@ -632,12 +637,14 @@ export default function OrdersClient() {
     }
 
     return Array.from(map.values()).sort((a, b) => {
+      if (sortBy === "added-newest") return b.latestAddedAt - a.latestAddedAt;
+      if (sortBy === "added-oldest") return a.latestAddedAt - b.latestAddedAt;
       if (a.dateValue && b.dateValue) return a.dateValue.getTime() - b.dateValue.getTime();
       if (a.dateValue) return -1;
       if (b.dateValue) return 1;
       return a.eventName.localeCompare(b.eventName);
     });
-  }, [filteredOrders]);
+  }, [filteredOrders, sortBy]);
 
   const selectedOrder =
     orders.find((order) => order.id === selectedOrderId) ?? null;
@@ -775,6 +782,11 @@ export default function OrdersClient() {
               >
                 Archived
               </button>
+            </div>
+            <div className="view-toggle">
+              <button type="button" className={`toggle-btn${sortBy === "event-date" ? " toggle-btn-active" : ""}`} onClick={() => setSortBy("event-date")}>Event date</button>
+              <button type="button" className={`toggle-btn${sortBy === "added-newest" ? " toggle-btn-active" : ""}`} onClick={() => setSortBy("added-newest")}>Newest</button>
+              <button type="button" className={`toggle-btn${sortBy === "added-oldest" ? " toggle-btn-active" : ""}`} onClick={() => setSortBy("added-oldest")}>Oldest</button>
             </div>
             <button className="ghost-button" onClick={resetFilters} type="button">
               Reset
@@ -1006,6 +1018,7 @@ export default function OrdersClient() {
                               <th>Profit</th>
                               <th>ROI</th>
                               <th>{showArchived ? "Actions" : "Status"}</th>
+                              <th>Added</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -1077,6 +1090,9 @@ export default function OrdersClient() {
                                         ))}
                                       </select>
                                     )}
+                                  </td>
+                                  <td>
+                                    <span className="timestamp-text">{formatAddedAt(order.created_at)}</span>
                                   </td>
                                 </tr>
                               );
@@ -1475,6 +1491,13 @@ function parseOrderDate(value: string | null): Date | null {
   const monthIndex = ["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"].indexOf(monthName.slice(0,3).toLowerCase());
   if (monthIndex === -1) return null;
   return new Date(Number(year), monthIndex, Number(day));
+}
+
+function formatAddedAt(value: string | null) {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  return new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "2-digit" }).format(date);
 }
 
 function formatCurrency(value: number | null) {

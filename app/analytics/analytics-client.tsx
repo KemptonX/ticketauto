@@ -58,7 +58,7 @@ const navItems = [
 
 const accentColors = ["#FF4FA3", "#9B5CFF", "#4FC3FF", "#67F0A5", "#FFB84F", "#FF7D7D"];
 
-type DatePreset = "all" | "this-week" | "this-month" | "custom";
+type DatePreset = "all" | "this-week" | "this-month" | "this-year" | "last-year" | "custom";
 
 export default function AnalyticsClient() {
   const [orders, setOrders] = useState<Order[]>([]);
@@ -203,6 +203,16 @@ export default function AnalyticsClient() {
     if (datePreset === "this-month") {
       const start = new Date(now.getFullYear(), now.getMonth(), 1);
       const end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+      return { start, end };
+    }
+    if (datePreset === "this-year") {
+      const start = new Date(now.getFullYear(), 0, 1);
+      const end = new Date(now.getFullYear(), 11, 31, 23, 59, 59, 999);
+      return { start, end };
+    }
+    if (datePreset === "last-year") {
+      const start = new Date(now.getFullYear() - 1, 0, 1);
+      const end = new Date(now.getFullYear() - 1, 11, 31, 23, 59, 59, 999);
       return { start, end };
     }
     if (datePreset === "custom" && customFrom && customTo) {
@@ -360,14 +370,14 @@ export default function AnalyticsClient() {
         <section className="command-card">
           <div className="command-header">
             <div className="view-toggle">
-              {(["all", "this-week", "this-month", "custom"] as DatePreset[]).map((preset) => (
+              {(["all", "this-week", "this-month", "this-year", "last-year", "custom"] as DatePreset[]).map((preset) => (
                 <button
                   key={preset}
                   type="button"
                   className={`toggle-btn${datePreset === preset ? " toggle-btn-active" : ""}`}
                   onClick={() => setDatePreset(preset)}
                 >
-                  {preset === "all" ? "All Time" : preset === "this-week" ? "This Week" : preset === "this-month" ? "This Month" : "Custom"}
+                  {preset === "all" ? "All Time" : preset === "this-week" ? "This Week" : preset === "this-month" ? "This Month" : preset === "this-year" ? "This Year" : preset === "last-year" ? "Last Year" : "Custom"}
                 </button>
               ))}
             </div>

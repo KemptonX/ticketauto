@@ -9,7 +9,7 @@ export default function LoginForm() {
   const searchParams = useSearchParams();
   const nextPath = useMemo(() => searchParams.get("next") || "/orders", [searchParams]);
 
-  const [mode, setMode] = useState<"signin" | "signup">("signin");
+  const [mode, setMode] = useState<"signin" | "signup" | "reset">("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -25,6 +25,19 @@ export default function LoginForm() {
     const trimmedEmail = email.trim().toLowerCase();
 
     try {
+      if (mode === "reset") {
+        const { error: resetError } = await supabase.auth.resetPasswordForEmail(trimmedEmail, {
+          redirectTo: `${window.location.origin}/login`,
+        });
+        if (resetError) {
+          setError(resetError.message);
+        } else {
+          setMessage("Check your email for a password reset link.");
+        }
+        setLoading(false);
+        return;
+      }
+
       if (mode === "signup") {
         const { error: signUpError } = await supabase.auth.signUp({
           email: trimmedEmail,
@@ -124,8 +137,19 @@ export default function LoginForm() {
         {message ? <div className="auth-message">{message}</div> : null}
 
         <button className="primary-button auth-submit" type="submit" disabled={loading}>
-          {loading ? "Working..." : mode === "signin" ? "Open dashboard" : "Create account"}
+          {loading ? "Working..." : mode === "signin" ? "Open dashboard" : mode === "reset" ? "Send reset link" : "Create account"}
         </button>
+
+        {mode === "signin" && (
+          <button type="button" className="auth-forgot" onClick={() => { setMode("reset"); setError(""); setMessage(""); }}>
+            Forgot password?
+          </button>
+        )}
+        {mode === "reset" && (
+          <button type="button" className="auth-forgot" onClick={() => { setMode("signin"); setError(""); setMessage(""); }}>
+            Back to sign in
+          </button>
+        )}
       </form>
     </div>
   );
