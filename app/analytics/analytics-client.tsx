@@ -54,6 +54,8 @@ const navItems = [
   { label: "Tickets", href: "/orders", active: false },
   { label: "Sales", href: "/sales", active: false },
   { label: "Analytics", href: "/analytics", active: true },
+  { label: "Costs", href: "/costs", active: false },
+  { label: "Calculator", href: "/viagogo-calculator", active: false },
 ];
 
 const accentColors = ["#FF4FA3", "#9B5CFF", "#4FC3FF", "#67F0A5", "#FFB84F", "#FF7D7D"];

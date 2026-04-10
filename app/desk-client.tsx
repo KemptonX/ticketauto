@@ -34,6 +34,8 @@ const navItems = [
   { label: "Tickets", href: "/orders", active: false },
   { label: "Sales", href: "/sales", active: false },
   { label: "Analytics", href: "/analytics", active: false },
+  { label: "Costs", href: "/costs", active: false },
+  { label: "Calculator", href: "/viagogo-calculator", active: false },
 ];
 
 export default function DeskClient() {
