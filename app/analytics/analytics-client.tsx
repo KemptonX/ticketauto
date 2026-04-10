@@ -219,7 +219,7 @@ export default function AnalyticsClient() {
   const filteredOrders = useMemo(() => {
     if (!dateRange) return orders;
     return orders.filter((order) => {
-      const date = parseEventDate(order.event_date) ?? parseDate(order.purchased_at) ?? parseDate(order.created_at);
+      const date = parseEventDate(order.event_date);
       if (!date) return false;
       return date >= dateRange.start && date <= dateRange.end;
     });
@@ -727,17 +727,23 @@ function parseDate(value: string | null) {
 
 function parseEventDate(value: string | null): Date | null {
   if (!value) return null;
+  const MONTHS = ["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"];
   // ISO date
   if (/^\d{4}-\d{2}-\d{2}/.test(value)) {
     const [y, m, d] = value.slice(0, 10).split("-").map(Number);
     return new Date(y, m - 1, d);
   }
-  // "Friday 29 May 2026 18:30" or "29 May 2026"
-  const match = value.match(/(\d{1,2})\s+([A-Za-z]{3,9})\s+(\d{4})/);
-  if (match) {
-    const months = ["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"];
-    const monthIndex = months.indexOf(match[2].slice(0,3).toLowerCase());
-    if (monthIndex !== -1) return new Date(Number(match[3]), monthIndex, Number(match[1]));
+  // "Friday 29 May 2026 18:30" or "29 May 2026" — day first
+  const dayFirst = value.match(/(\d{1,2})\s+([A-Za-z]{3,9})\s+(\d{4})/);
+  if (dayFirst) {
+    const mi = MONTHS.indexOf(dayFirst[2].slice(0,3).toLowerCase());
+    if (mi !== -1) return new Date(Number(dayFirst[3]), mi, Number(dayFirst[1]));
+  }
+  // "Sunday, July 20, 2025" or "July 20, 2025" — month first
+  const monthFirst = value.match(/([A-Za-z]{3,9})\s+(\d{1,2}),?\s+(\d{4})/);
+  if (monthFirst) {
+    const mi = MONTHS.indexOf(monthFirst[1].slice(0,3).toLowerCase());
+    if (mi !== -1) return new Date(Number(monthFirst[3]), mi, Number(monthFirst[2]));
   }
   return null;
 }
@@ -746,7 +752,7 @@ function buildProfitSeries(orders: Order[]): SeriesPoint[] {
   const map = new Map<string, SeriesPoint>();
 
   for (const order of orders) {
-    const date = parseDate(order.purchased_at) ?? parseDate(order.created_at);
+    const date = parseEventDate(order.event_date) ?? parseDate(order.purchased_at) ?? parseDate(order.created_at);
     if (!date) {
       continue;
     }
