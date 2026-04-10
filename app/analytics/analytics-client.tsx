@@ -305,13 +305,15 @@ export default function AnalyticsClient() {
 
         <div className="sidebar-footer">
           <div className="sidebar-settings-box">
-            <p className="sidebar-settings-title">Settings</p>
-            <Link href="/connections" className="sidebar-settings-link">
-              Connections
-            </Link>
-            <button className="sidebar-settings-link sidebar-settings-button" type="button" onClick={handleLogout}>
-              Log out
-            </button>
+            <p className="sidebar-panel-label">Settings</p>
+            <div className="sidebar-settings-actions">
+              <Link href="/connections" className="sidebar-panel-link">
+                Connections
+              </Link>
+              <button type="button" className="sidebar-panel-link sidebar-logout-button" onClick={handleLogout}>
+                Log out
+              </button>
+            </div>
           </div>
         </div>
       </aside>
