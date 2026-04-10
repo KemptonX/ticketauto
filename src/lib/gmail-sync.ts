@@ -32,6 +32,9 @@ type GmailMessage = {
 type SyncResult = {
   scanned: number;
   inserted: number;
+  updated: number;
+  insertedRefs: string[];
+  updatedRefs: string[];
   email: string;
 };
 
@@ -66,6 +69,9 @@ export async function syncGmailInbox({
   const messages = await listMessages(accessToken, GMAIL_QUERY);
 
   let inserted = 0;
+  let updated = 0;
+  const insertedRefs: string[] = [];
+  const updatedRefs: string[] = [];
 
   for (const message of messages) {
     const fullMessage = await getMessage(accessToken, message.id);
@@ -80,15 +86,10 @@ export async function syncGmailInbox({
     }
 
     const accountEmail = extractAccount(headers, combined);
-    const duplicate = await isDuplicateOrder(supabase, {
+    const existingOrder = await findExistingOrder(supabase, {
       bookingRef,
       userId,
     });
-
-    if (duplicate) {
-      await markMessageProcessed(accessToken, message.id, labelId);
-      continue;
-    }
 
     const section = parseSection(combined);
     const row = parseRow(combined);
@@ -113,12 +114,46 @@ export async function syncGmailInbox({
       user_id: userId,
     };
 
+    if (existingOrder) {
+      const { error } = await supabase
+        .from("orders")
+        .update({
+          event_name: orderData.event_name || existingOrder.event_name,
+          venue: orderData.venue || existingOrder.venue,
+          event_date: orderData.event_date || existingOrder.event_date,
+          purchased_at: orderData.purchased_at || existingOrder.purchased_at,
+          account_email: orderData.account_email || existingOrder.account_email,
+          section: orderData.section || existingOrder.section,
+          row: orderData.row || existingOrder.row,
+          seat_from: orderData.seat_from || existingOrder.seat_from,
+          seat_to: orderData.seat_to || existingOrder.seat_to,
+          qty_bought: orderData.qty_bought ?? existingOrder.qty_bought,
+          total_cost: orderData.total_cost ?? existingOrder.total_cost,
+          listing_status:
+            existingOrder.listing_status === "Archived"
+              ? "Unlisted"
+              : existingOrder.listing_status ?? "Unlisted",
+          source_type: orderData.source_type || existingOrder.source_type,
+        })
+        .eq("id", existingOrder.id);
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      updated += 1;
+      updatedRefs.push(bookingRef);
+      await markMessageProcessed(accessToken, message.id, labelId);
+      continue;
+    }
+
     const { error } = await supabase.from("orders").insert(orderData);
     if (error) {
       throw new Error(error.message);
     }
 
     inserted += 1;
+    insertedRefs.push(bookingRef);
     await markMessageProcessed(accessToken, message.id, labelId);
   }
 
@@ -133,6 +168,9 @@ export async function syncGmailInbox({
   return {
     scanned: messages.length,
     inserted,
+    updated,
+    insertedRefs,
+    updatedRefs,
     email: gmailAccount.email,
   };
 }
@@ -276,7 +314,24 @@ async function markMessageProcessed(accessToken: string, messageId: string, labe
   });
 }
 
-async function isDuplicateOrder(
+type ExistingOrder = {
+  id: number;
+  event_name: string | null;
+  venue: string | null;
+  event_date: string | null;
+  purchased_at: string | null;
+  account_email: string | null;
+  section: string | null;
+  row: string | null;
+  seat_from: string | null;
+  seat_to: string | null;
+  qty_bought: number | null;
+  total_cost: number | null;
+  listing_status: string | null;
+  source_type: string | null;
+};
+
+async function findExistingOrder(
   supabase: SupabaseClient,
   {
     bookingRef,
@@ -285,15 +340,16 @@ async function isDuplicateOrder(
 ) {
   const { data, error } = await supabase
     .from("orders")
-    .select("id")
+    .select("id, event_name, venue, event_date, purchased_at, account_email, section, row, seat_from, seat_to, qty_bought, total_cost, listing_status, source_type")
     .eq("booking_ref", bookingRef)
     .eq("user_id", userId)
-    .limit(1);
+    .limit(1)
+    .maybeSingle();
   if (error) {
     throw new Error(error.message);
   }
 
-  return Boolean(data && data.length > 0);
+  return (data as ExistingOrder | null) ?? null;
 }
 
 function getHeader(headers: GmailHeader[], name: string) {
@@ -442,9 +498,18 @@ function parseBookingRef(subject: string, text: string) {
 }
 
 function parseEvent(subject: string) {
+  const orderUpdateMatch = subject.match(
+    /Order Update\s+RE\d+\s+-\s+[A-Z0-9]+\s+-\s+(.+?)\s+(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\s+\d{1,2}\s+[A-Z][a-z]{2,8}\s+\d{4}/i,
+  );
+  if (orderUpdateMatch?.[1]) {
+    return orderUpdateMatch[1].trim();
+  }
+
   const dayMatch = subject.match(/-\s*(.+?)\s+(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)/i);
   if (dayMatch?.[1]) {
-    return dayMatch[1].trim();
+    return dayMatch[1]
+      .replace(/^[A-Z0-9]+\s+-\s+/i, "")
+      .trim();
   }
 
   const lines = subject.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
@@ -477,6 +542,7 @@ function parseEvent(subject: string) {
 function parseDate(subject: string) {
   return (
     subject.match(/((?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday).*?\d{2}:\d{2})/i)?.[1] ||
+    subject.match(/\b(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\s+\d{1,2}\s+[A-Z][a-z]{2,8}\s+\d{4}\b/i)?.[0] ||
     subject.match(/\b(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+\d{2}\s+[A-Z][a-z]{2}\s+\d{4}\s+[•\-]?\s*\d{1,2}:\d{2}\s*(?:am|pm)?\b/i)?.[0] ||
     ""
   );

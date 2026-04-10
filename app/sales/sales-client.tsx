@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { autoArchiveExpiredSales } from "@/src/lib/archive-rules";
 import { supabase } from "@/src/lib/supabase";
 
 type Sale = {
@@ -38,6 +39,7 @@ type MatchedOrder = {
   sold_total: number | null;
   qty_bought: number | null;
   account_email: string | null;
+  listing_status: string | null;
   section: string | null;
   row: string | null;
   seat_from: string | null;
@@ -52,6 +54,7 @@ type SaleGroup = {
   eventName: string;
   venue: string;
   eventDate: string;
+  dateValue: Date | null;
   sales: Sale[];
   salesCount: number;
   ticketsSold: number;
@@ -64,8 +67,9 @@ type SaleGroup = {
 
 const navItems = [
   { label: "Dashboard", href: "/orders", active: false },
-  { label: "Sales", href: "/sales", active: true },
   { label: "Inventory", href: "/inventory", active: false },
+  { label: "Sales", href: "/sales", active: true },
+  { label: "Archived Sales", href: "/archived-sales", active: false },
   { label: "Analytics", href: "/analytics", active: false },
 ];
 
@@ -83,8 +87,11 @@ export default function SalesClient() {
   const [matchFilter, setMatchFilter] = useState("All");
   const [monthFilter, setMonthFilter] = useState("All");
   const [accountFilter, setAccountFilter] = useState("All");
+  const [sortByDate, setSortByDate] = useState<"closest" | "latest">("closest");
   const [expandedGroups, setExpandedGroups] = useState<string[]>([]);
   const [selectedSaleId, setSelectedSaleId] = useState<number | null>(null);
+  const [matchingOrderId, setMatchingOrderId] = useState<number | null>(null);
+  const [unmatching, setUnmatching] = useState(false);
 
   useEffect(() => {
     void loadSales();
@@ -102,9 +109,21 @@ export default function SalesClient() {
       setLoading(true);
     }
 
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (user) {
+      await autoArchiveExpiredSales({
+        supabase,
+        userId: user.id,
+      });
+    }
+
     const { data, error } = await supabase
       .from("sales")
       .select("*")
+      .neq("sale_status", "Archived")
       .order("sold_at", { ascending: false })
       .order("created_at", { ascending: false });
 
@@ -193,6 +212,128 @@ export default function SalesClient() {
     setMessage("Sale row deleted");
   }
 
+  async function archiveSale(sale: Sale) {
+    const confirmed = window.confirm("Move this sale to Archived Sales?");
+    if (!confirmed) {
+      return;
+    }
+
+    setMessage("");
+
+    const { error } = await supabase
+      .from("sales")
+      .update({ sale_status: "Archived" })
+      .eq("id", sale.id);
+
+    if (error) {
+      setMessage(error.message);
+      return;
+    }
+
+    setSales((current) => current.filter((row) => row.id !== sale.id));
+    if (selectedSaleId === sale.id) {
+      setSelectedSaleId(null);
+    }
+    setMessage("Sale archived");
+  }
+
+  async function syncOrderFromSales(orderId: number) {
+    const { data, error } = await supabase
+      .from("sales")
+      .select("sale_total, payout_total")
+      .eq("inventory_order_id", orderId);
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    const linkedSales = data || [];
+    const soldTotal = linkedSales.reduce((sum, sale) => sum + ((sale as { sale_total?: number | null; payout_total?: number | null }).payout_total ?? (sale as { sale_total?: number | null }).sale_total ?? 0), 0);
+
+    const { error: updateError } = await supabase
+      .from("orders")
+      .update({
+        sold_total: linkedSales.length > 0 ? soldTotal : null,
+        listing_status: linkedSales.length > 0 ? "Sold" : "Unlisted",
+      })
+      .eq("id", orderId);
+
+    if (updateError) {
+      throw new Error(updateError.message);
+    }
+  }
+
+  async function matchSaleToOrder(sale: Sale, order: MatchedOrder, score: number) {
+    setMatchingOrderId(order.id);
+    setMessage("");
+
+    try {
+      const previousOrderId = sale.inventory_order_id;
+      const { error } = await supabase
+        .from("sales")
+        .update({
+          inventory_order_id: order.id,
+          match_confidence: Number((score / 100).toFixed(2)),
+        })
+        .eq("id", sale.id);
+
+      if (error) {
+        setMessage(error.message);
+        return;
+      }
+
+      await syncOrderFromSales(order.id);
+      if (previousOrderId != null && previousOrderId !== order.id) {
+        await syncOrderFromSales(previousOrderId);
+      }
+
+      await loadSales(true);
+      setMessage(`Matched ${sale.external_sale_id || "sale"} to ${order.booking_ref || "ticket"}`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to match sale");
+    } finally {
+      setMatchingOrderId(null);
+    }
+  }
+
+  async function unmatchSale(sale: Sale) {
+    if (sale.inventory_order_id == null) {
+      return;
+    }
+
+    const confirmed = window.confirm("Remove the current matched ticket from this sale?");
+    if (!confirmed) {
+      return;
+    }
+
+    setUnmatching(true);
+    setMessage("");
+
+    try {
+      const previousOrderId = sale.inventory_order_id;
+      const { error } = await supabase
+        .from("sales")
+        .update({
+          inventory_order_id: null,
+          match_confidence: null,
+        })
+        .eq("id", sale.id);
+
+      if (error) {
+        setMessage(error.message);
+        return;
+      }
+
+      await syncOrderFromSales(previousOrderId);
+      await loadSales(true);
+      setMessage("Sale unmatched");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to unmatch sale");
+    } finally {
+      setUnmatching(false);
+    }
+  }
+
   function toggleGroup(key: string) {
     setExpandedGroups((current) =>
       current.includes(key) ? current.filter((value) => value !== key) : [...current, key],
@@ -204,6 +345,7 @@ export default function SalesClient() {
     setMatchFilter("All");
     setMonthFilter("All");
     setAccountFilter("All");
+    setSortByDate("closest");
   }
 
   const monthOptions = useMemo(() => {
@@ -264,6 +406,7 @@ export default function SalesClient() {
           eventName,
           venue,
           eventDate,
+          dateValue: parseEventDateValue(eventDate),
           sales: [],
           salesCount: 0,
           ticketsSold: 0,
@@ -291,12 +434,23 @@ export default function SalesClient() {
     }
 
     return Array.from(map.values()).sort((a, b) => {
+      if (a.dateValue && b.dateValue) {
+        return sortByDate === "closest"
+          ? a.dateValue.getTime() - b.dateValue.getTime()
+          : b.dateValue.getTime() - a.dateValue.getTime();
+      }
+      if (a.dateValue) {
+        return sortByDate === "closest" ? -1 : 1;
+      }
+      if (b.dateValue) {
+        return sortByDate === "closest" ? 1 : -1;
+      }
       if (a.unmatchedCount !== b.unmatchedCount) {
         return b.unmatchedCount - a.unmatchedCount;
       }
       return b.soldFor - a.soldFor;
     });
-  }, [filteredSales, matchedOrders, allOrders]);
+  }, [filteredSales, matchedOrders, allOrders, sortByDate]);
 
   const metrics = useMemo(() => {
     const totalSales = filteredSales.length;
@@ -339,6 +493,10 @@ export default function SalesClient() {
   const selectedSale = sales.find((sale) => sale.id === selectedSaleId) || null;
   const selectedOrder = selectedSale ? getReferenceOrderForSale(selectedSale, matchedOrders, allOrders) : null;
   const selectedProfit = selectedSale ? getSaleProfit(selectedSale, selectedOrder) : null;
+  const matchSuggestions = useMemo(
+    () => (selectedSale ? getMatchSuggestions(selectedSale, allOrders) : []),
+    [selectedSale, allOrders],
+  );
 
   return (
     <div className="orders-shell">
@@ -487,6 +645,13 @@ export default function SalesClient() {
                     {option}
                   </option>
                 ))}
+              </select>
+            </label>
+            <label className="field-label">
+              <span>Sort By</span>
+              <select className="field field-compact" value={sortByDate} onChange={(event) => setSortByDate(event.target.value as "closest" | "latest")}>
+                <option value="closest">Event Date: Closest to Latest</option>
+                <option value="latest">Event Date: Latest to Closest</option>
               </select>
             </label>
           </div>
@@ -728,12 +893,83 @@ export default function SalesClient() {
 
             <div className="drawer-actions">
               <button
+                className="secondary-button"
+                type="button"
+                onClick={() => void archiveSale(selectedSale)}
+              >
+                Archive Sale
+              </button>
+              {selectedSale.inventory_order_id != null ? (
+                <button
+                  className="secondary-button"
+                  type="button"
+                  onClick={() => void unmatchSale(selectedSale)}
+                  disabled={unmatching}
+                >
+                  {unmatching ? "Unmatching..." : "Unmatch Sale"}
+                </button>
+              ) : null}
+              <button
                 className="danger-button"
                 type="button"
                 onClick={() => void deleteSale(selectedSale.id)}
               >
                 Delete Sale
               </button>
+            </div>
+
+            <section className="drawer-summary">
+              <div>
+                <span>Match suggestions</span>
+                <strong>{matchSuggestions.length > 0 ? `${matchSuggestions.length} options` : "No candidates"}</strong>
+              </div>
+              <div>
+                <span>Scored by</span>
+                <strong>Artist + date first</strong>
+              </div>
+            </section>
+
+            <div className="inventory-ticket-stack">
+              <div className="inventory-ticket-header">
+                <span>Ticket</span>
+                <span>Account</span>
+                <span>Match %</span>
+                <span>Action</span>
+              </div>
+              {matchSuggestions.length === 0 ? (
+                <div className="inventory-ticket-row">
+                  <div className="inventory-ticket-seat">
+                    <strong>No strong candidates</strong>
+                    <span>Try rescanning after more inventory lands.</span>
+                  </div>
+                  <span>—</span>
+                  <strong className="inventory-cost-value">—</strong>
+                  <span className="status-badge status-static status-unlisted">None</span>
+                </div>
+              ) : (
+                matchSuggestions.map(({ order, score }) => (
+                  <div key={order.id} className="inventory-ticket-row">
+                    <div className="inventory-ticket-seat">
+                      <strong>{order.booking_ref || order.event_name || "Ticket"}</strong>
+                      <span>
+                        {order.section || "Section —"} • {formatSeatLabel(order.row, order.seat_from, order.seat_to)}
+                      </span>
+                    </div>
+                    <span className="truncate-text" title={order.account_email || ""}>
+                      {order.account_email || "No account"}
+                    </span>
+                    <strong className="inventory-cost-value">{score}%</strong>
+                    <button
+                      className="secondary-button"
+                      type="button"
+                      onClick={() => void matchSaleToOrder(selectedSale, order, score)}
+                      disabled={matchingOrderId === order.id}
+                    >
+                      {matchingOrderId === order.id ? "Matching..." : "Match"}
+                    </button>
+                  </div>
+                ))
+              )}
             </div>
           </div>
         ) : (
@@ -754,7 +990,7 @@ function getSaleProfit(sale: Sale, order?: MatchedOrder | null) {
     return 0;
   }
 
-  return (sale.payout_total ?? sale.sale_total ?? 0) - (order?.total_cost ?? 0);
+  return (sale.payout_total ?? sale.sale_total ?? 0) - getSaleCost(sale, order);
 }
 
 function getSaleCost(sale: Sale, order?: MatchedOrder | null) {
@@ -800,6 +1036,52 @@ function getReferenceOrderForSale(
   }
 
   return best && best.score >= 0.45 ? best.order : null;
+}
+
+function getMatchSuggestions(sale: Sale, orders: MatchedOrder[]) {
+  return orders
+    .filter((order) => order.listing_status !== "Sold" || order.id === sale.inventory_order_id)
+    .map((order) => ({
+      order,
+      score: getManualMatchScore(sale, order),
+    }))
+    .filter((item) => item.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 8);
+}
+
+function getManualMatchScore(sale: Sale, order: MatchedOrder) {
+  const eventScore = compareText(order.event_name, sale.event_name);
+  const dateScore = compareEventDay(order.event_date, sale.event_date);
+  const venueScore = compareText(order.venue, sale.venue);
+  const sectionScore = compareSectionForUi(order.section, sale.section);
+  const rowScore = compareExact(order.row, sale.row);
+  const seatScore = compareSeats(order.seat_from, order.seat_to, sale.seat_from, sale.seat_to);
+
+  if (eventScore === 0 || dateScore === 0) {
+    return 0;
+  }
+
+  const total =
+    eventScore * 0.6 +
+    dateScore * 0.25 +
+    venueScore * 0.08 +
+    sectionScore * 0.04 +
+    rowScore * 0.02 +
+    seatScore * 0.01;
+
+  return Math.round(total * 100);
+}
+
+function compareSectionForUi(left?: string | null, right?: string | null) {
+  const leftSectionNumber = extractSectionNumber(left);
+  const rightSectionNumber = extractSectionNumber(right);
+
+  if (leftSectionNumber && rightSectionNumber && leftSectionNumber === rightSectionNumber) {
+    return 0.95;
+  }
+
+  return compareText(left, right);
 }
 
 function compareText(left?: string | null, right?: string | null) {
@@ -856,6 +1138,15 @@ function normalizeCompareValue(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
+function extractSectionNumber(value?: string | null) {
+  if (!value) {
+    return null;
+  }
+
+  const match = value.match(/(\d{1,4})/);
+  return match?.[1] || null;
+}
+
 function getDateKey(value?: string | null) {
   if (!value) {
     return null;
@@ -877,6 +1168,37 @@ function getDateKey(value?: string | null) {
   }
 
   return fallback.toISOString().slice(0, 10);
+}
+
+function parseEventDateValue(value?: string | null) {
+  if (!value) {
+    return null;
+  }
+
+  const normalized = value.replace(/\s*\|\s*/g, " ").replace(/,\s*/g, ", ").trim();
+
+  const parsed = new Date(normalized);
+  if (!Number.isNaN(parsed.getTime())) {
+    return parsed;
+  }
+
+  const monthFirstMatch = normalized.match(/([A-Za-z]+)\s+(\d{1,2})\s+(\d{4})(?:\s+(\d{1,2}):(\d{2}))?/);
+  if (monthFirstMatch) {
+    const [, month, day, year, hour = "00", minute = "00"] = monthFirstMatch;
+    const fallback = new Date(`${month} ${day} ${year} ${hour}:${minute}`);
+    if (!Number.isNaN(fallback.getTime())) {
+      return fallback;
+    }
+  }
+
+  const match = normalized.match(/(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})(?:\s+(\d{1,2}):(\d{2}))?/);
+  if (!match) {
+    return null;
+  }
+
+  const [, day, month, year, hour = "00", minute = "00"] = match;
+  const fallback = new Date(`${day} ${month} ${year} ${hour}:${minute}`);
+  return Number.isNaN(fallback.getTime()) ? null : fallback;
 }
 
 function getDeltaTone(value: number | null) {

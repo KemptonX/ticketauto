@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { autoArchiveExpiredOrders } from "@/src/lib/archive-rules";
 import { supabase } from "@/src/lib/supabase";
 
 type Order = {
@@ -24,6 +25,11 @@ type Order = {
   created_at: string | null;
 };
 
+type ArchivedSaleSummary = {
+  inventory_order_id: number | null;
+  qty_sold: number | null;
+};
+
 type InventoryGroup = {
   key: string;
   eventName: string;
@@ -44,8 +50,9 @@ type InventoryGroup = {
 
 const navItems = [
   { label: "Dashboard", href: "/orders", active: false },
-  { label: "Sales", href: "/sales", active: false },
   { label: "Inventory", href: "/inventory", active: true },
+  { label: "Sales", href: "/sales", active: false },
+  { label: "Archived Sales", href: "/archived-sales", active: false },
   { label: "Analytics", href: "/analytics", active: false },
 ];
 
@@ -54,6 +61,7 @@ const dateFilterOptions = ["All", "This week", "This month"];
 
 export default function InventoryClient() {
   const [orders, setOrders] = useState<Order[]>([]);
+  const [archivedSalesByOrder, setArchivedSalesByOrder] = useState<Record<number, number>>({});
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [message, setMessage] = useState("");
@@ -63,6 +71,7 @@ export default function InventoryClient() {
   const [dateFilter, setDateFilter] = useState("All");
   const [monthFilter, setMonthFilter] = useState("All");
   const [accountFilter, setAccountFilter] = useState("All");
+  const [sortByDate, setSortByDate] = useState<"closest" | "latest">("closest");
   const [expandedGroups, setExpandedGroups] = useState<string[]>([]);
 
   useEffect(() => {
@@ -80,15 +89,52 @@ export default function InventoryClient() {
       setLoading(true);
     }
 
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (user) {
+      await autoArchiveExpiredOrders({
+        supabase,
+        userId: user.id,
+      });
+    }
+
     const { data, error } = await supabase
       .from("orders")
       .select("*")
+      .neq("listing_status", "Archived")
       .order("event_date", { ascending: true });
 
     if (error) {
       setMessage(error.message);
     } else {
       setOrders((data as Order[]) || []);
+
+      const { data: archivedSales, error: archivedSalesError } = await supabase
+        .from("sales")
+        .select("inventory_order_id, qty_sold")
+        .eq("sale_status", "Archived");
+
+      if (archivedSalesError) {
+        setMessage(archivedSalesError.message);
+      } else {
+        const archivedMap = ((archivedSales as ArchivedSaleSummary[]) || []).reduce<Record<number, number>>(
+          (acc, sale) => {
+            if (sale.inventory_order_id == null) {
+              return acc;
+            }
+
+            acc[sale.inventory_order_id] =
+              (acc[sale.inventory_order_id] ?? 0) + (sale.qty_sold ?? 1);
+            return acc;
+          },
+          {},
+        );
+
+        setArchivedSalesByOrder(archivedMap);
+      }
+
       if (showRefreshing) {
         setMessage("Inventory refreshed");
       }
@@ -110,7 +156,9 @@ export default function InventoryClient() {
     setSearch("");
     setStatusFilter("All");
     setDateFilter("All");
+    setMonthFilter("All");
     setAccountFilter("All");
+    setSortByDate("closest");
   }
 
   const artistOptions = useMemo(() => {
@@ -136,6 +184,15 @@ export default function InventoryClient() {
 
   const filteredOrders = useMemo(() => {
     return orders.filter((order) => {
+      const remainingQty = getRemainingInventoryQuantity(
+        order,
+        archivedSalesByOrder[order.id] ?? 0,
+      );
+
+      if (remainingQty <= 0) {
+        return false;
+      }
+
       const status = normalizeStatus(order.listing_status);
       const eventDate = parseEventDate(order.event_date);
       const daysAway = getDaysAway(eventDate);
@@ -159,7 +216,7 @@ export default function InventoryClient() {
 
       return matchesSearch && matchesStatus && matchesDate && matchesAccount;
     });
-  }, [orders, search, artistFilter, statusFilter, dateFilter, monthFilter, accountFilter]);
+  }, [orders, archivedSalesByOrder, search, artistFilter, statusFilter, dateFilter, monthFilter, accountFilter]);
 
   const groupedInventory = useMemo(() => {
     const map = new Map<string, InventoryGroup>();
@@ -170,7 +227,10 @@ export default function InventoryClient() {
       const eventDate = order.event_date || "Date missing";
       const dateValue = parseEventDate(order.event_date);
       const key = `${eventName}__${venue}__${eventDate}`;
-      const quantity = getTicketQuantity(order);
+      const quantity = getRemainingInventoryQuantity(
+        order,
+        archivedSalesByOrder[order.id] ?? 0,
+      );
       const status = normalizeStatus(order.listing_status);
       const isSold = status === "Sold";
       const unsoldTickets = isSold ? 0 : quantity;
@@ -222,15 +282,23 @@ export default function InventoryClient() {
     }
 
     return Array.from(map.values()).sort((a, b) => {
+      if (a.dateValue && b.dateValue) {
+        return sortByDate === "closest"
+          ? a.dateValue.getTime() - b.dateValue.getTime()
+          : b.dateValue.getTime() - a.dateValue.getTime();
+      }
+      if (a.dateValue) {
+        return sortByDate === "closest" ? -1 : 1;
+      }
+      if (b.dateValue) {
+        return sortByDate === "closest" ? 1 : -1;
+      }
       if (a.isRisk !== b.isRisk) {
         return a.isRisk ? -1 : 1;
       }
-      if (a.dateValue && b.dateValue) {
-        return a.dateValue.getTime() - b.dateValue.getTime();
-      }
       return a.eventName.localeCompare(b.eventName);
     });
-  }, [filteredOrders]);
+  }, [filteredOrders, archivedSalesByOrder, sortByDate]);
 
   const metrics = useMemo(() => {
     const ticketsRemaining = groupedInventory.reduce((sum, group) => sum + group.unsoldTickets, 0);
@@ -240,12 +308,12 @@ export default function InventoryClient() {
 
     return [
       {
-        label: "Tickets Remaining",
+        label: "Stock Left",
         value: String(ticketsRemaining),
         detail: ticketsRemaining > 0 ? "Unsold across inventory" : "No open stock",
       },
       {
-        label: "Inventory Value",
+        label: "Stock Value",
         value: formatCurrency(inventoryValue),
         detail: inventoryValue > 0 ? "Cost tied up in stock" : "No capital tied up",
       },
@@ -327,7 +395,7 @@ export default function InventoryClient() {
               <strong>{groupedInventory.length}</strong>
             </div>
             <div>
-              <span className="hero-meta-label">Unsold</span>
+              <span className="hero-meta-label">Stock Left</span>
               <strong>{metrics[0].value}</strong>
             </div>
           </div>
@@ -427,6 +495,14 @@ export default function InventoryClient() {
                 ))}
               </select>
             </label>
+
+            <label className="filter-field">
+              <span className="filter-label">Sort By</span>
+              <select className="field" value={sortByDate} onChange={(event) => setSortByDate(event.target.value as "closest" | "latest")}>
+                <option value="closest">Event Date: Closest to Latest</option>
+                <option value="latest">Event Date: Latest to Closest</option>
+              </select>
+            </label>
           </div>
         </section>
 
@@ -480,7 +556,7 @@ export default function InventoryClient() {
                             <strong>{group.unsoldTickets}</strong>
                           </div>
                           <div className="inventory-metric-chip">
-                            <span>Value</span>
+                            <span>Stock Value</span>
                             <strong>{formatCurrency(group.totalValue)}</strong>
                           </div>
                           <div className="inventory-status-row">
@@ -573,6 +649,10 @@ function getTicketQuantity(order: Order) {
     return order.qty_bought;
   }
   return 1;
+}
+
+function getRemainingInventoryQuantity(order: Order, archivedQty: number) {
+  return Math.max(0, getTicketQuantity(order) - archivedQty);
 }
 
 function parseEventDate(value: string | null) {

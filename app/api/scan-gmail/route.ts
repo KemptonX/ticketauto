@@ -1,4 +1,5 @@
 ﻿import { NextResponse } from "next/server";
+import { autoArchiveExpiredOrders } from "@/src/lib/archive-rules";
 import { createSupabaseServerClient } from "@/src/lib/supabase-server";
 import { syncGmailInbox } from "@/src/lib/gmail-sync";
 
@@ -41,6 +42,11 @@ export async function POST() {
         { status: 400 },
       );
     }
+
+    await autoArchiveExpiredOrders({
+      supabase,
+      userId: user.id,
+    });
 
     const result = await syncGmailInbox({
       supabase,

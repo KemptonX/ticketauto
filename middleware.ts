@@ -4,6 +4,7 @@ import { createServerClient } from "@supabase/ssr";
 const protectedRoutes = [
   "/orders",
   "/sales",
+  "/archived-sales",
   "/inventory",
   "/analytics",
   "/connections",
@@ -56,6 +57,7 @@ export const config = {
     "/login",
     "/orders/:path*",
     "/sales/:path*",
+    "/archived-sales/:path*",
     "/inventory/:path*",
     "/analytics/:path*",
     "/connections/:path*",

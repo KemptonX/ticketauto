@@ -1,4 +1,5 @@
 ﻿import { NextResponse } from "next/server";
+import { autoArchiveExpiredSales } from "@/src/lib/archive-rules";
 import { createSupabaseServerClient } from "@/src/lib/supabase-server";
 import { rematchViagogoSales, syncViagogoSalesInbox } from "@/src/lib/viagogo-sales-sync";
 
@@ -34,6 +35,11 @@ export async function POST() {
         { status: 400 },
       );
     }
+
+    await autoArchiveExpiredSales({
+      supabase,
+      userId: user.id,
+    });
 
     const totals = {
       scanned: 0,

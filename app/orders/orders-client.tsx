@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { autoArchiveExpiredOrders } from "@/src/lib/archive-rules";
 import { supabase } from "@/src/lib/supabase";
 
 type Order = {
@@ -35,8 +36,9 @@ const sourceOptions = [
 
 const navItems = [
   { label: "Dashboard", href: "/orders", active: true },
-  { label: "Sales", href: "/sales", active: false },
   { label: "Inventory", href: "/inventory", active: false },
+  { label: "Sales", href: "/sales", active: false },
+  { label: "Archived Sales", href: "/archived-sales", active: false },
   { label: "Analytics", href: "/analytics", active: false },
 ];
 
@@ -71,9 +73,21 @@ export default function OrdersClient() {
       setLoading(true);
     }
 
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (user) {
+      await autoArchiveExpiredOrders({
+        supabase,
+        userId: user.id,
+      });
+    }
+
     const { data, error } = await supabase
       .from("orders")
       .select("*")
+      .or("listing_status.is.null,listing_status.neq.Archived")
       .order("created_at", { ascending: false });
 
     if (error) {
@@ -114,7 +128,20 @@ export default function OrdersClient() {
       }
 
       await loadOrders(true);
-      setMessage("Inbox scan complete");
+      const inserted = Number(result.inserted ?? 0);
+      const updated = Number(result.updated ?? 0);
+      const updatedRefs = Array.isArray(result.updatedRefs) ? result.updatedRefs : [];
+      const insertedRefs = Array.isArray(result.insertedRefs) ? result.insertedRefs : [];
+
+      if (insertedRefs.length > 0 || updatedRefs.length > 0) {
+        resetFilters();
+        const focusRef = insertedRefs[0] || updatedRefs[0];
+        if (focusRef) {
+          setSearch(focusRef);
+        }
+      }
+
+      setMessage(`Inbox scan complete: ${inserted} new, ${updated} updated`);
     } catch {
       setMessage("Inbox scan failed");
     } finally {
@@ -625,18 +652,19 @@ export default function OrdersClient() {
                     <th>Booking Ref</th>
                     <th>Seats</th>
                     <th>Account</th>
-                    <th>Bought</th>
-                    <th>Cost</th>
-                    <th>Status</th>
-                    <th>Sold Total</th>
+                    <th>Qty</th>
+                    <th>Bought For</th>
+                    <th>Sold For</th>
                     <th>Profit</th>
                     <th>ROI</th>
+                    <th>Status</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredOrders.map((order) => {
                     const totalCost = order.total_cost ?? 0;
                     const soldTotal = order.sold_total ?? 0;
+                    const quantity = order.qty_bought ?? null;
                     const profit =
                       order.sold_total != null ? soldTotal - totalCost : null;
                     const roi =
@@ -677,34 +705,12 @@ export default function OrdersClient() {
                           </div>
                         </td>
                         <td>
-                          <span
-                            className="truncate-text"
-                            title={order.account_email || ""}
-                          >
+                          <span className="truncate-text" title={order.account_email || ""}>
                             {order.account_email || "No account"}
                           </span>
                         </td>
-                        <td>{formatBoughtAt(order.purchased_at)}</td>
+                        <td>{quantity ?? "—"}</td>
                         <td>{formatCurrency(order.total_cost)}</td>
-                        <td onClick={(event) => event.stopPropagation()}>
-                          <select
-                            className="field field-compact"
-                            value={order.listing_status ?? "Unlisted"}
-                            onChange={(e) =>
-                              void saveQuickField(
-                                order,
-                                "listing_status",
-                                e.target.value,
-                              )
-                            }
-                          >
-                            {quickStatusOptions.map((status) => (
-                              <option key={status} value={status}>
-                                {status}
-                              </option>
-                            ))}
-                          </select>
-                        </td>
                         <td onClick={(event) => event.stopPropagation()}>
                           <input
                             className="field field-compact"
@@ -728,6 +734,25 @@ export default function OrdersClient() {
                         </td>
                         <td className={roi != null && roi > 0 ? "value-up" : ""}>
                           {roi == null ? "—" : `${roi.toFixed(1)}%`}
+                        </td>
+                        <td onClick={(event) => event.stopPropagation()}>
+                          <select
+                            className="field field-compact"
+                            value={order.listing_status ?? "Unlisted"}
+                            onChange={(e) =>
+                              void saveQuickField(
+                                order,
+                                "listing_status",
+                                e.target.value,
+                              )
+                            }
+                          >
+                            {quickStatusOptions.map((status) => (
+                              <option key={status} value={status}>
+                                {status}
+                              </option>
+                            ))}
+                          </select>
                         </td>
                       </tr>
                     );

@@ -49,8 +49,9 @@ type EventProfit = {
 
 const navItems = [
   { label: "Dashboard", href: "/orders", active: false },
-  { label: "Sales", href: "/sales", active: false },
   { label: "Inventory", href: "/inventory", active: false },
+  { label: "Sales", href: "/sales", active: false },
+  { label: "Archived Sales", href: "/archived-sales", active: false },
   { label: "Analytics", href: "/analytics", active: true },
 ];
 

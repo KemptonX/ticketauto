@@ -453,28 +453,60 @@ function findBestInventoryMatch({
   sale: ParsedSale;
 }) {
   let best: { order: CandidateOrder; score: number } | null = null;
+  const sameShowCandidates = orders.filter((order) => {
+    return (
+      compareText(order.event_name, sale.eventName) >= 0.75 &&
+      compareText(order.venue, sale.venue) >= 0.75 &&
+      compareEventDay(order.event_date, sale.eventDate) === 1
+    );
+  }).length;
 
   for (const order of orders) {
-    const soldQty = orderUsage.get(order.id) ?? 0;
-    const orderQty = order.qty_bought ?? 1;
-    const requestedQty = sale.qtySold ?? 1;
-
-    if (soldQty + requestedQty > orderQty) {
-      continue;
-    }
-
     const eventScore = compareText(order.event_name, sale.eventName);
     if (eventScore === 0) {
       continue;
     }
 
+    const venueScore = compareText(order.venue, sale.venue);
+    const dayScore = compareEventDay(order.event_date, sale.eventDate);
+    const sectionScore = compareSection(order.section, sale.section);
+    const rowScore = compareExact(order.row, sale.row);
+    const seatScore = compareSeats(order.seat_from, order.seat_to, sale.seatFrom, sale.seatTo);
+    const quantityScore = compareQuantity(order.qty_bought, sale.qtySold);
+
+    const strongExactSeatMatch =
+      eventScore >= 0.75 &&
+      venueScore >= 0.75 &&
+      dayScore === 1 &&
+      sectionScore >= 0.9 &&
+      rowScore === 1 &&
+      seatScore >= 0.6;
+
+    const soldQty = orderUsage.get(order.id) ?? 0;
+    const orderQty = order.qty_bought ?? 1;
+    const requestedQty = sale.qtySold ?? 1;
+
+    if (soldQty + requestedQty > orderQty && !strongExactSeatMatch) {
+      continue;
+    }
+
     let score = eventScore * 0.4;
-    score += compareText(order.venue, sale.venue) * 0.15;
-    score += compareEventDay(order.event_date, sale.eventDate) * 0.2;
-    score += compareSection(order.section, sale.section) * 0.1;
-    score += compareExact(order.row, sale.row) * 0.05;
-    score += compareSeats(order.seat_from, order.seat_to, sale.seatFrom, sale.seatTo) * 0.15;
-    score += compareQuantity(order.qty_bought, sale.qtySold) * 0.05;
+    score += venueScore * 0.15;
+    score += dayScore * 0.2;
+    score += sectionScore * 0.1;
+    score += rowScore * 0.05;
+    score += seatScore * 0.15;
+    score += quantityScore * 0.05;
+
+    const hasLocationEvidence = sectionScore > 0 || rowScore > 0 || seatScore > 0;
+
+    if (sameShowCandidates > 1 && !hasLocationEvidence && !strongExactSeatMatch) {
+      continue;
+    }
+
+    if (strongExactSeatMatch) {
+      score = Math.max(score, 0.98);
+    }
 
     if (!best || score > best.score) {
       best = { order, score };
