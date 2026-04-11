@@ -691,36 +691,61 @@ export default function SalesClient() {
                         </div>
                         {group.sales.map((sale) => {
                           const matchedOrder = getReferenceOrderForSale(sale, matchedOrders, allOrders);
+                          const isUnmatched = sale.inventory_order_id == null;
+                          const topSuggestion = isUnmatched ? getMatchSuggestions(sale, allOrders)[0] ?? null : null;
                           return (
-                            <div
-                              key={sale.id}
-                              className="inventory-ticket-row"
-                              onClick={() => setSelectedSaleId(sale.id)}
-                              onKeyDown={(event) => {
-                                if (event.key === "Enter" || event.key === " ") {
-                                  event.preventDefault();
-                                  setSelectedSaleId(sale.id);
-                                }
-                              }}
-                              role="button"
-                              tabIndex={0}
-                              style={{ cursor: "pointer" }}
-                            >
-                              <div className="inventory-ticket-seat">
-                                <strong>{sale.section || "Section —"}</strong>
-                                <span>{formatSeatLabel(sale.row, sale.seat_from, sale.seat_to)}</span>
+                            <div key={sale.id}>
+                              <div
+                                className="inventory-ticket-row"
+                                onClick={() => setSelectedSaleId(sale.id)}
+                                onKeyDown={(event) => {
+                                  if (event.key === "Enter" || event.key === " ") {
+                                    event.preventDefault();
+                                    setSelectedSaleId(sale.id);
+                                  }
+                                }}
+                                role="button"
+                                tabIndex={0}
+                                style={{ cursor: "pointer" }}
+                              >
+                                <div className="inventory-ticket-seat">
+                                  <strong>{sale.section || "Section —"}</strong>
+                                  <span>{formatSeatLabel(sale.row, sale.seat_from, sale.seat_to)}</span>
+                                </div>
+                                <span className="truncate-text" title={sale.account_email || ""}>
+                                  {sale.account_email || "No account"}
+                                </span>
+                                <strong className="inventory-cost-value">
+                                  {sale.inventory_order_id != null
+                                    ? formatCurrency(sale.sale_total ?? sale.payout_total)
+                                    : formatCurrency(getSaleCost(sale, matchedOrder))}
+                                </strong>
+                                <span className={`status-badge status-static ${sale.inventory_order_id != null ? "status-sold" : "status-problem"}`}>
+                                  {sale.inventory_order_id != null ? "Matched" : "Unmatched"}
+                                </span>
                               </div>
-                              <span className="truncate-text" title={sale.account_email || ""}>
-                                {sale.account_email || "No account"}
-                              </span>
-                              <strong className="inventory-cost-value">
-                                {sale.inventory_order_id != null
-                                  ? formatCurrency(sale.sale_total ?? sale.payout_total)
-                                  : formatCurrency(getSaleCost(sale, matchedOrder))}
-                              </strong>
-                              <span className={`status-badge status-static ${sale.inventory_order_id != null ? "status-sold" : "status-problem"}`}>
-                                {sale.inventory_order_id != null ? "Matched" : "Unmatched"}
-                              </span>
+                              {isUnmatched && topSuggestion && (
+                                <div className="inline-match-row">
+                                  <div className="inline-match-info">
+                                    <span className="inline-match-label">Best match</span>
+                                    <strong>{topSuggestion.order.booking_ref || topSuggestion.order.event_name || "Ticket"}</strong>
+                                    <span>{topSuggestion.order.section || "—"} · {formatSeatLabel(topSuggestion.order.row, topSuggestion.order.seat_from, topSuggestion.order.seat_to)} · {topSuggestion.score}%</span>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    className="primary-button"
+                                    onClick={(e) => { e.stopPropagation(); void matchSaleToOrder(sale, topSuggestion.order, topSuggestion.score); }}
+                                    disabled={matchingOrderId === topSuggestion.order.id}
+                                  >
+                                    {matchingOrderId === topSuggestion.order.id ? "Matching..." : "Quick match"}
+                                  </button>
+                                </div>
+                              )}
+                              {isUnmatched && !topSuggestion && (
+                                <div className="inline-match-row inline-match-none">
+                                  <span>No candidate found — open detail to search manually</span>
+                                </div>
+                              )}
                             </div>
                           );
                         })}

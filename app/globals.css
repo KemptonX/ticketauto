@@ -399,7 +399,7 @@ select {
 
 .kpi-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(2, 1fr);
   gap: 16px;
 }
 
@@ -647,6 +647,15 @@ select {
   min-width: 1220px;
   border-collapse: separate;
   border-spacing: 0;
+}
+
+.sortable-th {
+  cursor: pointer;
+  user-select: none;
+}
+
+.sortable-th:hover {
+  color: var(--text-primary) !important;
 }
 
 .premium-table thead th {
@@ -1840,6 +1849,154 @@ select {
 .inventory-ticket-seat strong,
 .inventory-cost-value {
   color: var(--text-primary);
+}
+
+.inline-match-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 16px;
+  margin: 0 -24px;
+  background: rgba(99, 102, 241, 0.06);
+  border-top: 1px solid rgba(99, 102, 241, 0.15);
+  border-bottom: 1px solid rgba(99, 102, 241, 0.15);
+}
+
+.inline-match-none {
+  background: rgba(35, 35, 42, 0.3);
+  border-color: rgba(35, 35, 42, 0.4);
+  font-size: 12px;
+  color: var(--text-secondary);
+  padding: 8px 16px;
+}
+
+.inline-match-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.inline-match-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary);
+}
+
+.inline-match-info strong {
+  font-size: 13px;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.inline-match-info span {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.goal-card {
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: linear-gradient(160deg, rgba(18, 18, 24, 0.95), rgba(9, 9, 13, 0.98));
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.goal-card-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.goal-card-figures {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.goal-card-profit {
+  font-size: 42px;
+  font-weight: 700;
+  letter-spacing: -0.05em;
+  color: var(--text-primary);
+  line-height: 1;
+}
+
+.goal-card-divider {
+  font-size: 28px;
+  color: var(--text-muted);
+  font-weight: 300;
+}
+
+.goal-card-target {
+  font-size: 28px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  letter-spacing: -0.03em;
+}
+
+.goal-progress-wrap {
+  padding: 8px 0 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.goal-progress-labels {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.goal-progress-labels span:first-child {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.04em;
+}
+
+.goal-progress-target {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.goal-progress-track {
+  width: 100%;
+  height: 14px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 99px;
+  overflow: hidden;
+}
+
+.goal-progress-fill {
+  height: 100%;
+  border-radius: 99px;
+  background: linear-gradient(90deg, #9B5CFF, #FF4FA3);
+  transition: width 600ms ease;
+}
+
+.goal-progress-fill.goal-progress-over {
+  background: linear-gradient(90deg, #67F0A5, #4FC3FF);
+}
+
+.goal-progress-footer {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.goal-projected {
+  color: #9B5CFF;
+  font-weight: 600;
 }
 
 .inventory-ticket-seat span {

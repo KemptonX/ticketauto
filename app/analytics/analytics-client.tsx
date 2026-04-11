@@ -64,6 +64,7 @@ type DatePreset = "all" | "this-week" | "this-month" | "this-year" | "last-year"
 
 export default function AnalyticsClient() {
   const [orders, setOrders] = useState<Order[]>([]);
+  const [soldAtMap, setSoldAtMap] = useState<Record<number, string>>({});
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [message, setMessage] = useState("");
@@ -71,6 +72,8 @@ export default function AnalyticsClient() {
   const [datePreset, setDatePreset] = useState<DatePreset>("all");
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
+  const [eventSortCol, setEventSortCol] = useState<"profit" | "roi" | "sales" | "cost" | "tickets">("profit");
+  const [eventSortDir, setEventSortDir] = useState<"desc" | "asc">("desc");
 
   useEffect(() => {
     void loadOrders();
@@ -173,18 +176,31 @@ export default function AnalyticsClient() {
       setLoading(true);
     }
 
-    const { data, error } = await supabase
-      .from("orders")
-      .select("*")
-      .order("created_at", { ascending: true });
+    const [ordersResult, salesResult] = await Promise.all([
+      supabase.from("orders").select("*").order("created_at", { ascending: true }),
+      supabase.from("sales").select("inventory_order_id, sold_at").not("inventory_order_id", "is", null),
+    ]);
 
-    if (error) {
-      setMessage(error.message);
+    if (ordersResult.error) {
+      setMessage(ordersResult.error.message);
     } else {
-      setOrders((data as Order[]) || []);
+      setOrders((ordersResult.data as Order[]) || []);
       if (showRefreshing) {
         setMessage("Analytics refreshed");
       }
+    }
+
+    if (!salesResult.error && salesResult.data) {
+      const map: Record<number, string> = {};
+      for (const row of salesResult.data as { inventory_order_id: number; sold_at: string | null }[]) {
+        if (row.inventory_order_id && row.sold_at) {
+          const existing = map[row.inventory_order_id];
+          if (!existing || row.sold_at < existing) {
+            map[row.inventory_order_id] = row.sold_at;
+          }
+        }
+      }
+      setSoldAtMap(map);
     }
 
     setLoading(false);
@@ -246,14 +262,14 @@ export default function AnalyticsClient() {
     const roi = totalCost > 0 ? (totalProfit / totalCost) * 100 : 0;
 
     const avgTimeToSellDays = soldOrders
-      .map((order) => getApproxDaysToSell(order))
+      .map((order) => getApproxDaysToSell(order, soldAtMap[order.id] ?? null))
       .filter((value): value is number => value != null);
     const avgTimeToSell = avgTimeToSellDays.length
       ? avgTimeToSellDays.reduce((sum, value) => sum + value, 0) / avgTimeToSellDays.length
       : null;
 
-    const profitSeries = buildProfitSeries(soldOrders);
-    const eventRows = buildEventProfit(soldOrders).sort((a, b) => b.profit - a.profit);
+    const profitSeries = buildMonthlyProfitSeries(soldOrders);
+    const eventRows = buildEventProfit(soldOrders);
 
     const metrics: MetricCard[] = [
       {
@@ -276,12 +292,30 @@ export default function AnalyticsClient() {
       {
         label: "Avg Time to Sell",
         value: avgTimeToSell != null ? `${avgTimeToSell.toFixed(1)} days` : "—",
-        detail: avgTimeToSell != null ? "Estimated from buy date to today" : "Need sold tickets to calculate",
+        detail: avgTimeToSell != null ? "From purchase to actual sale date" : "Need matched sales to calculate",
       },
     ];
 
     return { metrics, profitSeries, eventRows };
-  }, [filteredOrders]);
+  }, [filteredOrders, soldAtMap]);
+
+  const sortedEventRows = useMemo(() => {
+    const rows = [...analytics.eventRows];
+    rows.sort((a, b) => {
+      const diff = a[eventSortCol] - b[eventSortCol];
+      return eventSortDir === "desc" ? -diff : diff;
+    });
+    return rows;
+  }, [analytics.eventRows, eventSortCol, eventSortDir]);
+
+  function handleEventSort(col: typeof eventSortCol) {
+    if (col === eventSortCol) {
+      setEventSortDir((d) => (d === "desc" ? "asc" : "desc"));
+    } else {
+      setEventSortCol(col);
+      setEventSortDir("desc");
+    }
+  }
 
   return (
     <div className="orders-shell analytics-shell">
@@ -519,11 +553,11 @@ export default function AnalyticsClient() {
               <div className="table-card-header">
                 <div>
                   <p className="section-tag">Trend</p>
-                  <h4>Profit over time</h4>
+                  <h4>Profit by month</h4>
                 </div>
-                <span className="table-count">By week</span>
+                <span className="table-count">Month on month</span>
               </div>
-              <LineChartCard data={analytics.profitSeries} />
+              <BarChartCard data={analytics.profitSeries} />
             </section>
 
             <section className="table-card">
@@ -546,15 +580,25 @@ export default function AnalyticsClient() {
                     <thead>
                       <tr>
                         <th>Event</th>
-                        <th>Tickets</th>
-                        <th>Cost</th>
-                        <th>Sold For</th>
-                        <th>Profit</th>
-                        <th>ROI</th>
+                        <th className="sortable-th" onClick={() => handleEventSort("tickets")}>
+                          Tickets {eventSortCol === "tickets" ? (eventSortDir === "desc" ? "↓" : "↑") : ""}
+                        </th>
+                        <th className="sortable-th" onClick={() => handleEventSort("cost")}>
+                          Cost {eventSortCol === "cost" ? (eventSortDir === "desc" ? "↓" : "↑") : ""}
+                        </th>
+                        <th className="sortable-th" onClick={() => handleEventSort("sales")}>
+                          Sold For {eventSortCol === "sales" ? (eventSortDir === "desc" ? "↓" : "↑") : ""}
+                        </th>
+                        <th className="sortable-th" onClick={() => handleEventSort("profit")}>
+                          Profit {eventSortCol === "profit" ? (eventSortDir === "desc" ? "↓" : "↑") : ""}
+                        </th>
+                        <th className="sortable-th" onClick={() => handleEventSort("roi")}>
+                          ROI {eventSortCol === "roi" ? (eventSortDir === "desc" ? "↓" : "↑") : ""}
+                        </th>
                       </tr>
                     </thead>
                     <tbody>
-                      {analytics.eventRows.map((row) => (
+                      {sortedEventRows.map((row) => (
                         <tr key={row.key}>
                           <td>
                             <div className="event-cell">
@@ -712,13 +756,12 @@ function getProfit(order: Order) {
   return (order.sold_total ?? 0) - (order.total_cost ?? 0);
 }
 
-function getApproxDaysToSell(order: Order) {
+function getApproxDaysToSell(order: Order, soldAt: string | null) {
   const buyDate = parseDate(order.purchased_at) ?? parseDate(order.created_at);
-  if (!buyDate) {
-    return null;
-  }
-  const now = new Date();
-  return Math.max(0, Math.round((now.getTime() - buyDate.getTime()) / (1000 * 60 * 60 * 24)));
+  if (!buyDate) return null;
+  const soldDate = soldAt ? parseDate(soldAt) : null;
+  if (!soldDate) return null;
+  return Math.max(0, Math.round((soldDate.getTime() - buyDate.getTime()) / (1000 * 60 * 60 * 24)));
 }
 
 function parseDMY(value: string): Date | null {
@@ -762,23 +805,24 @@ function parseEventDate(value: string | null): Date | null {
   return null;
 }
 
-function buildProfitSeries(orders: Order[]): SeriesPoint[] {
+function buildMonthlyProfitSeries(orders: Order[]): SeriesPoint[] {
   const map = new Map<string, SeriesPoint>();
 
   for (const order of orders) {
     const date = parseEventDate(order.event_date) ?? parseDate(order.purchased_at) ?? parseDate(order.created_at);
-    if (!date) {
-      continue;
-    }
-    const weekLabel = getWeekLabel(date);
-    const current = map.get(weekLabel) ?? { label: weekLabel, profit: 0, cost: 0, sales: 0 };
+    if (!date) continue;
+    const label = new Intl.DateTimeFormat("en-GB", { month: "short", year: "2-digit" }).format(date);
+    const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+    const current = map.get(key) ?? { label, profit: 0, cost: 0, sales: 0 };
     current.profit += getProfit(order);
     current.cost += order.total_cost ?? 0;
     current.sales += order.sold_total ?? 0;
-    map.set(weekLabel, current);
+    map.set(key, current);
   }
 
-  return Array.from(map.values()).slice(-8);
+  return Array.from(map.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([, v]) => v);
 }
 
 function buildEventProfit(orders: Order[]): EventProfit[] {
@@ -811,14 +855,6 @@ function buildEventProfit(orders: Order[]): EventProfit[] {
   }));
 }
 
-function getWeekLabel(date: Date) {
-  const start = new Date(date);
-  start.setDate(date.getDate() - ((date.getDay() + 6) % 7));
-  return new Intl.DateTimeFormat("en-GB", {
-    day: "numeric",
-    month: "short",
-  }).format(start);
-}
 
 function formatCurrency(value: number | null) {
   if (value == null) {
@@ -858,6 +894,67 @@ function getDonutSegments(data: { label: string; value: number }[]) {
     offset += dash;
     return segment;
   });
+}
+
+function BarChartCard({ data }: { data: SeriesPoint[] }) {
+  if (data.length === 0) {
+    return <EmptyChartState label="No monthly data yet" />;
+  }
+
+  const width = 760;
+  const height = 260;
+  const padX = 16;
+  const padTop = 36;
+  const padBottom = 32;
+  const chartH = height - padTop - padBottom;
+  const maxVal = Math.max(...data.map((p) => Math.abs(p.profit)), 1);
+  const zeroY = padTop + chartH / 2;
+  const barW = Math.max(8, Math.floor((width - padX * 2) / data.length) - 8);
+
+  return (
+    <div className="analytics-chart-wrap">
+      <svg viewBox={`0 0 ${width} ${height}`} className="analytics-line-chart" role="img" aria-label="Monthly profit">
+        <line x1={padX} x2={width - padX} y1={zeroY} y2={zeroY} stroke="rgba(255,255,255,0.1)" strokeWidth="1" />
+        {data.map((point, i) => {
+          const slotW = (width - padX * 2) / data.length;
+          const cx = padX + slotW * i + slotW / 2;
+          const isPos = point.profit >= 0;
+          const barH = Math.max(3, (Math.abs(point.profit) / maxVal) * (chartH / 2));
+          const y = isPos ? zeroY - barH : zeroY;
+          const labelY = isPos ? y - 6 : y + barH + 14;
+          const compact = formatCompactCurrency(point.profit);
+          return (
+            <g key={point.label}>
+              <rect
+                x={cx - barW / 2}
+                y={y}
+                width={barW}
+                height={barH}
+                rx={3}
+                fill={isPos ? "#67F0A5" : "#FF7D7D"}
+                opacity={0.85}
+              />
+              <text
+                x={cx}
+                y={labelY}
+                textAnchor="middle"
+                fontSize="10"
+                fill={isPos ? "#67F0A5" : "#FF7D7D"}
+                fontWeight="600"
+              >
+                {compact}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
+      <div className="analytics-axis-labels">
+        {data.map((point) => (
+          <span key={point.label}>{point.label}</span>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function LineChartCard({ data }: { data: SeriesPoint[] }) {
