@@ -29,6 +29,13 @@ type ArchivedSaleSummary = {
   qty_sold: number | null;
 };
 
+type MatchedSale = {
+  inventory_order_id: number | null;
+  payout_total: number | null;
+  sale_total: number | null;
+  qty_sold: number | null;
+};
+
 type InventoryGroup = {
   key: string;
   eventName: string;
@@ -39,6 +46,10 @@ type InventoryGroup = {
   totalTickets: number;
   unsoldTickets: number;
   totalValue: number;
+  totalCost: number;
+  totalPayout: number;
+  profit: number;
+  roi: number | null;
   soldCount: number;
   listedCount: number;
   unlistedCount: number;
@@ -62,6 +73,7 @@ const dateFilterOptions = ["All", "This week", "This month"];
 export default function InventoryClient() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [archivedSalesByOrder, setArchivedSalesByOrder] = useState<Record<number, number>>({});
+  const [payoutByOrder, setPayoutByOrder] = useState<Record<number, number>>({});
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [message, setMessage] = useState("");
@@ -110,18 +122,32 @@ export default function InventoryClient() {
       } else {
         const archivedMap = ((archivedSales as ArchivedSaleSummary[]) || []).reduce<Record<number, number>>(
           (acc, sale) => {
-            if (sale.inventory_order_id == null) {
-              return acc;
-            }
-
+            if (sale.inventory_order_id == null) return acc;
             acc[sale.inventory_order_id] =
               (acc[sale.inventory_order_id] ?? 0) + (sale.qty_sold ?? 1);
             return acc;
           },
           {},
         );
-
         setArchivedSalesByOrder(archivedMap);
+      }
+
+      const { data: matchedSales } = await supabase
+        .from("sales")
+        .select("inventory_order_id, payout_total, sale_total, qty_sold")
+        .not("inventory_order_id", "is", null);
+
+      if (matchedSales) {
+        const payoutMap = (matchedSales as MatchedSale[]).reduce<Record<number, number>>(
+          (acc, sale) => {
+            if (sale.inventory_order_id == null) return acc;
+            const payout = sale.payout_total ?? sale.sale_total ?? 0;
+            acc[sale.inventory_order_id] = (acc[sale.inventory_order_id] ?? 0) + payout;
+            return acc;
+          },
+          {},
+        );
+        setPayoutByOrder(payoutMap);
       }
 
       if (showRefreshing) {
@@ -143,6 +169,7 @@ export default function InventoryClient() {
 
   function resetFilters() {
     setSearch("");
+    setArtistFilter("All");
     setStatusFilter("All");
     setDateFilter("All");
     setMonthFilter("All");
@@ -226,6 +253,8 @@ export default function InventoryClient() {
       const isSold = status === "Sold";
       const unsoldTickets = isSold ? 0 : quantity;
       const value = isSold ? 0 : order.total_cost ?? 0;
+      const orderCost = order.total_cost ?? 0;
+      const orderPayout = payoutByOrder[order.id] ?? 0;
 
       if (!map.has(key)) {
         map.set(key, {
@@ -238,6 +267,10 @@ export default function InventoryClient() {
           totalTickets: 0,
           unsoldTickets: 0,
           totalValue: 0,
+          totalCost: 0,
+          totalPayout: 0,
+          profit: 0,
+          roi: null,
           soldCount: 0,
           listedCount: 0,
           unlistedCount: 0,
@@ -252,6 +285,8 @@ export default function InventoryClient() {
       group.totalTickets += quantity;
       group.unsoldTickets += unsoldTickets;
       group.totalValue += value;
+      group.totalCost += orderCost;
+      group.totalPayout += orderPayout;
       if (!group.accounts.includes(order.account_email || "No account")) {
         group.accounts.push(order.account_email || "No account");
       }
@@ -272,6 +307,11 @@ export default function InventoryClient() {
       }
     }
 
+    for (const group of map.values()) {
+      group.profit = group.totalPayout - group.totalCost;
+      group.roi = group.totalCost > 0 ? (group.profit / group.totalCost) * 100 : null;
+    }
+
     return Array.from(map.values()).sort((a, b) => {
       if (a.dateValue && b.dateValue) {
         return sortByDate === "closest"
@@ -289,7 +329,7 @@ export default function InventoryClient() {
       }
       return a.eventName.localeCompare(b.eventName);
     });
-  }, [filteredOrders, archivedSalesByOrder, sortByDate]);
+  }, [filteredOrders, archivedSalesByOrder, payoutByOrder, sortByDate]);
 
   const metrics = useMemo(() => {
     const ticketsRemaining = groupedInventory.reduce((sum, group) => sum + group.unsoldTickets, 0);
@@ -547,9 +587,17 @@ export default function InventoryClient() {
                             <strong>{group.unsoldTickets}</strong>
                           </div>
                           <div className="inventory-metric-chip">
-                            <span>Stock Value</span>
-                            <strong>{formatCurrency(group.totalValue)}</strong>
+                            <span>Cost</span>
+                            <strong>{formatCurrency(group.totalCost)}</strong>
                           </div>
+                          {group.totalPayout > 0 && (
+                            <div className="inventory-metric-chip">
+                              <span>P&amp;L</span>
+                              <strong className={group.profit >= 0 ? "inventory-profit-positive" : "inventory-profit-negative"}>
+                                {group.profit >= 0 ? "+" : ""}{formatCurrency(group.profit)}
+                              </strong>
+                            </div>
+                          )}
                           <div className="inventory-status-row">
                             <span className="status-badge status-static status-unlisted">Unlisted {group.unlistedCount}</span>
                             <span className="status-badge status-static status-listed">Listed {group.listedCount}</span>
@@ -575,6 +623,30 @@ export default function InventoryClient() {
 
                     {expanded ? (
                       <div className="inventory-ticket-stack">
+                        {group.totalPayout > 0 && (
+                          <div className="inventory-pl-row">
+                            <div className="inventory-pl-cell">
+                              <span>Cost In</span>
+                              <strong>{formatCurrency(group.totalCost)}</strong>
+                            </div>
+                            <div className="inventory-pl-cell">
+                              <span>Payout</span>
+                              <strong>{formatCurrency(group.totalPayout)}</strong>
+                            </div>
+                            <div className="inventory-pl-cell">
+                              <span>Profit</span>
+                              <strong className={group.profit >= 0 ? "inventory-profit-positive" : "inventory-profit-negative"}>
+                                {group.profit >= 0 ? "+" : ""}{formatCurrency(group.profit)}
+                              </strong>
+                            </div>
+                            <div className="inventory-pl-cell">
+                              <span>ROI</span>
+                              <strong className={group.profit >= 0 ? "inventory-profit-positive" : "inventory-profit-negative"}>
+                                {group.roi != null ? `${group.roi >= 0 ? "+" : ""}${group.roi.toFixed(1)}%` : "—"}
+                              </strong>
+                            </div>
+                          </div>
+                        )}
                         <div className="inventory-ticket-header">
                           <span>Seat</span>
                           <span>Account</span>

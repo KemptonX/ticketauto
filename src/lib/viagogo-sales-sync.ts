@@ -11,6 +11,14 @@ type GmailAccount = {
   token_expiry: string | null;
 };
 
+type OutlookSalesAccount = {
+  id: string;
+  email: string;
+  access_token: string | null;
+  refresh_token: string | null;
+  token_expiry: string | null;
+};
+
 type GmailHeader = {
   name: string;
   value: string;
@@ -26,6 +34,17 @@ type GmailPayload = {
 type GmailMessage = {
   id: string;
   payload: GmailPayload;
+};
+
+type OutlookGraphMessage = {
+  id: string;
+  subject: string;
+  receivedDateTime: string;
+  isRead: boolean;
+  body: {
+    contentType: "text" | "html";
+    content: string;
+  };
 };
 
 type SyncResult = {
@@ -311,6 +330,125 @@ export async function rematchViagogoSales({
   }
 
   return matched;
+}
+
+export async function syncViagogoSalesOutlookInbox({
+  supabase,
+  outlookAccount,
+  userId,
+}: {
+  supabase: SupabaseClient;
+  outlookAccount: OutlookSalesAccount;
+  userId: string;
+}): Promise<SyncResult> {
+  const accessToken = await getValidOutlookToken({ supabase, outlookAccount });
+  const messages = await listViagogoOutlookMessages(accessToken);
+  const candidateOrders = await loadCandidateOrders(supabase, userId);
+  const orderUsage = await loadOrderUsage(supabase, userId);
+
+  let inserted = 0;
+  let matched = 0;
+
+  for (const msg of messages) {
+    if (msg.isRead) continue;
+
+    const subject = msg.subject || "";
+    const lowerSubject = subject.toLowerCase();
+    if (
+      !lowerSubject.includes("please transfer the tickets for sale") &&
+      !lowerSubject.includes("please send your tickets")
+    ) {
+      continue;
+    }
+
+    const bodyText =
+      msg.body.contentType === "html"
+        ? outlookStripHtml(msg.body.content)
+        : msg.body.content;
+    const combined = cleanText(`${subject}\n${bodyText}`);
+    const sourceMessageId = msg.id;
+
+    // parseSale uses headers only for the "Date" header → soldAt
+    const fakeHeaders: GmailHeader[] = [
+      { name: "Date", value: msg.receivedDateTime || "" },
+    ];
+
+    const parsed = parseSale({ headers: fakeHeaders, subject, text: combined });
+    if (!parsed.externalSaleId) continue;
+
+    const existingSale = await findExistingSale(supabase, {
+      userId,
+      externalSaleId: parsed.externalSaleId,
+      sourceMessageId,
+    });
+
+    const match = existingSale?.inventory_order_id
+      ? null
+      : findBestInventoryMatch({ orders: candidateOrders, orderUsage, sale: parsed });
+
+    const saleData: SaleInsert = {
+      external_sale_id: parsed.externalSaleId,
+      gmail_account_id: outlookAccount.id,
+      source: "viagogo",
+      source_message_id: sourceMessageId,
+      subject: parsed.subject,
+      event_name: parsed.eventName,
+      venue: parsed.venue,
+      event_date: parsed.eventDate,
+      sold_at: parsed.soldAt,
+      account_email: outlookAccount.email,
+      buyer_email: parsed.buyerEmail,
+      qty_sold: parsed.qtySold,
+      price_per_ticket: parsed.pricePerTicket,
+      sale_total: parsed.saleTotal,
+      payout_total: parsed.payoutTotal,
+      currency: "GBP",
+      section: parsed.section,
+      row: parsed.row,
+      seat_from: parsed.seatFrom,
+      seat_to: parsed.seatTo,
+      sale_status: "Sold",
+      inventory_order_id: existingSale?.inventory_order_id ?? match?.order.id ?? null,
+      match_confidence:
+        existingSale?.match_confidence ?? (match ? Number(match.score.toFixed(2)) : null),
+      user_id: userId,
+    };
+
+    const mutation = existingSale
+      ? supabase
+          .from("sales")
+          .update({
+            ...saleData,
+            source_message_id: existingSale.source_message_id || sourceMessageId,
+          })
+          .eq("id", existingSale.id)
+      : supabase.from("sales").insert(saleData);
+
+    const { error } = await mutation;
+    if (error) throw new Error(error.message);
+
+    if (!existingSale) inserted += 1;
+
+    if (match) {
+      const currentUsed = orderUsage.get(match.order.id) ?? 0;
+      orderUsage.set(match.order.id, currentUsed + (parsed.qtySold ?? 1));
+      matched += 1;
+      await updateMatchedOrder(supabase, {
+        userId,
+        order: match.order,
+        payoutTotal: parsed.payoutTotal,
+      });
+    }
+
+    await outlookMarkRead(accessToken, msg.id);
+  }
+
+  await supabase
+    .from("gmail_accounts")
+    .update({ last_synced_at: new Date().toISOString(), status: "Ready" })
+    .eq("id", outlookAccount.id);
+
+  return { scanned: messages.length, inserted, matched, email: outlookAccount.email };
 }
 
 async function findExistingSale(
@@ -940,6 +1078,121 @@ function getBody(payload: GmailPayload): string {
 
   walk(payload);
   return cleanText(parts.join("\n"));
+}
+
+// ── Outlook / Microsoft Graph helpers for Viagogo sales ──────────────────────
+
+async function getValidOutlookToken({
+  supabase,
+  outlookAccount,
+}: {
+  supabase: SupabaseClient;
+  outlookAccount: OutlookSalesAccount;
+}) {
+  if (!outlookAccount.refresh_token || !outlookAccount.token_expiry || !outlookAccount.access_token) {
+    return outlookAccount.access_token || "";
+  }
+
+  const expiresAt = new Date(outlookAccount.token_expiry);
+  const refreshWindow = Date.now() + 60_000;
+
+  if (!Number.isNaN(expiresAt.getTime()) && expiresAt.getTime() > refreshWindow) {
+    return outlookAccount.access_token;
+  }
+
+  const clientId = process.env.MICROSOFT_CLIENT_ID;
+  const clientSecret = process.env.MICROSOFT_CLIENT_SECRET;
+  if (!clientId || !clientSecret) throw new Error("Microsoft OAuth env vars are missing");
+
+  const response = await fetch("https://login.microsoftonline.com/common/oauth2/v2.0/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      client_id: clientId,
+      client_secret: clientSecret,
+      refresh_token: outlookAccount.refresh_token,
+      grant_type: "refresh_token",
+    }),
+    cache: "no-store",
+  });
+
+  const data = (await response.json()) as {
+    access_token?: string;
+    refresh_token?: string;
+    expires_in?: number;
+    error?: string;
+    error_description?: string;
+  };
+
+  if (!response.ok || !data.access_token) {
+    throw new Error(data.error_description || data.error || "Failed to refresh Outlook token");
+  }
+
+  const nextExpiry = data.expires_in
+    ? new Date(Date.now() + data.expires_in * 1000).toISOString()
+    : outlookAccount.token_expiry;
+
+  await supabase
+    .from("gmail_accounts")
+    .update({
+      access_token: data.access_token,
+      refresh_token: data.refresh_token || outlookAccount.refresh_token,
+      token_expiry: nextExpiry,
+      status: "Ready",
+    })
+    .eq("id", outlookAccount.id);
+
+  return data.access_token;
+}
+
+async function outlookGraphRequest<T>(accessToken: string, input: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(input, {
+    ...init,
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+      ...(init?.headers || {}),
+    },
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Graph API error ${response.status}: ${text}`);
+  }
+
+  return (await response.json()) as T;
+}
+
+async function listViagogoOutlookMessages(accessToken: string): Promise<OutlookGraphMessage[]> {
+  const url = new URL("https://graph.microsoft.com/v1.0/me/messages");
+  url.searchParams.set("$search", '"viagogo"');
+  url.searchParams.set("$top", "25");
+  url.searchParams.set("$select", "id,subject,body,receivedDateTime,isRead");
+
+  const data = await outlookGraphRequest<{ value?: OutlookGraphMessage[] }>(accessToken, url.toString());
+  return data.value || [];
+}
+
+async function outlookMarkRead(accessToken: string, messageId: string) {
+  await outlookGraphRequest(
+    accessToken,
+    `https://graph.microsoft.com/v1.0/me/messages/${messageId}`,
+    { method: "PATCH", body: JSON.stringify({ isRead: true }) },
+  );
+}
+
+function outlookStripHtml(text: string) {
+  return text
+    .replace(/<(script|style)[^>]*>[\s\S]*?<\/\1>/gi, " ")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/?(p|div|tr|li|ul|ol|table|tbody|thead|tfoot|h[1-6])[^>]*>/gi, "\n")
+    .replace(/<\/?(td|th)[^>]*>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">");
 }
 
 function parseDateLike(value?: string | null) {

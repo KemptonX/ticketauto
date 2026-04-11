@@ -95,6 +95,7 @@ export default function SalesClient() {
   const [savingSale, setSavingSale] = useState(false);
   const [saleEdits, setSaleEdits] = useState<{ qty_sold: string; price_per_ticket: string; sale_total: string } | null>(null);
   const [showArchived, setShowArchived] = useState(false);
+  const [manualSearch, setManualSearch] = useState("");
 
   useEffect(() => {
     void loadSales(false, showArchived);
@@ -112,6 +113,7 @@ export default function SalesClient() {
     } else {
       setSaleEdits(null);
     }
+    setManualSearch("");
   }, [selectedSaleId]);
 
   async function saveSaleEdits() {
@@ -204,6 +206,31 @@ export default function SalesClient() {
 
     setLoading(false);
     setRefreshing(false);
+  }
+
+  function exportSalesCSV() {
+    const headers = ["Sale ID", "Event", "Venue", "Event Date", "Sold At", "Account", "Buyer Email", "Qty", "Price Per Ticket", "Sale Total", "Payout", "Currency", "Section", "Row", "Seat From", "Seat To", "Status", "Matched Order ID"];
+    const rows = sales.map((s) => [
+      s.external_sale_id ?? s.id,
+      s.event_name ?? "",
+      s.venue ?? "",
+      s.event_date ?? "",
+      s.sold_at ?? "",
+      s.account_email ?? "",
+      s.buyer_email ?? "",
+      s.qty_sold ?? "",
+      s.price_per_ticket ?? "",
+      s.sale_total ?? "",
+      s.payout_total ?? "",
+      s.currency ?? "",
+      s.section ?? "",
+      s.row ?? "",
+      s.seat_from ?? "",
+      s.seat_to ?? "",
+      s.sale_status ?? "",
+      s.inventory_order_id ?? "",
+    ]);
+    downloadCSV(`sales-${dateStamp()}.csv`, headers, rows);
   }
 
   async function scanSalesNow() {
@@ -487,6 +514,17 @@ export default function SalesClient() {
     [selectedSale, allOrders],
   );
 
+  const manualResults = useMemo(() => {
+    const q = manualSearch.trim().toLowerCase();
+    if (!q || !selectedSale) return [];
+    return allOrders
+      .filter((o) =>
+        [o.booking_ref, o.event_name, o.venue, o.section, o.row]
+          .some((f) => f?.toLowerCase().includes(q)),
+      )
+      .slice(0, 8);
+  }, [manualSearch, allOrders, selectedSale]);
+
   return (
     <div className={`orders-shell${selectedSale ? " orders-shell-drawer-open" : ""}`}>
       <aside className="orders-sidebar">
@@ -534,6 +572,9 @@ export default function SalesClient() {
           <div className="topbar-actions">
             <button className="secondary-button" onClick={() => void loadSales(true)} disabled={refreshing} type="button">
               {refreshing ? "Refreshing..." : "Refresh"}
+            </button>
+            <button className="secondary-button" onClick={exportSalesCSV} type="button">
+              Export CSV
             </button>
             {!showArchived && (
               <button className="secondary-button" onClick={() => void scanSalesNow()} disabled={scanning} type="button">
@@ -923,25 +964,15 @@ export default function SalesClient() {
               </div>
             </section>
 
-            <div className="inventory-ticket-stack">
-              <div className="inventory-ticket-header">
-                <span>Ticket</span>
-                <span>Account</span>
-                <span>Match %</span>
-                <span>Action</span>
-              </div>
-              {matchSuggestions.length === 0 ? (
-                <div className="inventory-ticket-row">
-                  <div className="inventory-ticket-seat">
-                    <strong>No strong candidates</strong>
-                    <span>Try rescanning after more inventory lands.</span>
-                  </div>
-                  <span>—</span>
-                  <strong className="inventory-cost-value">—</strong>
-                  <span className="status-badge status-static status-unlisted">None</span>
+            {matchSuggestions.length > 0 && (
+              <div className="inventory-ticket-stack">
+                <div className="inventory-ticket-header">
+                  <span>Ticket</span>
+                  <span>Account</span>
+                  <span>Match %</span>
+                  <span>Action</span>
                 </div>
-              ) : (
-                matchSuggestions.map(({ order, score }) => (
+                {matchSuggestions.map(({ order, score }) => (
                   <div key={order.id} className="inventory-ticket-row">
                     <div className="inventory-ticket-seat">
                       <strong>{order.booking_ref || order.event_name || "Ticket"}</strong>
@@ -962,9 +993,67 @@ export default function SalesClient() {
                       {matchingOrderId === order.id ? "Matching..." : "Match"}
                     </button>
                   </div>
-                ))
-              )}
+                ))}
+              </div>
+            )}
+
+            <section className="drawer-summary" style={{ marginTop: "1rem" }}>
+              <div style={{ gridColumn: "1 / -1" }}>
+                <span>{matchSuggestions.length === 0 ? "No scored candidates — search all orders below" : "Can't find it? Search all orders"}</span>
+              </div>
+            </section>
+
+            <div style={{ padding: "0 0 0.5rem" }}>
+              <input
+                className="field field-search"
+                placeholder="Booking ref, event name, venue, section..."
+                value={manualSearch}
+                onChange={(e) => setManualSearch(e.target.value)}
+              />
             </div>
+
+            {manualSearch.trim() && (
+              <div className="inventory-ticket-stack">
+                <div className="inventory-ticket-header">
+                  <span>Ticket</span>
+                  <span>Account</span>
+                  <span>Seats</span>
+                  <span>Action</span>
+                </div>
+                {manualResults.length === 0 ? (
+                  <div className="inventory-ticket-row">
+                    <div className="inventory-ticket-seat">
+                      <strong>No orders found</strong>
+                      <span>Try a different booking ref or event name.</span>
+                    </div>
+                    <span>—</span>
+                    <span>—</span>
+                    <span className="status-badge status-static status-unlisted">None</span>
+                  </div>
+                ) : (
+                  manualResults.map((order) => (
+                    <div key={order.id} className="inventory-ticket-row">
+                      <div className="inventory-ticket-seat">
+                        <strong>{order.booking_ref || order.event_name || "Ticket"}</strong>
+                        <span>{order.event_name || "—"}</span>
+                      </div>
+                      <span className="truncate-text" title={order.account_email || ""}>
+                        {order.account_email || "—"}
+                      </span>
+                      <span>{formatSeatLabel(order.row, order.seat_from, order.seat_to)}</span>
+                      <button
+                        className="secondary-button"
+                        type="button"
+                        onClick={() => void matchSaleToOrder(selectedSale, order, 100)}
+                        disabled={matchingOrderId === order.id}
+                      >
+                        {matchingOrderId === order.id ? "Matching..." : "Force match"}
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
           </div>
       </aside>
       ) : null}
@@ -1247,6 +1336,25 @@ function formatSoldAt(value: string | null) {
     minute: "2-digit",
     hour12: false,
   }).format(date);
+}
+
+function downloadCSV(filename: string, headers: string[], rows: (string | number)[][]) {
+  const escape = (v: string | number) => {
+    const s = String(v);
+    return s.includes(",") || s.includes('"') || s.includes("\n") ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const csv = [headers, ...rows].map((r) => r.map(escape).join(",")).join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function dateStamp() {
+  return new Date().toISOString().slice(0, 10);
 }
 
 function formatSeatLabel(row: string | null, seatFrom: string | null, seatTo: string | null) {

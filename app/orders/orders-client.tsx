@@ -4,6 +4,16 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/src/lib/supabase";
 
+type SyncLogEntry = {
+  id: number;
+  scan_type: string;
+  scanned: number;
+  inserted: number;
+  updated: number | null;
+  error: string | null;
+  created_at: string;
+};
+
 type Order = {
   id: number;
   booking_ref: string | null;
@@ -107,6 +117,7 @@ const navItems = [
 export default function OrdersClient() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [accounts, setAccounts] = useState<string[]>([]);
+  const [syncLog, setSyncLog] = useState<SyncLogEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [scanning, setScanning] = useState(false);
@@ -167,40 +178,64 @@ export default function OrdersClient() {
     setRefreshing(false);
   }
 
-  async function scanGmailNow() {
+  function exportOrdersCSV() {
+    const headers = ["Booking Ref", "Event", "Venue", "Event Date", "Purchased At", "Account", "Section", "Row", "Seat From", "Seat To", "Qty", "Cost", "Sold Total", "Status", "Source"];
+    const rows = orders.map((o) => [
+      o.booking_ref ?? "",
+      o.event_name ?? "",
+      o.venue ?? "",
+      o.event_date ?? "",
+      o.purchased_at ?? "",
+      o.account_email ?? "",
+      o.section ?? "",
+      o.row ?? "",
+      o.seat_from ?? "",
+      o.seat_to ?? "",
+      o.qty_bought ?? "",
+      o.total_cost ?? "",
+      o.sold_total ?? "",
+      o.listing_status ?? "",
+      o.source_type ?? "",
+    ]);
+    downloadCSV(`tickets-${dateStamp()}.csv`, headers, rows);
+  }
+
+  async function scanMailNow() {
     setScanning(true);
     setMessage("");
 
     try {
-      const response = await fetch("/api/scan-gmail", {
-        method: "POST",
-      });
-
+      const response = await fetch("/api/scan-mail", { method: "POST" });
       const result = await response.json();
 
       if (!response.ok) {
         setMessage(result.error || "Scan failed");
-        setScanning(false);
         return;
       }
 
       await loadOrders(true);
       const inserted = Number(result.inserted ?? 0);
       const updated = Number(result.updated ?? 0);
-      const updatedRefs = Array.isArray(result.updatedRefs) ? result.updatedRefs : [];
       const insertedRefs = Array.isArray(result.insertedRefs) ? result.insertedRefs : [];
+      const updatedRefs = Array.isArray(result.updatedRefs) ? result.updatedRefs : [];
 
       if (insertedRefs.length > 0 || updatedRefs.length > 0) {
         resetFilters();
         const focusRef = insertedRefs[0] || updatedRefs[0];
-        if (focusRef) {
-          setSearch(focusRef);
-        }
+        if (focusRef) setSearch(focusRef);
       }
 
-      setMessage(`Inbox scan complete: ${inserted} new, ${updated} updated`);
+      const accountResults = Array.isArray(result.accountResults) ? result.accountResults : [];
+      const errors: string[] = Array.isArray(result.errors) ? result.errors : [];
+      const accountCount = accountResults.length;
+      const summary = accountCount > 1
+        ? `${accountCount} accounts — ${inserted} new, ${updated} updated`
+        : `${inserted} new, ${updated} updated`;
+      const errorNote = errors.length > 0 ? ` (${errors.length} account error${errors.length > 1 ? "s" : ""})` : "";
+      setMessage(`Scan complete: ${summary}${errorNote}`);
+      void loadSyncLog();
     } catch {
-      setMessage("Inbox scan failed");
+      setMessage("Scan failed");
     } finally {
       setScanning(false);
     }
@@ -212,6 +247,7 @@ export default function OrdersClient() {
     }
     loadOrders(false, showArchived);
     void loadAccounts();
+    void loadSyncLog();
   }, [showArchived]);
 
   async function autoArchivePastEvents() {
@@ -263,6 +299,17 @@ export default function OrdersClient() {
       .order("is_primary", { ascending: false });
     if (data) {
       setAccounts((data as { email: string }[]).map((a) => a.email));
+    }
+  }
+
+  async function loadSyncLog() {
+    const { data } = await supabase
+      .from("sync_log")
+      .select("id, scan_type, scanned, inserted, updated, error, created_at")
+      .order("created_at", { ascending: false })
+      .limit(20);
+    if (data) {
+      setSyncLog(data as SyncLogEntry[]);
     }
   }
 
@@ -749,8 +796,11 @@ export default function OrdersClient() {
             </button>
             {!showArchived && (
               <>
-                <button className="secondary-button" onClick={scanGmailNow} disabled={scanning} type="button">
-                  {scanning ? "Scanning..." : "Scan Gmail"}
+                <button className="secondary-button" onClick={exportOrdersCSV} type="button">
+                  Export CSV
+                </button>
+                <button className="secondary-button" onClick={scanMailNow} disabled={scanning} type="button">
+                  {scanning ? "Scanning..." : "Scan Mail"}
                 </button>
                 <button className="primary-button" onClick={openAddForm} type="button">
                   Add Ticket
@@ -1106,6 +1156,55 @@ export default function OrdersClient() {
                   </article>
                 );
               })}
+            </div>
+          )}
+        </section>
+
+        <section className="table-card">
+          <div className="table-card-header">
+            <div>
+              <p className="section-tag">Activity</p>
+              <h4>Recent Scans</h4>
+            </div>
+            <span className="table-count">{syncLog.length} entries</span>
+          </div>
+
+          {syncLog.length === 0 ? (
+            <div className="empty-state compact-empty-state">
+              <h5>No scans yet</h5>
+            </div>
+          ) : (
+            <div className="table-scroll">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Type</th>
+                    <th>Scanned</th>
+                    <th>New</th>
+                    <th>Updated</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {syncLog.map((entry) => (
+                    <tr key={entry.id}>
+                      <td>{formatSyncDate(entry.created_at)}</td>
+                      <td>{entry.scan_type}</td>
+                      <td>{entry.scanned}</td>
+                      <td>{entry.inserted}</td>
+                      <td>{entry.updated ?? 0}</td>
+                      <td>
+                        {entry.error ? (
+                          <span className="status-badge badge-problem" title={entry.error}>Error</span>
+                        ) : (
+                          <span className="status-badge badge-sold">OK</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
         </section>
@@ -1502,6 +1601,18 @@ function formatAddedAt(value: string | null) {
   return new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "2-digit" }).format(date);
 }
 
+function formatSyncDate(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
+}
+
 function formatCurrency(value: number | null) {
   if (value == null) {
     return "—";
@@ -1580,6 +1691,25 @@ function toDateInputValue(value: string | null): string {
   return "";
 }
 
+
+function downloadCSV(filename: string, headers: string[], rows: (string | number)[][]) {
+  const escape = (v: string | number) => {
+    const s = String(v);
+    return s.includes(",") || s.includes('"') || s.includes("\n") ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const csv = [headers, ...rows].map((r) => r.map(escape).join(",")).join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function dateStamp() {
+  return new Date().toISOString().slice(0, 10);
+}
 
 function getStatusTone(status: string | null) {
   switch (status) {

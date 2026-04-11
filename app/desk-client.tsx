@@ -25,6 +25,7 @@ type Sale = {
   account_email: string | null;
   qty_sold: number | null;
   sale_total: number | null;
+  payout_total: number | null;
   inventory_order_id: number | null;
   sold_at: string | null;
 };
@@ -133,7 +134,7 @@ export default function DeskClient() {
         .select("id, event_name, venue, event_date, account_email, section, listing_status, total_cost, sold_total, qty_bought"),
       supabase
         .from("sales")
-        .select("id, event_name, venue, event_date, account_email, qty_sold, sale_total, inventory_order_id, sold_at")
+        .select("id, event_name, venue, event_date, account_email, qty_sold, sale_total, payout_total, inventory_order_id, sold_at")
         .neq("sale_status", "Archived"),
     ]);
     if (ordersResult.data) setOrders(ordersResult.data as Order[]);
@@ -271,6 +272,64 @@ export default function DeskClient() {
 
     return { capitalIn, closedProfit, availableCount, soldCount, monthlyProfit, openCount, bestEvent, bestProfit, thisMonthCount, thisMonthSold, thisMonthPayout, yearlyProfit, fyStart, fyEnd, monthlyProjected, yearlyProjected };
   }, [orders]);
+
+  const eventPnL = useMemo(() => {
+    // Build payout map: order id → total payout from matched sales
+    const payoutByOrder = new Map<number, number>();
+    for (const sale of sales) {
+      if (sale.inventory_order_id == null) continue;
+      const payout = sale.payout_total ?? sale.sale_total ?? 0;
+      payoutByOrder.set(sale.inventory_order_id, (payoutByOrder.get(sale.inventory_order_id) ?? 0) + payout);
+    }
+
+    // Group orders by event
+    const map = new Map<string, {
+      eventName: string;
+      venue: string;
+      eventDate: string | null;
+      dateValue: Date | null;
+      totalCost: number;
+      totalPayout: number;
+      totalQty: number;
+      soldQty: number;
+    }>();
+
+    for (const order of orders) {
+      if (order.listing_status === "Archived") continue;
+      const key = `${order.event_name ?? ""}__${order.venue ?? ""}__${order.event_date ?? ""}`;
+      if (!map.has(key)) {
+        map.set(key, {
+          eventName: order.event_name ?? "Untitled event",
+          venue: order.venue ?? "",
+          eventDate: order.event_date ?? null,
+          dateValue: parseDate(order.event_date),
+          totalCost: 0,
+          totalPayout: 0,
+          totalQty: 0,
+          soldQty: 0,
+        });
+      }
+      const group = map.get(key)!;
+      group.totalCost += order.total_cost ?? 0;
+      group.totalPayout += payoutByOrder.get(order.id) ?? 0;
+      group.totalQty += order.qty_bought ?? 1;
+      if (order.listing_status === "Sold") group.soldQty += order.qty_bought ?? 1;
+    }
+
+    return Array.from(map.values())
+      .filter((g) => g.totalCost > 0 || g.totalPayout > 0)
+      .map((g) => ({
+        ...g,
+        profit: g.totalPayout - g.totalCost,
+        roi: g.totalCost > 0 ? ((g.totalPayout - g.totalCost) / g.totalCost) * 100 : null,
+      }))
+      .sort((a, b) => {
+        if (a.dateValue && b.dateValue) return a.dateValue.getTime() - b.dateValue.getTime();
+        if (a.dateValue) return -1;
+        if (b.dateValue) return 1;
+        return 0;
+      });
+  }, [orders, sales]);
 
   return (
     <div className="orders-shell">
@@ -653,6 +712,69 @@ export default function DeskClient() {
                       </tr>
                     );
                   })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+
+        <section className="table-card">
+          <div className="table-card-header">
+            <div>
+              <p className="section-tag">P&amp;L</p>
+              <h4>Event breakdown</h4>
+            </div>
+            <span className="table-count">{eventPnL.length} events</span>
+          </div>
+
+          {loading ? null : eventPnL.length === 0 ? (
+            <div className="state-card">
+              <div className="state-orb state-orb-muted" />
+              <h5>No data yet</h5>
+              <p>Scan your inbox and match sales to see P&amp;L per event.</p>
+            </div>
+          ) : (
+            <div className="table-scroll">
+              <table className="premium-table">
+                <thead>
+                  <tr>
+                    <th>Event</th>
+                    <th>Qty</th>
+                    <th>Cost In</th>
+                    <th>Payout</th>
+                    <th>Profit</th>
+                    <th>ROI</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {eventPnL.map((row) => (
+                    <tr key={`${row.eventName}__${row.eventDate}`}>
+                      <td>
+                        <div className="event-cell">
+                          <strong>{row.eventName}</strong>
+                          <span>{row.venue || "—"}</span>
+                          <small>{formatEventDate(row.eventDate)}</small>
+                        </div>
+                      </td>
+                      <td>{row.soldQty}/{row.totalQty}</td>
+                      <td>{formatCurrency(row.totalCost)}</td>
+                      <td>{row.totalPayout > 0 ? formatCurrency(row.totalPayout) : <span className="text-muted">—</span>}</td>
+                      <td>
+                        {row.totalPayout > 0 ? (
+                          <strong className={row.profit >= 0 ? "value-up" : "value-down"}>
+                            {row.profit >= 0 ? "+" : ""}{formatCurrency(row.profit)}
+                          </strong>
+                        ) : <span className="text-muted">—</span>}
+                      </td>
+                      <td>
+                        {row.roi != null && row.totalPayout > 0 ? (
+                          <strong className={row.roi >= 0 ? "value-up" : "value-down"}>
+                            {row.roi >= 0 ? "+" : ""}{row.roi.toFixed(1)}%
+                          </strong>
+                        ) : <span className="text-muted">—</span>}
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>

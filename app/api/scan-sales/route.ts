@@ -1,6 +1,6 @@
 ﻿import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/src/lib/supabase-server";
-import { rematchViagogoSales, syncViagogoSalesInbox } from "@/src/lib/viagogo-sales-sync";
+import { rematchViagogoSales, syncViagogoSalesInbox, syncViagogoSalesOutlookInbox } from "@/src/lib/viagogo-sales-sync";
 
 export const runtime = "nodejs";
 
@@ -17,7 +17,7 @@ export async function POST() {
 
     const { data: gmailAccounts, error: accountError } = await supabase
       .from("gmail_accounts")
-      .select("id, email, access_token, refresh_token, token_expiry")
+      .select("id, email, access_token, refresh_token, token_expiry, provider")
       .eq("is_active", true)
       .order("is_primary", { ascending: false })
       .order("created_at", { ascending: true });
@@ -30,7 +30,7 @@ export async function POST() {
 
     if (readyAccounts.length === 0) {
       return NextResponse.json(
-        { error: "Connect Gmail in Connections before scanning sales" },
+        { error: "Connect Gmail or Outlook in Connections before scanning sales" },
         { status: 400 },
       );
     }
@@ -42,12 +42,11 @@ export async function POST() {
       accounts: readyAccounts.length,
     };
 
-    for (const gmailAccount of readyAccounts) {
-      const result = await syncViagogoSalesInbox({
-        supabase,
-        gmailAccount,
-        userId: user.id,
-      });
+    for (const account of readyAccounts) {
+      const result =
+        account.provider === "outlook"
+          ? await syncViagogoSalesOutlookInbox({ supabase, outlookAccount: account, userId: user.id })
+          : await syncViagogoSalesInbox({ supabase, gmailAccount: account, userId: user.id });
 
       totals.scanned += result.scanned;
       totals.inserted += result.inserted;

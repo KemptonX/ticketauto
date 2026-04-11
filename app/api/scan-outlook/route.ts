@@ -1,6 +1,6 @@
-﻿import { NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/src/lib/supabase-server";
-import { syncGmailInbox } from "@/src/lib/gmail-sync";
+import { syncOutlookInbox } from "@/src/lib/outlook-sync";
 
 export const runtime = "nodejs";
 
@@ -15,11 +15,11 @@ export async function POST() {
       return NextResponse.json({ error: "You must be signed in" }, { status: 401 });
     }
 
-    const { data: gmailAccounts, error: accountError } = await supabase
+    const { data: outlookAccounts, error: accountError } = await supabase
       .from("gmail_accounts")
       .select("id, email, access_token, refresh_token, token_expiry")
       .eq("is_active", true)
-      .eq("provider", "gmail")
+      .eq("provider", "outlook")
       .order("is_primary", { ascending: false })
       .order("created_at", { ascending: true });
 
@@ -27,9 +27,9 @@ export async function POST() {
       return NextResponse.json({ error: accountError.message }, { status: 500 });
     }
 
-    if (!gmailAccounts || gmailAccounts.length === 0) {
+    if (!outlookAccounts || outlookAccounts.length === 0) {
       return NextResponse.json(
-        { error: "Connect Gmail in Connections before running a scan" },
+        { error: "Connect Outlook in Connections before running a scan" },
         { status: 400 },
       );
     }
@@ -42,16 +42,16 @@ export async function POST() {
     const accountResults: { email: string; inserted: number; updated: number }[] = [];
     const errors: string[] = [];
 
-    for (const gmailAccount of gmailAccounts) {
-      if (!gmailAccount.access_token) {
-        errors.push(`${gmailAccount.email}: OAuth incomplete`);
+    for (const outlookAccount of outlookAccounts) {
+      if (!outlookAccount.access_token) {
+        errors.push(`${outlookAccount.email}: OAuth incomplete`);
         continue;
       }
 
       try {
-        const result = await syncGmailInbox({
+        const result = await syncOutlookInbox({
           supabase,
-          gmailAccount,
+          outlookAccount,
           userId: user.id,
         });
 
@@ -62,7 +62,7 @@ export async function POST() {
         allUpdatedRefs.push(...result.updatedRefs);
         accountResults.push({ email: result.email, inserted: result.inserted, updated: result.updated });
       } catch (err) {
-        errors.push(`${gmailAccount.email}: ${err instanceof Error ? err.message : "scan failed"}`);
+        errors.push(`${outlookAccount.email}: ${err instanceof Error ? err.message : "scan failed"}`);
       }
     }
 

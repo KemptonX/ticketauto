@@ -57,7 +57,9 @@ export default function ConnectionsClient() {
     const error = searchParams.get("error");
 
     if (connected) {
-      setMessage(`Gmail connected: ${connected}`);
+      const provider = searchParams.get("provider");
+      const label = provider === "outlook" ? "Outlook" : "Gmail";
+      setMessage(`${label} connected: ${connected}`);
       void loadAccounts(true);
       return;
     }
@@ -291,6 +293,9 @@ export default function ConnectionsClient() {
             >
               {refreshing ? "Refreshing..." : "Refresh"}
             </button>
+            <Link href="/api/outlook/connect" className="secondary-button">
+              Connect Outlook
+            </Link>
             <Link href="/api/gmail/connect" className="primary-button">
               Connect Gmail
             </Link>
@@ -342,6 +347,25 @@ export default function ConnectionsClient() {
             </div>
             <Link href="/api/gmail/connect" className="primary-button">
               Connect Gmail
+            </Link>
+          </div>
+        </section>
+
+        <section className="command-card connections-command-card">
+          <div className="command-header">
+            <div>
+              <p className="section-tag">Outlook</p>
+              <h4>Connect a Microsoft inbox</h4>
+            </div>
+          </div>
+
+          <div className="connections-cta-row">
+            <div className="connections-cta-copy">
+              <strong>Microsoft OAuth</strong>
+              <span>Authorise an Outlook or Hotmail inbox to scan Ticketmaster emails via Microsoft Graph.</span>
+            </div>
+            <Link href="/api/outlook/connect" className="primary-button">
+              Connect Outlook
             </Link>
           </div>
 
@@ -430,7 +454,10 @@ export default function ConnectionsClient() {
 
                   <div className="connection-card-actions">
                     {account.status !== "Ready" ? (
-                      <Link href="/api/gmail/connect" className="primary-button">
+                      <Link
+                        href={account.provider === "outlook" ? "/api/outlook/connect" : "/api/gmail/connect"}
+                        className="primary-button"
+                      >
                         Connect
                       </Link>
                     ) : null}
@@ -510,6 +537,13 @@ function formatOAuthError(error: string) {
       return "Sign in before connecting Gmail";
     case "gmail-profile-failed":
       return "Google connected, but profile lookup failed";
+    case "missing-microsoft-client":
+    case "missing-microsoft-config":
+      return "Microsoft OAuth env vars are missing";
+    case "outlook-profile-failed":
+      return "Microsoft connected, but profile lookup failed";
+    case "outlook-no-email":
+      return "Microsoft connected, but no email address was returned";
     default:
       return error.replaceAll("-", " ");
   }
