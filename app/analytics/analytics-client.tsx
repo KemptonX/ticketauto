@@ -299,6 +299,19 @@ export default function AnalyticsClient() {
     return { metrics, profitSeries, eventRows };
   }, [filteredOrders, soldAtMap]);
 
+  const allTimeSummary = useMemo(() => {
+    const soldOrders = orders.filter(isSold);
+    const totalInvested = orders.reduce((sum, o) => sum + (o.total_cost ?? 0), 0);
+    const totalReturned = soldOrders.reduce((sum, o) => sum + (o.sold_total ?? 0), 0);
+    const totalProfit = totalReturned - soldOrders.reduce((sum, o) => sum + (o.total_cost ?? 0), 0);
+    const totalCostSold = soldOrders.reduce((sum, o) => sum + (o.total_cost ?? 0), 0);
+    const roi = totalCostSold > 0 ? (totalProfit / totalCostSold) * 100 : 0;
+    const totalTickets = orders.reduce((sum, o) => sum + getTicketQuantity(o), 0);
+    const soldTickets = soldOrders.reduce((sum, o) => sum + getTicketQuantity(o), 0);
+    const totalEvents = new Set(orders.map((o) => `${o.event_name}__${o.venue}`)).size;
+    return { totalInvested, totalReturned, totalProfit, roi, totalTickets, soldTickets, totalEvents };
+  }, [orders]);
+
   const sortedEventRows = useMemo(() => {
     const rows = [...analytics.eventRows];
     rows.sort((a, b) => {
@@ -404,6 +417,50 @@ export default function AnalyticsClient() {
             <span>{message}</span>
           </div>
         ) : null}
+
+        <section className="table-card">
+          <div className="table-card-header">
+            <div>
+              <p className="section-tag">All time</p>
+              <h4>Portfolio summary</h4>
+            </div>
+            <span className="table-count">{allTimeSummary.totalEvents} events · {allTimeSummary.totalTickets} tickets</span>
+          </div>
+          <div className="drawer-summary" style={{ gridTemplateColumns: "repeat(6, 1fr)" }}>
+            <div>
+              <span>Total invested</span>
+              <strong>{formatCurrency(allTimeSummary.totalInvested)}</strong>
+            </div>
+            <div>
+              <span>Total returned</span>
+              <strong>{formatCurrency(allTimeSummary.totalReturned)}</strong>
+            </div>
+            <div>
+              <span>Net profit</span>
+              <strong className={allTimeSummary.totalProfit >= 0 ? "value-up" : "value-down"}>
+                {formatCurrency(allTimeSummary.totalProfit)}
+              </strong>
+            </div>
+            <div>
+              <span>Overall ROI</span>
+              <strong className={allTimeSummary.roi >= 0 ? "value-up" : "value-down"}>
+                {allTimeSummary.totalReturned > 0 ? `${allTimeSummary.roi.toFixed(1)}%` : "—"}
+              </strong>
+            </div>
+            <div>
+              <span>Tickets sold</span>
+              <strong>{allTimeSummary.soldTickets} / {allTimeSummary.totalTickets}</strong>
+            </div>
+            <div>
+              <span>Sell-through</span>
+              <strong>
+                {allTimeSummary.totalTickets > 0
+                  ? `${((allTimeSummary.soldTickets / allTimeSummary.totalTickets) * 100).toFixed(0)}%`
+                  : "—"}
+              </strong>
+            </div>
+          </div>
+        </section>
 
         <section className="command-card">
           <div className="command-header">
