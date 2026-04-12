@@ -596,10 +596,22 @@ export default function SettingsClient() {
     const toInsert: Array<{ rowNum: number; data: Record<string, unknown> }> = [];
     const errors: string[] = [];
 
+    // Only these columns exist on the orders table
+    const ORDER_COLUMNS = new Set([
+      "booking_ref", "event_name", "venue", "event_date", "purchased_at",
+      "account_email", "section", "row", "seat_from", "seat_to",
+      "qty_bought", "total_cost", "sold_total", "listing_status", "source_type",
+    ]);
+
     const baseTs = Date.now();
     for (let i = 0; i < importRows.length; i++) {
       const obj = transformRow(importRows[i], importHeaders, colMap);
       if (!obj || Object.keys(obj).length < 3) { errors.push(`Row ${i + 2}: not enough data (fewer than 3 fields)`); continue; }
+
+      // Strip fields that don't exist on the orders table
+      for (const key of Object.keys(obj)) {
+        if (!ORDER_COLUMNS.has(key)) delete obj[key];
+      }
 
       // Auto-generate booking_ref if not provided (required NOT NULL column)
       if (!obj.booking_ref) {
