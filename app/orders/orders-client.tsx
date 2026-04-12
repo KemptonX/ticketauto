@@ -625,6 +625,22 @@ export default function OrdersClient() {
     setSelectedIds(new Set());
   }
 
+  function selectAll() {
+    setSelectedIds(new Set(filteredOrders.map((o) => o.id)));
+  }
+
+  async function bulkDelete() {
+    const ids = [...selectedIds];
+    if (ids.length === 0) return;
+    const confirmed = window.confirm(`Delete ${ids.length} ticket${ids.length !== 1 ? "s" : ""}? This cannot be undone.`);
+    if (!confirmed) return;
+    const { error } = await supabase.from("orders").delete().in("id", ids);
+    if (error) { setMessage(error.message); return; }
+    setOrders((current) => current.filter((o) => !selectedIds.has(o.id)));
+    clearSelection();
+    setMessage(`${ids.length} ticket${ids.length !== 1 ? "s" : ""} deleted`);
+  }
+
   async function bulkArchive() {
     const ids = [...selectedIds];
     if (ids.length === 0) return;
@@ -962,8 +978,14 @@ export default function OrdersClient() {
                     Set status
                   </button>
                 </div>
+                <button className="secondary-button" type="button" onClick={selectAll}>
+                  Select all ({filteredOrders.length})
+                </button>
                 <button className="secondary-button" type="button" onClick={() => void bulkArchive()}>
                   Archive selected
+                </button>
+                <button className="danger-button" type="button" onClick={() => void bulkDelete()}>
+                  Delete selected
                 </button>
                 <button className="ghost-button" type="button" onClick={clearSelection}>
                   Clear
