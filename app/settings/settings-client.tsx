@@ -109,6 +109,12 @@ const IMPORT_FIELDS: ImportField[] = [
     dataType: "number",
   },
   {
+    key: "qty_sold",
+    label: "Qty Sold",
+    aliases: ["qty sold", "quantity sold", "sold qty", "sold quantity", "tickets sold", "qty_sold", "sold count", "no sold", "number sold"],
+    dataType: "number",
+  },
+  {
     key: "total_cost",
     label: "Total Cost",
     aliases: ["cost", "total cost", "price", "amount paid", "paid", "purchase price", "buying price", "face value", "total paid", "cost price", "buy price", "purchase total", "amount", "total amount"],
