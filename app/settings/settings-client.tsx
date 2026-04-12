@@ -593,7 +593,7 @@ export default function SettingsClient() {
     const baseTs = Date.now();
     for (let i = 0; i < importRows.length; i++) {
       const obj = transformRow(importRows[i], importHeaders, colMap);
-      if (!obj) { errors.push(`Row ${i + 2}: empty`); continue; }
+      if (!obj || Object.keys(obj).length < 2) { errors.push(`Row ${i + 2}: skipped (less than 2 fields)`); continue; }
 
       // Auto-generate booking_ref if not provided (required NOT NULL column)
       if (!obj.booking_ref) {
