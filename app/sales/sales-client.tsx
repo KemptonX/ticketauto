@@ -98,7 +98,13 @@ export default function SalesClient() {
   const [manualSearch, setManualSearch] = useState("");
 
   useEffect(() => {
-    void loadSales(false, showArchived);
+    async function init() {
+      if (!showArchived) {
+        await autoArchivePastSales();
+      }
+      void loadSales(false, showArchived);
+    }
+    void init();
   }, [showArchived]);
 
   const selectedSaleRaw = sales.find((s) => s.id === selectedSaleId) || null;
@@ -301,6 +307,33 @@ export default function SalesClient() {
       setSelectedSaleId(null);
     }
     setMessage("Sale archived");
+  }
+
+  async function autoArchivePastSales() {
+    const { data } = await supabase
+      .from("sales")
+      .select("id, event_date")
+      .neq("sale_status", "Archived");
+
+    if (!data) return;
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const toArchive = (data as { id: number; event_date: string | null }[])
+      .filter((s) => {
+        if (!s.event_date) return false;
+        const d = parseEventDateValue(s.event_date);
+        return d !== null && d < today;
+      })
+      .map((s) => s.id);
+
+    if (toArchive.length === 0) return;
+
+    await supabase
+      .from("sales")
+      .update({ sale_status: "Archived" })
+      .in("id", toArchive);
   }
 
   async function syncOrderFromSales(orderId: number) {

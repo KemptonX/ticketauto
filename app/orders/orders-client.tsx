@@ -242,12 +242,15 @@ export default function OrdersClient() {
   }
 
   useEffect(() => {
-    if (!showArchived) {
-      void autoArchivePastEvents();
+    async function init() {
+      if (!showArchived) {
+        await autoArchivePastEvents();
+      }
+      loadOrders(false, showArchived);
+      void loadAccounts();
+      void loadSyncLog();
     }
-    loadOrders(false, showArchived);
-    void loadAccounts();
-    void loadSyncLog();
+    void init();
   }, [showArchived]);
 
   async function autoArchivePastEvents() {
