@@ -606,18 +606,7 @@ export default function AnalyticsClient() {
               </>
             )}
 
-            <section className="table-card">
-              <div className="table-card-header">
-                <div>
-                  <p className="section-tag">Trend</p>
-                  <h4>Profit by month</h4>
-                </div>
-                <span className="table-count">Month on month</span>
-              </div>
-              <BarChartCard data={analytics.profitSeries} />
-            </section>
-
-            <section className="table-card">
+<section className="table-card">
               <div className="table-card-header">
                 <div>
                   <p className="section-tag">Events</p>
