@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/src/lib/supabase";
+import { formatCurrency } from "@/src/lib/currency";
 
 type Sale = {
   id: number;
@@ -586,8 +587,8 @@ export default function SalesClient() {
           <div className="sidebar-settings-box">
             <p className="sidebar-panel-label">Settings</p>
             <div className="sidebar-settings-actions">
-              <Link href="/connections" className="sidebar-panel-link">
-                Connections
+              <Link href="/settings" className="sidebar-panel-link">
+                Settings
               </Link>
               <button type="button" className="sidebar-panel-link sidebar-logout-button" onClick={handleLogout}>
                 Log out
@@ -1353,18 +1354,6 @@ function renderDeltaValue(value: number | null, withArrow = false) {
   return `${value > 0 ? "↑" : "↓"} ${formatCurrency(Math.abs(value))}`;
 }
 
-function formatCurrency(value: number | null | undefined) {
-  if (value == null || Number.isNaN(value)) {
-    return "—";
-  }
-
-  return new Intl.NumberFormat("en-GB", {
-    style: "currency",
-    currency: "GBP",
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(value);
-}
 
 function formatEventDate(value: string | null) {
   return value || "Date missing";

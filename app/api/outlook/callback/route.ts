@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
   const storedState = request.cookies.get("outlook_oauth_state")?.value;
 
   const redirectToConnections = (params: Record<string, string>) => {
-    const nextUrl = new URL("/connections", request.url);
+    const nextUrl = new URL("/settings", request.url);
     for (const [key, value] of Object.entries(params)) {
       nextUrl.searchParams.set(key, value);
     }

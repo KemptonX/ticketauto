@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/src/lib/supabase";
+import { formatCurrency } from "@/src/lib/currency";
 
 type BillingCycle = "monthly" | "annual" | "weekly" | "one-off";
 
@@ -48,14 +49,6 @@ function formatBilledDate(value: string) {
   return new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric" }).format(d);
 }
 
-function formatCurrency(value: number) {
-  return new Intl.NumberFormat("en-GB", {
-    style: "currency",
-    currency: "GBP",
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(value);
-}
 
 export default function CostsClient() {
   const [overheads, setOverheads] = useState<Overhead[]>([]);
@@ -268,8 +261,8 @@ export default function CostsClient() {
           <div className="sidebar-settings-box">
             <p className="sidebar-panel-label">Settings</p>
             <div className="sidebar-settings-actions">
-              <Link href="/connections" className="sidebar-panel-link">
-                Connections
+              <Link href="/settings" className="sidebar-panel-link">
+                Settings
               </Link>
               <button type="button" className="sidebar-panel-link sidebar-logout-button" onClick={handleLogout}>
                 Log out

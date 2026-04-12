@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/src/lib/supabase";
+import { formatCurrency } from "@/src/lib/currency";
 
 type Order = {
   id: number;
@@ -386,8 +387,8 @@ export default function InventoryClient() {
         <div className="sidebar-footer">
           <div className="sidebar-settings-box">
             <p className="sidebar-settings-title">Settings</p>
-            <Link href="/connections" className="sidebar-settings-link">
-              Connections
+            <Link href="/settings" className="sidebar-settings-link">
+              Settings
             </Link>
             <button className="sidebar-settings-link sidebar-settings-button" type="button" onClick={handleLogout}>
               Log out
@@ -767,18 +768,6 @@ function getDaysAway(date: Date | null) {
   return Math.floor(ms / (1000 * 60 * 60 * 24));
 }
 
-function formatCurrency(value: number | null) {
-  if (value == null) {
-    return "—";
-  }
-
-  return new Intl.NumberFormat("en-GB", {
-    style: "currency",
-    currency: "GBP",
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(value);
-}
 
 function formatSeatLabel(
   row: string | null,

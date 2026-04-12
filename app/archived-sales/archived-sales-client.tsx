@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/src/lib/supabase";
+import { formatCurrency } from "@/src/lib/currency";
 
 type Sale = {
   id: number;
@@ -171,8 +172,8 @@ export default function ArchivedSalesClient() {
         <div className="sidebar-footer">
           <div className="sidebar-settings-box">
             <p className="sidebar-settings-title">Settings</p>
-            <Link href="/connections" className="sidebar-settings-link">
-              Connections
+            <Link href="/settings" className="sidebar-settings-link">
+              Settings
             </Link>
             <button className="sidebar-settings-link sidebar-settings-button" type="button" onClick={handleLogout}>
               Log out
@@ -318,18 +319,6 @@ export default function ArchivedSalesClient() {
   );
 }
 
-function formatCurrency(value: number | null | undefined) {
-  if (value == null || Number.isNaN(value)) {
-    return "—";
-  }
-
-  return new Intl.NumberFormat("en-GB", {
-    style: "currency",
-    currency: "GBP",
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(value);
-}
 
 function getSaleCost(sale: Sale, order?: MatchedOrder | null) {
   if (!order?.total_cost) {

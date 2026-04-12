@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/src/lib/supabase";
+import { formatCurrency } from "@/src/lib/currency";
 
 type Order = {
   id: number;
@@ -355,8 +356,8 @@ export default function DeskClient() {
           <div className="sidebar-settings-box">
             <p className="sidebar-panel-label">Settings</p>
             <div className="sidebar-settings-actions">
-              <Link href="/connections" className="sidebar-panel-link">
-                Connections
+              <Link href="/settings" className="sidebar-panel-link">
+                Settings
               </Link>
               <button type="button" className="sidebar-panel-link sidebar-logout-button" onClick={handleLogout}>
                 Log out
@@ -804,15 +805,6 @@ function getDaysAway(date: Date | null): number | null {
   return Math.floor((date.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
 }
 
-function formatCurrency(value: number | null): string {
-  if (value == null) return "—";
-  return new Intl.NumberFormat("en-GB", {
-    style: "currency",
-    currency: "GBP",
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(value);
-}
 
 function formatEventDate(value: string | null): string {
   if (!value) return "Date missing";

@@ -123,8 +123,8 @@ export default function ViagogoCalculatorClient() {
           <div className="sidebar-settings-box">
             <p className="sidebar-panel-label">Settings</p>
             <div className="sidebar-settings-actions">
-              <Link href="/connections" className="sidebar-panel-link">
-                Connections
+              <Link href="/settings" className="sidebar-panel-link">
+                Settings
               </Link>
               <button type="button" className="sidebar-panel-link sidebar-logout-button" onClick={handleLogout}>
                 Log out

@@ -1,10 +1,5 @@
-﻿import { Suspense } from "react";
-import ConnectionsClient from "./connections-client";
+import { redirect } from "next/navigation";
 
 export default function ConnectionsPage() {
-  return (
-    <Suspense fallback={null}>
-      <ConnectionsClient />
-    </Suspense>
-  );
+  redirect("/settings");
 }

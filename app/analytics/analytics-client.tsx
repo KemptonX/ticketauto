@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/src/lib/supabase";
+import { formatCurrency } from "@/src/lib/currency";
 
 type Order = {
   id: number;
@@ -74,6 +75,7 @@ export default function AnalyticsClient() {
   const [customTo, setCustomTo] = useState("");
   const [eventSortCol, setEventSortCol] = useState<"profit" | "roi" | "sales" | "cost" | "tickets">("profit");
   const [eventSortDir, setEventSortDir] = useState<"desc" | "asc">("desc");
+  const [summaryView, setSummaryView] = useState<"closed" | "portfolio">("closed");
 
   useEffect(() => {
     void loadOrders();
@@ -301,15 +303,43 @@ export default function AnalyticsClient() {
 
   const allTimeSummary = useMemo(() => {
     const soldOrders = orders.filter(isSold);
-    const totalInvested = orders.reduce((sum, o) => sum + (o.total_cost ?? 0), 0);
-    const totalReturned = soldOrders.reduce((sum, o) => sum + (o.sold_total ?? 0), 0);
-    // Profit = returned minus ALL invested (including unsold stock) so the three numbers add up
-    const totalProfit = totalReturned - totalInvested;
-    const roi = totalInvested > 0 ? (totalProfit / totalInvested) * 100 : 0;
-    const totalTickets = orders.reduce((sum, o) => sum + getTicketQuantity(o), 0);
-    const soldTickets = soldOrders.reduce((sum, o) => sum + getTicketQuantity(o), 0);
-    const totalEvents = new Set(orders.map((o) => `${o.event_name}__${o.venue}`)).size;
-    return { totalInvested, totalReturned, totalProfit, roi, totalTickets, soldTickets, totalEvents };
+
+    // Closed view — only orders marked as Sold
+    const closedInvested = soldOrders.reduce((sum, o) => sum + (o.total_cost ?? 0), 0);
+    const closedReturned = soldOrders.reduce((sum, o) => sum + (o.sold_total ?? 0), 0);
+    const closedProfit = closedReturned - closedInvested;
+    const closedRoi = closedInvested > 0 ? (closedProfit / closedInvested) * 100 : 0;
+    const closedTickets = soldOrders.reduce((sum, o) => sum + getTicketQuantity(o), 0);
+    const closedEvents = new Set(soldOrders.map((o) => `${o.event_name}__${o.venue}`)).size;
+
+    // Full portfolio view — all orders, returns from sold only
+    const portfolioInvested = orders.reduce((sum, o) => sum + (o.total_cost ?? 0), 0);
+    const portfolioReturned = soldOrders.reduce((sum, o) => sum + (o.sold_total ?? 0), 0);
+    const portfolioProfit = portfolioReturned - portfolioInvested;
+    const portfolioRoi = portfolioInvested > 0 ? (portfolioProfit / portfolioInvested) * 100 : 0;
+    const portfolioTickets = orders.reduce((sum, o) => sum + getTicketQuantity(o), 0);
+    const portfolioEvents = new Set(orders.map((o) => `${o.event_name}__${o.venue}`)).size;
+
+    return {
+      closed: {
+        totalInvested: closedInvested,
+        totalReturned: closedReturned,
+        totalProfit: closedProfit,
+        roi: closedRoi,
+        totalTickets: closedTickets,
+        soldTickets: closedTickets,
+        totalEvents: closedEvents,
+      },
+      portfolio: {
+        totalInvested: portfolioInvested,
+        totalReturned: portfolioReturned,
+        totalProfit: portfolioProfit,
+        roi: portfolioRoi,
+        totalTickets: portfolioTickets,
+        soldTickets: closedTickets,
+        totalEvents: portfolioEvents,
+      },
+    };
   }, [orders]);
 
   const sortedEventRows = useMemo(() => {
@@ -356,8 +386,8 @@ export default function AnalyticsClient() {
           <div className="sidebar-settings-box">
             <p className="sidebar-panel-label">Settings</p>
             <div className="sidebar-settings-actions">
-              <Link href="/connections" className="sidebar-panel-link">
-                Connections
+              <Link href="/settings" className="sidebar-panel-link">
+                Settings
               </Link>
               <button type="button" className="sidebar-panel-link sidebar-logout-button" onClick={handleLogout}>
                 Log out
@@ -424,42 +454,64 @@ export default function AnalyticsClient() {
               <p className="section-tag">All time</p>
               <h4>Portfolio summary</h4>
             </div>
-            <span className="table-count">{allTimeSummary.totalEvents} events · {allTimeSummary.totalTickets} tickets</span>
-          </div>
-          <div className="drawer-summary" style={{ gridTemplateColumns: "repeat(6, 1fr)" }}>
-            <div>
-              <span>Total invested</span>
-              <strong>{formatCurrency(allTimeSummary.totalInvested)}</strong>
-            </div>
-            <div>
-              <span>Total returned</span>
-              <strong>{formatCurrency(allTimeSummary.totalReturned)}</strong>
-            </div>
-            <div>
-              <span>Net profit</span>
-              <strong className={allTimeSummary.totalProfit >= 0 ? "value-up" : "value-down"}>
-                {formatCurrency(allTimeSummary.totalProfit)}
-              </strong>
-            </div>
-            <div>
-              <span>Overall ROI</span>
-              <strong className={allTimeSummary.roi >= 0 ? "value-up" : "value-down"}>
-                {allTimeSummary.totalReturned > 0 ? `${allTimeSummary.roi.toFixed(1)}%` : "—"}
-              </strong>
-            </div>
-            <div>
-              <span>Tickets sold</span>
-              <strong>{allTimeSummary.soldTickets} / {allTimeSummary.totalTickets}</strong>
-            </div>
-            <div>
-              <span>Sell-through</span>
-              <strong>
-                {allTimeSummary.totalTickets > 0
-                  ? `${((allTimeSummary.soldTickets / allTimeSummary.totalTickets) * 100).toFixed(0)}%`
-                  : "—"}
-              </strong>
+            <div className="view-toggle" style={{ marginLeft: "auto" }}>
+              <button
+                type="button"
+                className={`toggle-btn${summaryView === "closed" ? " toggle-btn-active" : ""}`}
+                onClick={() => setSummaryView("closed")}
+              >
+                Closed
+              </button>
+              <button
+                type="button"
+                className={`toggle-btn${summaryView === "portfolio" ? " toggle-btn-active" : ""}`}
+                onClick={() => setSummaryView("portfolio")}
+              >
+                Full portfolio
+              </button>
             </div>
           </div>
+          {(() => {
+            const s = allTimeSummary[summaryView];
+            return (
+              <div className="drawer-summary" style={{ gridTemplateColumns: "repeat(6, 1fr)" }}>
+                <div>
+                  <span>Total invested</span>
+                  <strong>{formatCurrency(s.totalInvested)}</strong>
+                </div>
+                <div>
+                  <span>Total returned</span>
+                  <strong>{formatCurrency(s.totalReturned)}</strong>
+                </div>
+                <div>
+                  <span>Net profit</span>
+                  <strong className={s.totalProfit >= 0 ? "value-up" : "value-down"}>
+                    {formatCurrency(s.totalProfit)}
+                  </strong>
+                </div>
+                <div>
+                  <span>Overall ROI</span>
+                  <strong className={s.roi >= 0 ? "value-up" : "value-down"}>
+                    {s.totalReturned > 0 ? `${s.roi.toFixed(1)}%` : "—"}
+                  </strong>
+                </div>
+                <div>
+                  <span>Tickets sold</span>
+                  <strong>{s.soldTickets}{summaryView === "portfolio" ? ` / ${s.totalTickets}` : ""}</strong>
+                </div>
+                <div>
+                  <span>{summaryView === "portfolio" ? "Sell-through" : "Events"}</span>
+                  <strong>
+                    {summaryView === "portfolio"
+                      ? s.totalTickets > 0
+                        ? `${((s.soldTickets / s.totalTickets) * 100).toFixed(0)}%`
+                        : "—"
+                      : String(s.totalEvents)}
+                  </strong>
+                </div>
+              </div>
+            );
+          })()}
         </section>
 
         <section className="command-card">
@@ -913,18 +965,6 @@ function buildEventProfit(orders: Order[]): EventProfit[] {
 }
 
 
-function formatCurrency(value: number | null) {
-  if (value == null) {
-    return "—";
-  }
-
-  return new Intl.NumberFormat("en-GB", {
-    style: "currency",
-    currency: "GBP",
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(value);
-}
 
 function formatCompactCurrency(value: number) {
   return new Intl.NumberFormat("en-GB", {

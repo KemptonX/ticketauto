@@ -18,13 +18,13 @@ export async function GET(request: Request) {
   } = await supabase.auth.getUser();
 
   if (!user) {
-    return NextResponse.redirect(new URL("/login?next=/connections", request.url));
+    return NextResponse.redirect(new URL("/login?next=/settings", request.url));
   }
 
   const requestUrl = new URL(request.url);
   const clientId = process.env.GOOGLE_CLIENT_ID;
   if (!clientId) {
-    return NextResponse.redirect(new URL("/connections?error=missing-google-client", request.url));
+    return NextResponse.redirect(new URL("/settings?error=missing-google-client", request.url));
   }
 
   const callbackUrl = new URL("/api/gmail/callback", request.url).toString();

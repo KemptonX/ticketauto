@@ -20,12 +20,12 @@ export async function GET(request: Request) {
   } = await supabase.auth.getUser();
 
   if (!user) {
-    return NextResponse.redirect(new URL("/login?next=/connections", request.url));
+    return NextResponse.redirect(new URL("/login?next=/settings", request.url));
   }
 
   const clientId = process.env.MICROSOFT_CLIENT_ID;
   if (!clientId) {
-    return NextResponse.redirect(new URL("/connections?error=missing-microsoft-client", request.url));
+    return NextResponse.redirect(new URL("/settings?error=missing-microsoft-client", request.url));
   }
 
   const callbackUrl = new URL("/api/outlook/callback", request.url).toString();
