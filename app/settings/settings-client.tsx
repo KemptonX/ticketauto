@@ -405,7 +405,7 @@ export default function SettingsClient() {
   const [colMap, setColMap] = useState<Record<number, string>>({});
   const [importing, setImporting] = useState(false);
   const [importMessage, setImportMessage] = useState("");
-  const [importResult, setImportResult] = useState<{ inserted: number; skipped: number; errors: string[] } | null>(null);
+  const [importResult, setImportResult] = useState<{ inserted: number; updated: number; skipped: number; errors: string[] } | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -626,24 +626,36 @@ export default function SettingsClient() {
     }
 
     let inserted = 0;
+    let updated = 0;
     let skipped = 0;
 
-    // Insert one row at a time so a single error doesn't fail an entire batch
+    // Insert one row at a time; on duplicate booking ref, update the existing record instead
     for (const { rowNum, data } of toInsert) {
       const { error } = await supabase.from("orders").insert(data);
       if (error) {
-        if (error.message.includes("duplicate")) {
-          errors.push(`Row ${rowNum}: already exists — duplicate booking ref`);
+        if (error.message.includes("duplicate") && data.booking_ref) {
+          // Update the existing record with the new data from the spreadsheet
+          const { booking_ref, ...updateData } = data as Record<string, unknown>;
+          const { error: updateError } = await supabase
+            .from("orders")
+            .update(updateData)
+            .eq("booking_ref", booking_ref as string);
+          if (updateError) {
+            errors.push(`Row ${rowNum}: ${updateError.message}`);
+            skipped++;
+          } else {
+            updated++;
+          }
         } else {
           errors.push(`Row ${rowNum}: ${error.message}`);
+          skipped++;
         }
-        skipped++;
       } else {
         inserted++;
       }
     }
 
-    setImportResult({ inserted, skipped, errors });
+    setImportResult({ inserted, updated, skipped, errors });
     setImporting(false);
     setImportStep("done");
   }
@@ -999,10 +1011,14 @@ export default function SettingsClient() {
                   <div><p className="section-tag">Complete</p><h4>Import finished</h4></div>
                 </div>
                 <div style={{ padding: "2rem 1.5rem" }}>
-                  <div className="drawer-summary" style={{ gridTemplateColumns: "repeat(3, 1fr)", marginBottom: "1.5rem" }}>
+                  <div className="drawer-summary" style={{ gridTemplateColumns: "repeat(4, 1fr)", marginBottom: "1.5rem" }}>
                     <div>
                       <span>Imported</span>
                       <strong className="value-up">{importResult.inserted}</strong>
+                    </div>
+                    <div>
+                      <span>Updated</span>
+                      <strong className="value-up">{importResult.updated}</strong>
                     </div>
                     <div>
                       <span>Skipped</span>
