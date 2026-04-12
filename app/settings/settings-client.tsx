@@ -590,10 +590,16 @@ export default function SettingsClient() {
     const toInsert: Record<string, unknown>[] = [];
     const errors: string[] = [];
 
+    const baseTs = Date.now();
     for (let i = 0; i < importRows.length; i++) {
       const obj = transformRow(importRows[i], importHeaders, colMap);
       if (!obj) { errors.push(`Row ${i + 2}: empty`); continue; }
       if (!obj.event_name) { errors.push(`Row ${i + 2}: missing event name`); continue; }
+
+      // Auto-generate booking_ref if not provided (required NOT NULL column)
+      if (!obj.booking_ref) {
+        obj.booking_ref = `imp_${baseTs}_${i}`;
+      }
 
       // Default status
       if (!obj.listing_status) {
@@ -606,15 +612,16 @@ export default function SettingsClient() {
     let inserted = 0;
     let skipped = 0;
 
-    // Batch insert in chunks of 50
+    // Batch upsert in chunks of 50 — ignoreDuplicates skips rows that already exist
     for (let i = 0; i < toInsert.length; i += 50) {
       const chunk = toInsert.slice(i, i + 50);
-      const { error, data } = await supabase.from("orders").insert(chunk).select("id");
+      const { error, data } = await supabase.from("orders").upsert(chunk, { ignoreDuplicates: true }).select("id");
       if (error) {
         errors.push(error.message);
         skipped += chunk.length;
       } else {
-        inserted += (data?.length ?? chunk.length);
+        inserted += (data?.length ?? 0);
+        skipped += chunk.length - (data?.length ?? 0);
       }
     }
 
