@@ -303,9 +303,9 @@ export default function AnalyticsClient() {
     const soldOrders = orders.filter(isSold);
     const totalInvested = orders.reduce((sum, o) => sum + (o.total_cost ?? 0), 0);
     const totalReturned = soldOrders.reduce((sum, o) => sum + (o.sold_total ?? 0), 0);
-    const totalProfit = totalReturned - soldOrders.reduce((sum, o) => sum + (o.total_cost ?? 0), 0);
-    const totalCostSold = soldOrders.reduce((sum, o) => sum + (o.total_cost ?? 0), 0);
-    const roi = totalCostSold > 0 ? (totalProfit / totalCostSold) * 100 : 0;
+    // Profit = returned minus ALL invested (including unsold stock) so the three numbers add up
+    const totalProfit = totalReturned - totalInvested;
+    const roi = totalInvested > 0 ? (totalProfit / totalInvested) * 100 : 0;
     const totalTickets = orders.reduce((sum, o) => sum + getTicketQuantity(o), 0);
     const soldTickets = soldOrders.reduce((sum, o) => sum + getTicketQuantity(o), 0);
     const totalEvents = new Set(orders.map((o) => `${o.event_name}__${o.venue}`)).size;
