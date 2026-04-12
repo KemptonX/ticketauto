@@ -268,7 +268,7 @@ export default function AnalyticsClient() {
       ? avgTimeToSellDays.reduce((sum, value) => sum + value, 0) / avgTimeToSellDays.length
       : null;
 
-    const profitSeries = buildMonthlyProfitSeries(soldOrders);
+    const profitSeries = buildMonthlyProfitSeries(soldOrders, soldAtMap);
     const eventRows = buildEventProfit(soldOrders);
 
     const metrics: MetricCard[] = [
@@ -862,14 +862,22 @@ function parseEventDate(value: string | null): Date | null {
   return null;
 }
 
-function buildMonthlyProfitSeries(orders: Order[]): SeriesPoint[] {
+function buildMonthlyProfitSeries(orders: Order[], soldAtMap: Record<number, string>): SeriesPoint[] {
   const map = new Map<string, SeriesPoint>();
+  const todayKey = (() => {
+    const n = new Date();
+    return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}`;
+  })();
 
   for (const order of orders) {
-    const date = parseEventDate(order.event_date) ?? parseDate(order.purchased_at) ?? parseDate(order.created_at);
+    // Use actual sale date if available, otherwise purchase date — not event date
+    const raw = soldAtMap[order.id] ?? order.purchased_at ?? order.created_at;
+    const date = parseDate(raw);
     if (!date) continue;
-    const label = new Intl.DateTimeFormat("en-GB", { month: "short", year: "2-digit" }).format(date);
     const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+    // Skip future months that have no completed sales yet
+    if (key > todayKey) continue;
+    const label = new Intl.DateTimeFormat("en-GB", { month: "short", year: "2-digit" }).format(date);
     const current = map.get(key) ?? { label, profit: 0, cost: 0, sales: 0 };
     current.profit += getProfit(order);
     current.cost += order.total_cost ?? 0;
@@ -877,9 +885,12 @@ function buildMonthlyProfitSeries(orders: Order[]): SeriesPoint[] {
     map.set(key, current);
   }
 
-  return Array.from(map.entries())
+  const sorted = Array.from(map.entries())
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([, v]) => v);
+
+  // Cap at 12 most recent months so bars stay wide and readable
+  return sorted.slice(-12);
 }
 
 function buildEventProfit(orders: Order[]): EventProfit[] {
@@ -961,10 +972,10 @@ function BarChartCard({ data }: { data: SeriesPoint[] }) {
   }
 
   const W = 760;
-  const H = 300;
+  const H = 380;
   const PAD_L = 60;
   const PAD_R = 16;
-  const PAD_T = 16;
+  const PAD_T = 20;
   const PAD_B = 8;
   const chartW = W - PAD_L - PAD_R;
   const chartH = H - PAD_T - PAD_B;
@@ -1048,6 +1059,18 @@ function BarChartCard({ data }: { data: SeriesPoint[] }) {
                 fill={isPos ? "#67F0A5" : "#FF7D7D"}
                 opacity={isHovered ? 1 : 0.75}
               />
+              {barH >= 24 && !isHovered && (
+                <text
+                  x={cx}
+                  y={isPos ? rectY - 6 : rectY + barH + 14}
+                  textAnchor="middle"
+                  fontSize="11"
+                  fill={isPos ? "#67F0A5" : "#FF7D7D"}
+                  fontWeight="600"
+                >
+                  {formatCompactCurrency(point.profit)}
+                </text>
+              )}
               {isHovered && (
                 <g>
                   <rect
