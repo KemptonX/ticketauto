@@ -405,7 +405,10 @@ export default function SettingsClient() {
   const [colMap, setColMap] = useState<Record<number, string>>({});
   const [importing, setImporting] = useState(false);
   const [importMessage, setImportMessage] = useState("");
-  const [importResult, setImportResult] = useState<{ inserted: number; updated: number; skipped: number; errors: string[] } | null>(null);
+  type FailedRow = { rowNum: number; reason: string; data: Record<string, unknown> };
+  const [importResult, setImportResult] = useState<{ inserted: number; updated: number; skipped: number; errors: string[]; failedRows: FailedRow[] } | null>(null);
+  const [failedEdits, setFailedEdits] = useState<FailedRow[]>([]);
+  const [retrying, setRetrying] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -595,6 +598,7 @@ export default function SettingsClient() {
 
     const toInsert: Array<{ rowNum: number; data: Record<string, unknown> }> = [];
     const errors: string[] = [];
+    const failedRows: FailedRow[] = [];
 
     // Only these columns exist on the orders table
     const ORDER_COLUMNS = new Set([
@@ -605,7 +609,12 @@ export default function SettingsClient() {
 
     for (let i = 0; i < importRows.length; i++) {
       const obj = transformRow(importRows[i], importHeaders, colMap);
-      if (!obj || Object.keys(obj).length < 3) { errors.push(`Row ${i + 2}: not enough data (fewer than 3 fields)`); continue; }
+      if (!obj || Object.keys(obj).length < 3) {
+        const reason = "Not enough data (fewer than 3 fields)";
+        errors.push(`Row ${i + 2}: ${reason}`);
+        failedRows.push({ rowNum: i + 2, reason, data: obj ?? {} });
+        continue;
+      }
 
       // Strip fields that don't exist on the orders table
       for (const key of Object.keys(obj)) {
@@ -648,6 +657,7 @@ export default function SettingsClient() {
           }
         } else {
           errors.push(`Row ${rowNum}: ${error.message}`);
+          failedRows.push({ rowNum, reason: error.message, data });
           skipped++;
         }
       } else {
@@ -655,7 +665,9 @@ export default function SettingsClient() {
       }
     }
 
-    setImportResult({ inserted, updated, skipped, errors });
+    const result = { inserted, updated, skipped, errors, failedRows };
+    setImportResult(result);
+    setFailedEdits(failedRows.map((r) => ({ ...r, data: { ...r.data } })));
     setImporting(false);
     setImportStep("done");
   }
@@ -667,6 +679,52 @@ export default function SettingsClient() {
     setColMap({});
     setImportMessage("");
     setImportResult(null);
+    setFailedEdits([]);
+  }
+
+  async function retryFailed() {
+    if (failedEdits.length === 0) return;
+    setRetrying(true);
+    let inserted = importResult?.inserted ?? 0;
+    let updated = importResult?.updated ?? 0;
+    let skipped = 0;
+    const remainingFailed: FailedRow[] = [];
+
+    for (const row of failedEdits) {
+      const data = { ...row.data };
+      if (!data.booking_ref) data.booking_ref = crypto.randomUUID();
+      if (!data.listing_status) data.listing_status = data.sold_total ? "Sold" : "Unlisted";
+
+      const { error } = await supabase.from("orders").insert(data);
+      if (error) {
+        if (error.message.includes("duplicate") && data.booking_ref) {
+          const { booking_ref, ...updateData } = data as Record<string, unknown>;
+          const { error: updateError } = await supabase.from("orders").update(updateData).eq("booking_ref", booking_ref as string);
+          if (updateError) {
+            remainingFailed.push({ ...row, reason: updateError.message, data });
+            skipped++;
+          } else {
+            updated++;
+          }
+        } else {
+          remainingFailed.push({ ...row, reason: error.message, data });
+          skipped++;
+        }
+      } else {
+        inserted++;
+      }
+    }
+
+    setImportResult((prev) => prev ? {
+      ...prev,
+      inserted,
+      updated,
+      skipped,
+      errors: remainingFailed.map((r) => `Row ${r.rowNum}: ${r.reason}`),
+      failedRows: remainingFailed,
+    } : null);
+    setFailedEdits(remainingFailed.map((r) => ({ ...r, data: { ...r.data } })));
+    setRetrying(false);
   }
 
   // ── Render ──────────────────────────────────────────────────────────────────
@@ -1029,12 +1087,34 @@ export default function SettingsClient() {
                       <strong>{importRows.length}</strong>
                     </div>
                   </div>
-                  {importResult.errors.length > 0 && (
+                  {failedEdits.length > 0 && (
                     <div style={{ marginBottom: "1.5rem" }}>
-                      <p className="section-tag" style={{ marginBottom: "0.5rem" }}>Skipped rows ({importResult.errors.length})</p>
-                      <ul style={{ fontSize: "0.8125rem", color: "var(--muted)", paddingLeft: "1.25rem", lineHeight: 1.7, maxHeight: "220px", overflowY: "auto" }}>
-                        {importResult.errors.map((e, i) => <li key={i}>{e}</li>)}
-                      </ul>
+                      <p className="section-tag" style={{ marginBottom: "0.25rem" }}>Failed rows — edit and retry ({failedEdits.length})</p>
+                      <p style={{ fontSize: "0.8125rem", color: "var(--muted)", marginBottom: "1rem" }}>Fix the data below then click Retry to import these rows.</p>
+                      <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", maxHeight: "400px", overflowY: "auto" }}>
+                        {failedEdits.map((row, ri) => (
+                          <div key={ri} style={{ background: "var(--surface-2)", borderRadius: "8px", padding: "0.875rem 1rem" }}>
+                            <p style={{ fontSize: "0.75rem", color: "var(--muted)", marginBottom: "0.5rem" }}>Row {row.rowNum} — {row.reason}</p>
+                            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: "0.5rem" }}>
+                              {(["event_name","venue","event_date","booking_ref","account_email","qty_bought","total_cost","listing_status"] as const).map((field) => (
+                                <label key={field} className="field-label" style={{ fontSize: "0.75rem" }}>
+                                  <span>{field.replace(/_/g, " ")}</span>
+                                  <input
+                                    className="field"
+                                    value={String(row.data[field] ?? "")}
+                                    onChange={(e) => setFailedEdits((prev) => prev.map((r, i) => i === ri ? { ...r, data: { ...r.data, [field]: e.target.value } } : r))}
+                                  />
+                                </label>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      <div style={{ marginTop: "1rem" }}>
+                        <button type="button" className="primary-button" onClick={() => void retryFailed()} disabled={retrying}>
+                          {retrying ? "Retrying..." : `Retry ${failedEdits.length} failed row${failedEdits.length !== 1 ? "s" : ""} →`}
+                        </button>
+                      </div>
                     </div>
                   )}
                   <div style={{ display: "flex", gap: "0.75rem" }}>
