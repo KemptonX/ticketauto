@@ -611,16 +611,18 @@ export default function SettingsClient() {
     let inserted = 0;
     let skipped = 0;
 
-    // Batch upsert in chunks of 50 — ignoreDuplicates skips rows that already exist
-    for (let i = 0; i < toInsert.length; i += 50) {
-      const chunk = toInsert.slice(i, i + 50);
-      const { error, data } = await supabase.from("orders").upsert(chunk, { ignoreDuplicates: true }).select("id");
+    // Insert one row at a time so a single duplicate doesn't fail an entire batch
+    for (const row of toInsert) {
+      const { error } = await supabase.from("orders").insert(row);
       if (error) {
-        errors.push(error.message);
-        skipped += chunk.length;
+        if (error.message.includes("duplicate")) {
+          skipped++;
+        } else {
+          errors.push(error.message);
+          skipped++;
+        }
       } else {
-        inserted += (data?.length ?? 0);
-        skipped += chunk.length - (data?.length ?? 0);
+        inserted++;
       }
     }
 
