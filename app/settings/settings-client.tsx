@@ -594,7 +594,6 @@ export default function SettingsClient() {
     for (let i = 0; i < importRows.length; i++) {
       const obj = transformRow(importRows[i], importHeaders, colMap);
       if (!obj) { errors.push(`Row ${i + 2}: empty`); continue; }
-      if (!obj.event_name) { errors.push(`Row ${i + 2}: missing event name`); continue; }
 
       // Auto-generate booking_ref if not provided (required NOT NULL column)
       if (!obj.booking_ref) {
@@ -937,7 +936,7 @@ export default function SettingsClient() {
                 </div>
                 <div style={{ padding: "0 1.5rem 1rem" }}>
                   <p style={{ color: "var(--muted)", fontSize: "0.875rem" }}>
-                    Check the data looks right before importing. Rows without an Event Name will be skipped.
+                    Check the data looks right before importing. Only completely empty rows will be skipped.
                   </p>
                 </div>
                 <div className="table-scroll">
