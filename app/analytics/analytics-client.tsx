@@ -954,64 +954,175 @@ function getDonutSegments(data: { label: string; value: number }[]) {
 }
 
 function BarChartCard({ data }: { data: SeriesPoint[] }) {
+  const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
+
   if (data.length === 0) {
     return <EmptyChartState label="No monthly data yet" />;
   }
 
-  const width = 760;
-  const height = 260;
-  const padX = 16;
-  const padTop = 36;
-  const padBottom = 32;
-  const chartH = height - padTop - padBottom;
-  const maxVal = Math.max(...data.map((p) => Math.abs(p.profit)), 1);
-  const zeroY = padTop + chartH / 2;
-  const barW = Math.max(8, Math.floor((width - padX * 2) / data.length) - 8);
+  const W = 760;
+  const H = 300;
+  const PAD_L = 60;
+  const PAD_R = 16;
+  const PAD_T = 16;
+  const PAD_B = 8;
+  const chartW = W - PAD_L - PAD_R;
+  const chartH = H - PAD_T - PAD_B;
+
+  const rawMax = Math.max(...data.map((p) => p.profit), 0);
+  const rawMin = Math.min(...data.map((p) => p.profit), 0);
+  const { gridLines, domainMin, domainMax } = computeNiceGrid(rawMin, rawMax, 5);
+  const domainRange = domainMax - domainMin || 1;
+
+  const toY = (v: number) => PAD_T + ((domainMax - v) / domainRange) * chartH;
+  const zeroY = toY(0);
+
+  const slotW = chartW / data.length;
+  const barW = Math.max(8, Math.min(52, slotW * 0.55));
 
   return (
     <div className="analytics-chart-wrap">
-      <svg viewBox={`0 0 ${width} ${height}`} className="analytics-line-chart" role="img" aria-label="Monthly profit">
-        <line x1={padX} x2={width - padX} y1={zeroY} y2={zeroY} stroke="rgba(255,255,255,0.1)" strokeWidth="1" />
-        {data.map((point, i) => {
-          const slotW = (width - padX * 2) / data.length;
-          const cx = padX + slotW * i + slotW / 2;
-          const isPos = point.profit >= 0;
-          const barH = Math.max(3, (Math.abs(point.profit) / maxVal) * (chartH / 2));
-          const y = isPos ? zeroY - barH : zeroY;
-          const labelY = isPos ? y - 6 : y + barH + 14;
-          const compact = formatCompactCurrency(point.profit);
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        className="analytics-line-chart"
+        role="img"
+        aria-label="Monthly profit"
+        style={{ overflow: "visible" }}
+      >
+        {/* Gridlines + Y-axis labels */}
+        {gridLines.map((v) => {
+          const y = toY(v);
+          const isZero = v === 0;
           return (
-            <g key={point.label}>
-              <rect
-                x={cx - barW / 2}
-                y={y}
-                width={barW}
-                height={barH}
-                rx={3}
-                fill={isPos ? "#67F0A5" : "#FF7D7D"}
-                opacity={0.85}
+            <g key={v}>
+              <line
+                x1={PAD_L}
+                x2={W - PAD_R}
+                y1={y}
+                y2={y}
+                stroke={isZero ? "rgba(255,255,255,0.25)" : "rgba(255,255,255,0.07)"}
+                strokeWidth="1"
               />
               <text
-                x={cx}
-                y={labelY}
-                textAnchor="middle"
-                fontSize="10"
-                fill={isPos ? "#67F0A5" : "#FF7D7D"}
-                fontWeight="600"
+                x={PAD_L - 8}
+                y={y + 4}
+                textAnchor="end"
+                fontSize="11"
+                fill="rgba(255,255,255,0.4)"
               >
-                {compact}
+                {formatCompactCurrency(v)}
               </text>
             </g>
           );
         })}
+
+        {/* Bars */}
+        {data.map((point, i) => {
+          const cx = PAD_L + slotW * i + slotW / 2;
+          const isPos = point.profit >= 0;
+          const barTop = toY(point.profit);
+          const barBot = zeroY;
+          const rectY = Math.min(barTop, barBot);
+          const barH = Math.max(2, Math.abs(barTop - barBot));
+          const isHovered = hoveredIdx === i;
+
+          // Clamp tooltip so it doesn't go off left/right edge
+          const tooltipW = 80;
+          const rawTipX = cx - tooltipW / 2;
+          const tipX = Math.max(PAD_L, Math.min(W - PAD_R - tooltipW, rawTipX));
+          const tipY = isPos ? rectY - 34 : rectY + barH + 6;
+
+          return (
+            <g
+              key={point.label}
+              onMouseEnter={() => setHoveredIdx(i)}
+              onMouseLeave={() => setHoveredIdx(null)}
+              style={{ cursor: "default" }}
+            >
+              <rect
+                x={cx - barW / 2}
+                y={rectY}
+                width={barW}
+                height={barH}
+                rx={4}
+                fill={isPos ? "#67F0A5" : "#FF7D7D"}
+                opacity={isHovered ? 1 : 0.75}
+              />
+              {isHovered && (
+                <g>
+                  <rect
+                    x={tipX}
+                    y={tipY}
+                    width={tooltipW}
+                    height={24}
+                    rx={5}
+                    fill="rgba(15,15,25,0.95)"
+                    stroke="rgba(255,255,255,0.15)"
+                    strokeWidth="1"
+                  />
+                  <text
+                    x={tipX + tooltipW / 2}
+                    y={tipY + 16}
+                    textAnchor="middle"
+                    fontSize="12"
+                    fill="white"
+                    fontWeight="700"
+                  >
+                    {formatCurrency(point.profit)}
+                  </text>
+                </g>
+              )}
+            </g>
+          );
+        })}
       </svg>
-      <div className="analytics-axis-labels">
+
+      {/* Month labels aligned under bars */}
+      <div
+        style={{
+          display: "flex",
+          paddingLeft: PAD_L,
+          paddingRight: PAD_R,
+          marginTop: 6,
+        }}
+      >
         {data.map((point) => (
-          <span key={point.label}>{point.label}</span>
+          <span
+            key={point.label}
+            style={{
+              flex: 1,
+              textAlign: "center",
+              fontSize: 11,
+              color: "rgba(255,255,255,0.45)",
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+            }}
+          >
+            {point.label}
+          </span>
         ))}
       </div>
     </div>
   );
+}
+
+function computeNiceGrid(rawMin: number, rawMax: number, targetCount: number) {
+  const range = rawMax - rawMin || 1;
+  const roughStep = range / (targetCount - 1);
+  const mag = Math.pow(10, Math.floor(Math.log10(roughStep)));
+  const norm = roughStep / mag;
+  const nice = norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 5 ? 5 : 10;
+  const step = nice * mag;
+
+  const domainMin = Math.floor(rawMin / step) * step;
+  const domainMax = Math.ceil(rawMax / step) * step;
+
+  const gridLines: number[] = [];
+  for (let v = domainMin; v <= domainMax + step * 0.01; v += step) {
+    gridLines.push(Math.round(v * 100) / 100);
+  }
+
+  return { gridLines, domainMin, domainMax };
 }
 
 function LineChartCard({ data }: { data: SeriesPoint[] }) {
