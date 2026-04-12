@@ -603,7 +603,6 @@ export default function SettingsClient() {
       "qty_bought", "total_cost", "sold_total", "listing_status", "source_type",
     ]);
 
-    const baseTs = Date.now();
     for (let i = 0; i < importRows.length; i++) {
       const obj = transformRow(importRows[i], importHeaders, colMap);
       if (!obj || Object.keys(obj).length < 3) { errors.push(`Row ${i + 2}: not enough data (fewer than 3 fields)`); continue; }
@@ -613,9 +612,9 @@ export default function SettingsClient() {
         if (!ORDER_COLUMNS.has(key)) delete obj[key];
       }
 
-      // Auto-generate booking_ref if not provided (required NOT NULL column)
+      // If booking_ref is blank, generate a random UUID — blank rows are always new, never duplicates
       if (!obj.booking_ref) {
-        obj.booking_ref = `imp_${baseTs}_${i}`;
+        obj.booking_ref = crypto.randomUUID();
       }
 
       // Default status
