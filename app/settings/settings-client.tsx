@@ -587,13 +587,13 @@ export default function SettingsClient() {
     setImporting(true);
     setImportMessage("");
 
-    const toInsert: Record<string, unknown>[] = [];
+    const toInsert: Array<{ rowNum: number; data: Record<string, unknown> }> = [];
     const errors: string[] = [];
 
     const baseTs = Date.now();
     for (let i = 0; i < importRows.length; i++) {
       const obj = transformRow(importRows[i], importHeaders, colMap);
-      if (!obj || Object.keys(obj).length < 3) { errors.push(`Row ${i + 2}: skipped (less than 3 fields)`); continue; }
+      if (!obj || Object.keys(obj).length < 3) { errors.push(`Row ${i + 2}: not enough data (fewer than 3 fields)`); continue; }
 
       // Auto-generate booking_ref if not provided (required NOT NULL column)
       if (!obj.booking_ref) {
@@ -605,28 +605,28 @@ export default function SettingsClient() {
         obj.listing_status = obj.sold_total ? "Sold" : "Unlisted";
       }
 
-      toInsert.push(obj);
+      toInsert.push({ rowNum: i + 2, data: obj });
     }
 
     let inserted = 0;
     let skipped = 0;
 
-    // Insert one row at a time so a single duplicate doesn't fail an entire batch
-    for (const row of toInsert) {
-      const { error } = await supabase.from("orders").insert(row);
+    // Insert one row at a time so a single error doesn't fail an entire batch
+    for (const { rowNum, data } of toInsert) {
+      const { error } = await supabase.from("orders").insert(data);
       if (error) {
         if (error.message.includes("duplicate")) {
-          skipped++;
+          errors.push(`Row ${rowNum}: already exists — duplicate booking ref`);
         } else {
-          errors.push(error.message);
-          skipped++;
+          errors.push(`Row ${rowNum}: ${error.message}`);
         }
+        skipped++;
       } else {
         inserted++;
       }
     }
 
-    setImportResult({ inserted, skipped, errors: errors.slice(0, 5) });
+    setImportResult({ inserted, skipped, errors });
     setImporting(false);
     setImportStep("done");
   }
@@ -998,12 +998,9 @@ export default function SettingsClient() {
                   </div>
                   {importResult.errors.length > 0 && (
                     <div style={{ marginBottom: "1.5rem" }}>
-                      <p className="section-tag" style={{ marginBottom: "0.5rem" }}>Skipped rows</p>
-                      <ul style={{ fontSize: "0.8125rem", color: "var(--muted)", paddingLeft: "1.25rem", lineHeight: 1.7 }}>
+                      <p className="section-tag" style={{ marginBottom: "0.5rem" }}>Skipped rows ({importResult.errors.length})</p>
+                      <ul style={{ fontSize: "0.8125rem", color: "var(--muted)", paddingLeft: "1.25rem", lineHeight: 1.7, maxHeight: "220px", overflowY: "auto" }}>
                         {importResult.errors.map((e, i) => <li key={i}>{e}</li>)}
-                        {importResult.skipped > importResult.errors.length && (
-                          <li>...and {importResult.skipped - importResult.errors.length} more</li>
-                        )}
                       </ul>
                     </div>
                   )}
