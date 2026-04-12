@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/src/lib/supabase";
 import { formatCurrency } from "@/src/lib/currency";
+import { SidebarLogo, NavIcon, SidebarFooter } from "@/app/components/nav-icons";
 
 type Sale = {
   id: number;
@@ -155,31 +156,19 @@ export default function ArchivedSalesClient() {
     <div className="orders-shell">
       <aside className="orders-sidebar">
         <div>
-          <div className="brand-mark">TA</div>
-          <div className="sidebar-brand">
-            <h1>TicketAuto</h1>
-          </div>
+          <SidebarLogo />
 
           <nav className="sidebar-nav">
             {navItems.map((item) => (
               <Link key={item.label} href={item.href} className={`nav-item${item.active ? " nav-item-active" : ""}`}>
+                <NavIcon href={item.href} />
                 <span>{item.label}</span>
               </Link>
             ))}
           </nav>
         </div>
 
-        <div className="sidebar-footer">
-          <div className="sidebar-settings-box">
-            <p className="sidebar-settings-title">Settings</p>
-            <Link href="/settings" className="sidebar-settings-link">
-              Settings
-            </Link>
-            <button className="sidebar-settings-link sidebar-settings-button" type="button" onClick={handleLogout}>
-              Log out
-            </button>
-          </div>
-        </div>
+        <SidebarFooter onLogout={handleLogout} />
       </aside>
 
       <main className="orders-main">

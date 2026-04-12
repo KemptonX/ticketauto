@@ -237,10 +237,9 @@ export default function ConnectionsClient() {
     <div className="orders-shell connections-shell">
       <aside className="orders-sidebar">
         <div>
-          <div className="brand-mark">TA</div>
+          <div className="brand-mark">TX</div>
           <div className="sidebar-brand">
-            <p className="sidebar-kicker">Ticket desk</p>
-            <h1>TicketAuto</h1>
+            <h1>TicketX</h1>
           </div>
 
           <nav className="sidebar-nav">

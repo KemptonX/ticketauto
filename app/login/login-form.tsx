@@ -81,10 +81,10 @@ export default function LoginForm() {
   return (
     <div className="auth-card">
       <div className="auth-brand">
-        <div className="brand-mark">TA</div>
+        <div className="brand-mark">TX</div>
         <div>
           <p className="auth-eyebrow">Member access</p>
-          <h1>TicketAuto</h1>
+          <h1>TicketX</h1>
         </div>
       </div>
 

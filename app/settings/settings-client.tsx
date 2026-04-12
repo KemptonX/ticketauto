@@ -5,6 +5,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "re
 import { useSearchParams } from "next/navigation";
 import { supabase } from "@/src/lib/supabase";
 import { CURRENCY_OPTIONS, getCurrencyCode, setCurrencyCode, formatCurrency } from "@/src/lib/currency";
+import { SidebarLogo, NavIcon, SidebarFooter } from "@/app/components/nav-icons";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -637,28 +638,17 @@ export default function SettingsClient() {
     <div className="orders-shell connections-shell">
       <aside className="orders-sidebar">
         <div>
-          <div className="brand-mark">TA</div>
-          <div className="sidebar-brand">
-            <h1>TicketAuto</h1>
-          </div>
+          <SidebarLogo />
           <nav className="sidebar-nav">
             {navItems.map((item) => (
               <Link key={item.label} href={item.href} className={`nav-item${item.active ? " nav-item-active" : ""}`}>
+                <NavIcon href={item.href} />
                 <span>{item.label}</span>
               </Link>
             ))}
           </nav>
         </div>
-        <div className="sidebar-footer">
-          <div className="sidebar-settings-box">
-            <p className="sidebar-panel-label">Account</p>
-            <div className="sidebar-settings-actions">
-              <button type="button" className="sidebar-panel-link sidebar-logout-button" onClick={handleLogout}>
-                Log out
-              </button>
-            </div>
-          </div>
-        </div>
+        <SidebarFooter onLogout={handleLogout} />
       </aside>
 
       <main className="orders-main connections-main">
@@ -843,7 +833,7 @@ export default function SettingsClient() {
                 </div>
                 <div style={{ padding: "1.5rem" }}>
                   <p style={{ marginBottom: "1rem", color: "var(--muted)", fontSize: "0.875rem" }}>
-                    Export your spreadsheet or Google Sheet as CSV, XLSX, or TSV. TicketAuto will read your column headers and auto-map them — even if they don't match exactly.
+                    Export your spreadsheet or Google Sheet as CSV, XLSX, or TSV. TicketX will read your column headers and auto-map them — even if they don't match exactly.
                   </p>
                   <div
                     className={`import-dropzone${dragOver ? " import-dropzone-active" : ""}`}
@@ -886,7 +876,7 @@ export default function SettingsClient() {
                 </div>
                 <div style={{ padding: "0 1.5rem 0.5rem" }}>
                   <p style={{ color: "var(--muted)", fontSize: "0.875rem", marginBottom: "1rem" }}>
-                    TicketAuto has auto-matched your columns. Check each one is mapped correctly — set to "Skip" for columns you don't need.
+                    TicketX has auto-matched your columns. Check each one is mapped correctly — set to "Skip" for columns you don't need.
                   </p>
                 </div>
                 <div className="import-map-grid">

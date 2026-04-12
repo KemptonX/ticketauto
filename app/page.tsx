@@ -18,7 +18,7 @@ export default async function HomePage() {
       <div className="home-glow-bottom" />
 
       <div className="home-center">
-        <div className="brand-mark home-brand-mark">TA</div>
+        <div className="brand-mark home-brand-mark">TX</div>
 
         <p className="eyebrow home-eyebrow">Ticket intelligence</p>
 
