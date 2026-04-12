@@ -93,7 +93,7 @@ export default function SalesClient() {
   const [matchingOrderId, setMatchingOrderId] = useState<number | null>(null);
   const [unmatching, setUnmatching] = useState(false);
   const [savingSale, setSavingSale] = useState(false);
-  const [saleEdits, setSaleEdits] = useState<{ qty_sold: string; price_per_ticket: string; sale_total: string } | null>(null);
+  const [saleEdits, setSaleEdits] = useState<{ qty_sold: string; price_per_ticket: string; sale_total: string; payout_total: string } | null>(null);
   const [showArchived, setShowArchived] = useState(false);
   const [manualSearch, setManualSearch] = useState("");
 
@@ -115,6 +115,7 @@ export default function SalesClient() {
         qty_sold: selectedSaleRaw.qty_sold != null ? String(selectedSaleRaw.qty_sold) : "",
         price_per_ticket: selectedSaleRaw.price_per_ticket != null ? String(selectedSaleRaw.price_per_ticket) : "",
         sale_total: selectedSaleRaw.sale_total != null ? String(selectedSaleRaw.sale_total) : "",
+        payout_total: selectedSaleRaw.payout_total != null ? String(selectedSaleRaw.payout_total) : "",
       });
     } else {
       setSaleEdits(null);
@@ -130,10 +131,11 @@ export default function SalesClient() {
     const qty_sold = saleEdits.qty_sold !== "" ? Number(saleEdits.qty_sold) : null;
     const price_per_ticket = saleEdits.price_per_ticket !== "" ? Number(saleEdits.price_per_ticket) : null;
     const sale_total = saleEdits.sale_total !== "" ? Number(saleEdits.sale_total) : null;
+    const payout_total = saleEdits.payout_total !== "" ? Number(saleEdits.payout_total) : null;
 
     const { error } = await supabase
       .from("sales")
-      .update({ qty_sold, price_per_ticket, sale_total })
+      .update({ qty_sold, price_per_ticket, sale_total, payout_total })
       .eq("id", selectedSaleRaw.id);
 
     if (error) {
@@ -144,7 +146,7 @@ export default function SalesClient() {
 
     setSales((current) =>
       current.map((s) =>
-        s.id === selectedSaleRaw.id ? { ...s, qty_sold, price_per_ticket, sale_total } : s,
+        s.id === selectedSaleRaw.id ? { ...s, qty_sold, price_per_ticket, sale_total, payout_total } : s,
       ),
     );
 
@@ -481,7 +483,7 @@ export default function SalesClient() {
       const eventDate = sale.event_date || "Date missing";
       const key = `${eventName}__${venue}__${eventDate}`;
       const ticketsSold = sale.qty_sold ?? 0;
-      const soldFor = sale.sale_total ?? sale.payout_total ?? 0;
+      const soldFor = sale.payout_total ?? sale.sale_total ?? 0;
       const referenceOrder = getReferenceOrderForSale(sale, matchedOrders, allOrders);
       const profit = getSaleProfit(sale, referenceOrder);
       const cost = getSaleCost(sale, referenceOrder);
@@ -791,7 +793,7 @@ export default function SalesClient() {
                                 </span>
                                 <strong className="inventory-cost-value">
                                   {sale.inventory_order_id != null
-                                    ? formatCurrency(sale.sale_total ?? sale.payout_total)
+                                    ? formatCurrency(sale.payout_total ?? sale.sale_total)
                                     : formatCurrency(getSaleCost(sale, matchedOrder))}
                                 </strong>
                                 <span className={`status-badge status-static ${sale.inventory_order_id != null ? "status-sold" : "status-problem"}`}>
@@ -918,6 +920,23 @@ export default function SalesClient() {
                   min="0"
                   value={saleEdits?.sale_total ?? ""}
                   onChange={(e) => setSaleEdits((prev) => prev ? { ...prev, sale_total: e.target.value } : prev)}
+                />
+              </label>
+              <label>
+                <span style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                  Payout (after fees)
+                  {selectedSale.payout_total == null && (
+                    <span className="status-badge status-static status-problem" style={{ fontSize: "10px", padding: "1px 6px" }}>Missing</span>
+                  )}
+                </span>
+                <input
+                  className="field"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  placeholder="What Viagogo paid you"
+                  value={saleEdits?.payout_total ?? ""}
+                  onChange={(e) => setSaleEdits((prev) => prev ? { ...prev, payout_total: e.target.value } : prev)}
                 />
               </label>
               <label>
