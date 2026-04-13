@@ -1,6 +1,6 @@
 ﻿import type { SupabaseClient } from "@supabase/supabase-js";
 
-const GMAIL_QUERY = 'is:unread ticketmaster ("Order Update" OR "ticket confirmation" OR "You\'re in!")';
+const GMAIL_QUERY = 'is:unread (ticketmaster ("Order Update" OR "ticket confirmation" OR "You\'re in!") OR (subject:"Thank you for purchasing tickets for" "AXS Mobile ID"))';
 const PROCESSED_LABEL = "My Tickets";
 const FORWARD_TO_ACCOUNT = "kemptoncameron9x@gmail.com";
 
@@ -80,7 +80,10 @@ export async function syncGmailInbox({
     const body = getBody(fullMessage.payload);
     const combined = cleanText(`${subject}\n${body}`);
 
-    const bookingRef = parseBookingRef(subject, combined);
+    const from = getHeader(headers, "From");
+    const axs = isAxsEmail(from, subject);
+
+    const bookingRef = axs ? parseAxsBookingRef(combined) : parseBookingRef(subject, combined);
     if (!bookingRef) {
       continue;
     }
@@ -91,17 +94,35 @@ export async function syncGmailInbox({
       userId,
     });
 
-    const section = parseSection(combined);
-    const row = parseRow(combined);
-    const [seatFrom, seatTo] = parseSeats(combined);
-    const total = parseTotal(combined);
-    const qty = parseQty(body);
+    let section: string;
+    let row: string;
+    let seatFrom: string;
+    let seatTo: string;
+    let total: string;
+    let qty: string;
+    let sourceType: string;
+
+    if (axs) {
+      section = parseAxsSection(combined);
+      row = parseAxsRow(combined);
+      [seatFrom, seatTo] = parseAxsSeats(combined);
+      total = parseAxsTotal(combined);
+      qty = parseAxsQty(combined);
+      sourceType = "axs";
+    } else {
+      section = parseSection(combined);
+      row = parseRow(combined);
+      [seatFrom, seatTo] = parseSeats(combined);
+      total = parseTotal(combined);
+      qty = parseQty(body);
+      sourceType = bookingRef.includes("/UK") ? "ticketmaster_direct" : "ticketmaster_resale";
+    }
 
     const orderData: OrderInsert = {
       booking_ref: bookingRef,
-      event_name: parseEvent(combined),
-      venue: parseVenue(body),
-      event_date: parseDate(combined),
+      event_name: axs ? parseAxsEvent(subject) : parseEvent(combined),
+      venue: axs ? parseAxsVenue(combined) : parseVenue(body),
+      event_date: axs ? parseAxsDate(combined) : parseDate(combined),
       purchased_at: parsePurchasedAt(headers, combined),
       account_email: accountEmail,
       section,
@@ -110,7 +131,7 @@ export async function syncGmailInbox({
       seat_to: seatTo,
       qty_bought: qty ? Number.parseInt(qty, 10) : null,
       total_cost: total ? Number.parseFloat(total) : null,
-      source_type: bookingRef.includes("/UK") ? "ticketmaster_direct" : "ticketmaster_resale",
+      source_type: sourceType,
       user_id: userId,
     };
 
@@ -646,4 +667,95 @@ function parsePurchasedAt(headers: GmailHeader[], text: string) {
   return getHeader(headers, "Date") || text.match(/Date:\s*(.+)/i)?.[1]?.trim() || "";
 }
 
+// ── AXS ──────────────────────────────────────────────────────────────────────
+
+function isAxsEmail(from: string, subject: string) {
+  const fromLower = from.toLowerCase();
+  const subjectLower = subject.toLowerCase();
+  return (
+    fromLower.includes("axs.co.uk") ||
+    fromLower.includes("axs.com") ||
+    subjectLower.startsWith("thank you for purchasing tickets for")
+  );
+}
+
+function parseAxsBookingRef(text: string) {
+  return (
+    text.match(/confirmation\s+number\s+is\s+(\d+)/i)?.[1] ||
+    text.match(/order\s+number\s+(\d+)/i)?.[1] ||
+    ""
+  );
+}
+
+function parseAxsEvent(subject: string) {
+  return subject.match(/thank you for purchasing tickets for\s+(.+)/i)?.[1]?.trim() || "";
+}
+
+function parseAxsDate(text: string) {
+  // Matches e.g. "Saturday, 22 November 2025 - 18:00" or "Saturday 22 November 2025 18:00"
+  return (
+    text.match(
+      /((?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)[,\s]+\d{1,2}\s+[A-Z][a-z]+\s+\d{4}[^A-Z\n]{0,10}\d{1,2}:\d{2})/i,
+    )?.[1]?.trim() ||
+    text.match(
+      /((?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)[,\s]+\d{1,2}\s+[A-Z][a-z]+\s+\d{4})/i,
+    )?.[1]?.trim() ||
+    ""
+  );
+}
+
+function parseAxsVenue(text: string) {
+  // AXS format: venue name appears on the line after the date line
+  const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  for (let i = 0; i < lines.length; i++) {
+    if (
+      /(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)[,\s]+\d{1,2}\s+[A-Z][a-z]+\s+\d{4}/i.test(
+        lines[i],
+      )
+    ) {
+      const candidate = lines[i + 1];
+      if (candidate && !/^\d+\s+Ticket/i.test(candidate)) {
+        return candidate;
+      }
+    }
+  }
+  return "";
+}
+
+function parseAxsQty(text: string) {
+  return text.match(/(\d+)\s+Tickets?\s*[-–]/i)?.[1] || "";
+}
+
+function parseAxsSection(text: string) {
+  // Format: "Regular 107 | M | 220-223"  →  section = "107"
+  return text.match(/\|\s*([^|]+?)\s*\|\s*\d/)?.[0]
+    ? text.match(/Regular\s+(\S+)\s*\|/i)?.[1] ||
+      text.match(/(?:Floor|Block|Stand|Section|Sec|Regular)\s+([^|]+?)\s*\|/i)?.[1]?.trim() ||
+      ""
+    : "";
+}
+
+function parseAxsRow(text: string) {
+  // Format: "Regular 107 | M | 220-223"  →  row = "M"
+  return text.match(/\|\s*([A-Z0-9]+)\s*\|\s*\d+/i)?.[1]?.trim() || "";
+}
+
+function parseAxsSeats(text: string): [string, string] {
+  // Format: "Regular 107 | M | 220-223"  →  220, 223
+  const match = text.match(/\|\s*[A-Z0-9]+\s*\|\s*(\d+)[-–](\d+)/i);
+  if (match) {
+    return [match[1], match[2]];
+  }
+  const single = text.match(/\|\s*[A-Z0-9]+\s*\|\s*(\d+)/i);
+  if (single) {
+    return [single[1], single[1]];
+  }
+  return ["", ""];
+}
+
+function parseAxsTotal(text: string) {
+  // Take the last "Total: £X.XX" occurrence
+  const matches = [...text.matchAll(/Total[:\s]+[£$€]?\s*([0-9]+\.[0-9]{2})/gi)];
+  return matches.at(-1)?.[1] || "";
+}
 
