@@ -675,24 +675,27 @@ function isAxsEmail(from: string, subject: string) {
   return (
     fromLower.includes("axs.co.uk") ||
     fromLower.includes("axs.com") ||
-    subjectLower.startsWith("thank you for purchasing tickets for")
+    subjectLower.includes("thank you for purchasing tickets for")
   );
 }
 
 function parseAxsBookingRef(text: string) {
+  // Handle bold markers: "confirmation number is *1160185362*"
   return (
-    text.match(/confirmation\s+number\s+is\s+(\d+)/i)?.[1] ||
-    text.match(/order\s+number\s+(\d+)/i)?.[1] ||
+    text.match(/confirmation\s+number\s+is\s+\*?(\d+)\*?/i)?.[1] ||
+    text.match(/order\s+number\s+\*?(\d+)\*?/i)?.[1] ||
     ""
   );
 }
 
 function parseAxsEvent(subject: string) {
-  return subject.match(/thank you for purchasing tickets for\s+(.+)/i)?.[1]?.trim() || "";
+  // Handle "Fwd: " prefix on forwarded emails
+  return (
+    subject.match(/thank you for purchasing tickets for\s+(.+)/i)?.[1]?.trim() || ""
+  );
 }
 
 function parseAxsDate(text: string) {
-  // Matches e.g. "Saturday, 22 November 2025 - 18:00" or "Saturday 22 November 2025 18:00"
   return (
     text.match(
       /((?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)[,\s]+\d{1,2}\s+[A-Z][a-z]+\s+\d{4}[^A-Z\n]{0,10}\d{1,2}:\d{2})/i,
@@ -705,7 +708,6 @@ function parseAxsDate(text: string) {
 }
 
 function parseAxsVenue(text: string) {
-  // AXS format: venue name appears on the line after the date line
   const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   for (let i = 0; i < lines.length; i++) {
     if (
@@ -715,7 +717,8 @@ function parseAxsVenue(text: string) {
     ) {
       const candidate = lines[i + 1];
       if (candidate && !/^\d+\s+Ticket/i.test(candidate)) {
-        return candidate;
+        // Strip "[image: venue]" or "[image: ...]" prefixes added by email clients
+        return candidate.replace(/^\[image:[^\]]*\]\s*/i, "").trim();
       }
     }
   }
@@ -726,36 +729,39 @@ function parseAxsQty(text: string) {
   return text.match(/(\d+)\s+Tickets?\s*[-–]/i)?.[1] || "";
 }
 
+// Seat format: "110|R|6-7" (compact) or "Regular 107 | M | 220-223" (spaced)
 function parseAxsSection(text: string) {
-  // Format: "Regular 107 | M | 220-223"  →  section = "107"
-  return text.match(/\|\s*([^|]+?)\s*\|\s*\d/)?.[0]
-    ? text.match(/Regular\s+(\S+)\s*\|/i)?.[1] ||
-      text.match(/(?:Floor|Block|Stand|Section|Sec|Regular)\s+([^|]+?)\s*\|/i)?.[1]?.trim() ||
-      ""
-    : "";
+  // Compact: word before first pipe e.g. "110|R|6-7"
+  const compact = text.match(/\b(\w+)\|[A-Z0-9]+\|[\d-]+/i);
+  if (compact) return compact[1];
+  // Spaced: label + space + section before pipe e.g. "Regular 107 | M | ..."
+  return (
+    text.match(/(?:Regular|Floor|Block|Stand|Section|Sec)\s+(\S+)\s*\|/i)?.[1] ||
+    text.match(/([^\s|]+)\s*\|\s*[A-Z0-9]+\s*\|\s*\d+/i)?.[1]?.trim() ||
+    ""
+  );
 }
 
 function parseAxsRow(text: string) {
-  // Format: "Regular 107 | M | 220-223"  →  row = "M"
-  return text.match(/\|\s*([A-Z0-9]+)\s*\|\s*\d+/i)?.[1]?.trim() || "";
+  // Matches both "110|R|6-7" and "107 | M | 220"
+  return text.match(/\w+\s*\|s*\s*([A-Z0-9]+)\s*\|\s*\d+/i)?.[1]?.trim() ||
+    text.match(/\|\s*([A-Z0-9]+)\s*\|\s*\d+/i)?.[1]?.trim() || "";
 }
 
 function parseAxsSeats(text: string): [string, string] {
-  // Format: "Regular 107 | M | 220-223"  →  220, 223
-  const match = text.match(/\|\s*[A-Z0-9]+\s*\|\s*(\d+)[-–](\d+)/i);
-  if (match) {
-    return [match[1], match[2]];
-  }
-  const single = text.match(/\|\s*[A-Z0-9]+\s*\|\s*(\d+)/i);
-  if (single) {
-    return [single[1], single[1]];
-  }
+  // "110|R|6-7" or "107 | M | 220-223"
+  const rangeCompact = text.match(/\w+\|[A-Z0-9]+\|(\d+)[-–](\d+)/i);
+  if (rangeCompact) return [rangeCompact[1], rangeCompact[2]];
+  const rangeSpaced = text.match(/\|\s*[A-Z0-9]+\s*\|\s*(\d+)[-–](\d+)/i);
+  if (rangeSpaced) return [rangeSpaced[1], rangeSpaced[2]];
+  const single = text.match(/\|[A-Z0-9]+\|(\d+)/i) || text.match(/\|\s*[A-Z0-9]+\s*\|\s*(\d+)/i);
+  if (single) return [single[1], single[1]];
   return ["", ""];
 }
 
 function parseAxsTotal(text: string) {
-  // Take the last "Total: £X.XX" occurrence
-  const matches = [...text.matchAll(/Total[:\s]+[£$€]?\s*([0-9]+\.[0-9]{2})/gi)];
+  // Handle bold markers: "Total: *£124.65*"
+  const matches = [...text.matchAll(/Total[:\s]+\*?[£$€]?\s*([0-9]+\.[0-9]{2})\*?/gi)];
   return matches.at(-1)?.[1] || "";
 }
 

@@ -361,10 +361,9 @@ export async function syncViagogoSalesOutlookInbox({
       continue;
     }
 
+    const rawBody = decodeQuotedPrintable(msg.body.content);
     const bodyText =
-      msg.body.contentType === "html"
-        ? outlookStripHtml(msg.body.content)
-        : msg.body.content;
+      msg.body.contentType === "html" ? outlookStripHtml(rawBody) : rawBody;
     const combined = cleanText(`${subject}\n${bodyText}`);
     const sourceMessageId = msg.id;
 
@@ -818,17 +817,23 @@ function parseSale({
     /Number of Tickets:\s*(\d+)/i,
     /\((\d+)\s*Ticket\(s\)\)/i,
   ]);
-  const pricePerTicket = parseMoney(text, [/Price per Ticket:\s*[£Â$]?\s*([0-9,.]+)/i]);
-  const payoutTotal = parseMoney(text, [/Total Proceeds:\s*[£Â$]?\s*([0-9,.]+)/i]);
+  const pricePerTicket = parseMoney(text, [/Price per Ticket:\s*:?\s*[£Â$]?\s*([0-9,.]+)/i]);
+  const payoutTotal = parseMoney(text, [/Total Proceeds:\s*:?\s*[£Â$]?\s*([0-9,.]+)/i]);
   const derivedSaleTotal = qtySold != null && pricePerTicket != null ? qtySold * pricePerTicket : payoutTotal;
 
   return {
     externalSaleId:
       subject.match(/sale\s+#(\d+)/i)?.[1] || subject.match(/tickets\s+(\d+)/i)?.[1] || text.match(/Order ID:\s*(\d+)/i)?.[1] || "",
     subject,
-    eventName: extractField(text, "Event", ["Listing Note\\(s\\)", "Venue", "Date", "Must Ship by Date"]) || "",
+    eventName:
+      extractField(text, "Event", ["Listing Note\\(s\\)", "Venue", "Date", "Must Ship by Date"]) ||
+      text.match(/sale of\s+(.+?)\s+tickets/i)?.[1]?.trim() ||
+      subject.match(/sale\s+#\d+[^\w]*[-–]\s*(.+)/i)?.[1]?.trim() ||
+      "",
     venue: extractField(text, "Venue", ["Date", "Must Ship by Date", "Ticket Holder Details"]) || "",
-    eventDate: extractField(text, "Date", ["Must Ship by Date", "Ticket Holder Details"]) || "",
+    eventDate:
+      // Look for "Date: Sunday, April 26..." — full day name only, skips email header dates like "Date: Tue, 7 Apr..."
+      text.match(/\bDate:\s*((?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)[^\n]+)/i)?.[1]?.trim() || "",
     soldAt: normalizeTimestamp(getHeader(headers, "Date")) || new Date().toISOString(),
     buyerEmail: text.match(/Email Address:\s*([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})/i)?.[1]?.toLowerCase() || "",
     qtySold,
@@ -855,7 +860,9 @@ function extractField(text: string, label: string, stopLabels: string[]) {
   const stopPattern = stopLabels.length ? `(?=\\s*(?:${stopLabels.join("|")})\\s*:)` : "$";
   const regex = new RegExp(`${label}\\s*:\\s*([\\s\\S]*?)${stopPattern}`, "i");
   const value = regex.exec(text)?.[1]?.trim() || "";
-  return value.replace(/\s+/g, " ").trim();
+  const cleaned = value.replace(/\s+/g, " ").replace(/:$/, "").trim();
+  // Guard: if the extracted value is suspiciously long it captured too much — discard it
+  return cleaned.length > 120 ? "" : cleaned;
 }
 
 function parseInteger(text: string, patterns: RegExp[]) {
@@ -1170,7 +1177,12 @@ async function listViagogoOutlookMessages(accessToken: string): Promise<OutlookG
   url.searchParams.set("$top", "25");
   url.searchParams.set("$select", "id,subject,body,receivedDateTime,isRead");
 
-  const data = await outlookGraphRequest<{ value?: OutlookGraphMessage[] }>(accessToken, url.toString());
+  // Request plain text body so forwarded Gmail→Outlook emails parse cleanly
+  const data = await outlookGraphRequest<{ value?: OutlookGraphMessage[] }>(
+    accessToken,
+    url.toString(),
+    { headers: { Prefer: 'outlook.body-content-type="text"' } },
+  );
   return data.value || [];
 }
 
@@ -1182,12 +1194,23 @@ async function outlookMarkRead(accessToken: string, messageId: string) {
   );
 }
 
+function decodeQuotedPrintable(text: string) {
+  return text
+    .replace(/=\r?\n/g, "") // soft line breaks
+    .replace(/(?:=[0-9A-F]{2})+/gi, (match) => {
+      const bytes = match.split("=").filter(Boolean).map((h) => parseInt(h, 16));
+      return Buffer.from(bytes).toString("utf8");
+    });
+}
+
 function outlookStripHtml(text: string) {
   return text
     .replace(/<(script|style)[^>]*>[\s\S]*?<\/\1>/gi, " ")
     .replace(/<br\s*\/?>/gi, "\n")
     .replace(/<\/?(p|div|tr|li|ul|ol|table|tbody|thead|tfoot|h[1-6])[^>]*>/gi, "\n")
-    .replace(/<\/?(td|th)[^>]*>/gi, " ")
+    // Close of a table cell → ": " so label/value pairs gain the colon the parsers expect
+    .replace(/<\/t[dh]>/gi, ": ")
+    .replace(/<t[dh][^>]*>/gi, " ")
     .replace(/<[^>]+>/g, " ")
     .replace(/&nbsp;/g, " ")
     .replace(/&amp;/g, "&")

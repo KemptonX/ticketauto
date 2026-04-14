@@ -512,9 +512,9 @@ export default function SalesClient() {
       group.sales.push(sale);
       group.salesCount += 1;
       group.ticketsSold += ticketsSold;
+      group.soldFor += soldFor;
       if (sale.inventory_order_id != null) {
         group.matchedCount += 1;
-        group.soldFor += soldFor;
         group.profit += profit ?? 0;
         group.cost += cost ?? 0;
       } else {
@@ -750,6 +750,7 @@ export default function SalesClient() {
                         <div className="inventory-ticket-header">
                           <span>Seat</span>
                           <span>Account</span>
+                          <span>Buyer</span>
                           <span>Value</span>
                           <span>Match</span>
                         </div>
@@ -779,10 +780,11 @@ export default function SalesClient() {
                                 <span className="truncate-text" title={sale.account_email || ""}>
                                   {sale.account_email || "No account"}
                                 </span>
+                                <span className="truncate-text" title={sale.buyer_email || ""}>
+                                  {sale.buyer_email || "—"}
+                                </span>
                                 <strong className="inventory-cost-value">
-                                  {sale.inventory_order_id != null
-                                    ? formatCurrency(sale.payout_total ?? sale.sale_total)
-                                    : formatCurrency(getSaleCost(sale, matchedOrder))}
+                                  {formatCurrency(sale.payout_total ?? sale.sale_total)}
                                 </strong>
                                 <span className={`status-badge status-static ${sale.inventory_order_id != null ? "status-sold" : "status-problem"}`}>
                                   {sale.inventory_order_id != null ? "Matched" : "Unmatched"}

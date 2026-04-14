@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 const GRAPH_BASE = "https://graph.microsoft.com/v1.0";
-const SEARCH_QUERY = "ticketmaster";
+const SEARCH_QUERY = "ticketmaster OR axs";
 
 type OutlookAccount = {
   id: string;
@@ -96,23 +96,44 @@ export async function syncOutlookInbox({
       : msg.body.content;
     const combined = cleanText(`${subject}\n${bodyText}`);
 
-    const bookingRef = parseBookingRef(subject, combined);
+    const fromAddress = msg.from?.emailAddress?.address || "";
+    const axs = isAxsEmail(fromAddress, subject);
+
+    const bookingRef = axs ? parseAxsBookingRef(combined) : parseBookingRef(subject, combined);
     if (!bookingRef) continue;
 
     const accountEmail = extractAccountFromMessage(msg, combined);
     const existingOrder = await findExistingOrder(supabase, { bookingRef, userId });
 
-    const section = parseSection(combined);
-    const row = parseRow(combined);
-    const [seatFrom, seatTo] = parseSeats(combined);
-    const total = parseTotal(combined);
-    const qty = parseQty(bodyText);
+    let section: string;
+    let row: string;
+    let seatFrom: string;
+    let seatTo: string;
+    let total: string;
+    let qty: string;
+    let sourceType: string;
+
+    if (axs) {
+      section = parseAxsSection(combined);
+      row = parseAxsRow(combined);
+      [seatFrom, seatTo] = parseAxsSeats(combined);
+      total = parseAxsTotal(combined);
+      qty = parseAxsQty(combined);
+      sourceType = "axs";
+    } else {
+      section = parseSection(combined);
+      row = parseRow(combined);
+      [seatFrom, seatTo] = parseSeats(combined);
+      total = parseTotal(combined);
+      qty = parseQty(bodyText);
+      sourceType = bookingRef.includes("/UK") ? "ticketmaster_direct" : "ticketmaster_resale";
+    }
 
     const orderData: OrderInsert = {
       booking_ref: bookingRef,
-      event_name: parseEvent(combined),
-      venue: parseVenue(bodyText),
-      event_date: parseDateField(combined),
+      event_name: axs ? parseAxsEvent(subject) : parseEvent(combined),
+      venue: axs ? parseAxsVenue(combined) : parseVenue(bodyText),
+      event_date: axs ? parseAxsDate(combined) : parseDateField(combined),
       purchased_at: msg.receivedDateTime || "",
       account_email: accountEmail,
       section,
@@ -121,7 +142,7 @@ export async function syncOutlookInbox({
       seat_to: seatTo,
       qty_bought: qty ? Number.parseInt(qty, 10) : null,
       total_cost: total ? Number.parseFloat(total) : null,
-      source_type: bookingRef.includes("/UK") ? "ticketmaster_direct" : "ticketmaster_resale",
+      source_type: sourceType,
       user_id: userId,
     };
 
@@ -272,7 +293,11 @@ async function listMessages(accessToken: string): Promise<GraphMessage[]> {
   url.searchParams.set("$top", "20");
   url.searchParams.set("$select", "id,subject,body,from,toRecipients,receivedDateTime,isRead,internetMessageHeaders");
 
-  const data = await graphRequest<{ value?: GraphMessage[] }>(accessToken, url.toString());
+  const data = await graphRequest<{ value?: GraphMessage[] }>(
+    accessToken,
+    url.toString(),
+    { headers: { Prefer: 'outlook.body-content-type="text"' } },
+  );
   return data.value || [];
 }
 
@@ -527,4 +552,80 @@ function parseSeats(text: string): [string, string] {
     if (match?.[1]) return [match[1], match[2] || match[1]];
   }
   return ["", ""];
+}
+
+// ── AXS ──────────────────────────────────────────────────────────────────────
+
+function isAxsEmail(from: string, subject: string) {
+  const f = from.toLowerCase();
+  const s = subject.toLowerCase();
+  return f.includes("axs.co.uk") || f.includes("axs.com") || s.includes("thank you for purchasing tickets for");
+}
+
+function parseAxsBookingRef(text: string) {
+  return (
+    text.match(/confirmation\s+number\s+is\s+\*?(\d+)\*?/i)?.[1] ||
+    text.match(/order\s+number\s+\*?(\d+)\*?/i)?.[1] ||
+    ""
+  );
+}
+
+function parseAxsEvent(subject: string) {
+  return subject.match(/thank you for purchasing tickets for\s+(.+)/i)?.[1]?.trim() || "";
+}
+
+function parseAxsDate(text: string) {
+  return (
+    text.match(/((?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)[,\s]+\d{1,2}\s+[A-Z][a-z]+\s+\d{4}[^A-Z\n]{0,10}\d{1,2}:\d{2})/i)?.[1]?.trim() ||
+    text.match(/((?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)[,\s]+\d{1,2}\s+[A-Z][a-z]+\s+\d{4})/i)?.[1]?.trim() ||
+    ""
+  );
+}
+
+function parseAxsVenue(text: string) {
+  const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  for (let i = 0; i < lines.length; i++) {
+    if (/(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)[,\s]+\d{1,2}\s+[A-Z][a-z]+\s+\d{4}/i.test(lines[i])) {
+      const candidate = lines[i + 1];
+      if (candidate && !/^\d+\s+Ticket/i.test(candidate)) {
+        return candidate.replace(/^\[image:[^\]]*\]\s*/i, "").trim();
+      }
+    }
+  }
+  return "";
+}
+
+function parseAxsQty(text: string) {
+  return text.match(/(\d+)\s+Tickets?\s*[-–]/i)?.[1] || "";
+}
+
+function parseAxsSection(text: string) {
+  const compact = text.match(/\b(\w+)\|[A-Z0-9]+\|[\d-]+/i);
+  if (compact) return compact[1];
+  return (
+    text.match(/(?:Regular|Floor|Block|Stand|Section|Sec)\s+(\S+)\s*\|/i)?.[1] ||
+    text.match(/([^\s|]+)\s*\|\s*[A-Z0-9]+\s*\|\s*\d+/i)?.[1]?.trim() ||
+    ""
+  );
+}
+
+function parseAxsRow(text: string) {
+  return (
+    text.match(/\w+\s*\|\s*([A-Z0-9]+)\s*\|\s*\d+/i)?.[1]?.trim() || ""
+  );
+}
+
+function parseAxsSeats(text: string): [string, string] {
+  const rangeCompact = text.match(/\w+\|[A-Z0-9]+\|(\d+)[-–](\d+)/i);
+  if (rangeCompact) return [rangeCompact[1], rangeCompact[2]];
+  const rangeSpaced = text.match(/\|\s*[A-Z0-9]+\s*\|\s*(\d+)[-–](\d+)/i);
+  if (rangeSpaced) return [rangeSpaced[1], rangeSpaced[2]];
+  const single = text.match(/\|[A-Z0-9]+\|(\d+)/i) || text.match(/\|\s*[A-Z0-9]+\s*\|\s*(\d+)/i);
+  if (single) return [single[1], single[1]];
+  return ["", ""];
+}
+
+function parseAxsTotal(text: string) {
+  const matches = [...text.matchAll(/Total[:\s]+\*?[£$€]?\s*([0-9]+\.[0-9]{2})\*?/gi)];
+  return matches.at(-1)?.[1] || "";
 }
