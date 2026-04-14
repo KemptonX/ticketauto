@@ -24,6 +24,7 @@ type GraphMessage = {
     emailAddress: { address: string; name?: string };
   };
   toRecipients: Array<{ emailAddress: { address: string; name?: string } }>;
+  internetMessageHeaders?: Array<{ name: string; value: string }>;
 };
 
 type SyncResult = {
@@ -269,7 +270,7 @@ async function listMessages(accessToken: string): Promise<GraphMessage[]> {
   const url = new URL(`${GRAPH_BASE}/me/messages`);
   url.searchParams.set("$search", `"${SEARCH_QUERY}"`);
   url.searchParams.set("$top", "20");
-  url.searchParams.set("$select", "id,subject,body,from,toRecipients,receivedDateTime,isRead");
+  url.searchParams.set("$select", "id,subject,body,from,toRecipients,receivedDateTime,isRead,internetMessageHeaders");
 
   const data = await graphRequest<{ value?: GraphMessage[] }>(accessToken, url.toString());
   return data.value || [];
@@ -310,7 +311,32 @@ function isAccountEmail(email: string) {
   return !IGNORED_FRAGMENTS.some((f) => email.includes(f));
 }
 
+function extractEmailAddress(header: string) {
+  const angleMatch = header.match(/<([^>]+)>/);
+  return (angleMatch?.[1] || header.match(/([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})/i)?.[1] || "").toLowerCase();
+}
+
 function extractAccountFromMessage(msg: GraphMessage, text: string): string {
+  // Check forwarding/original-recipient headers first (same priority as Gmail)
+  const headerPriority = [
+    "X-Original-To",
+    "Delivered-To",
+    "X-Forwarded-To",
+    "X-Forwarded-For",
+    "Return-Path",
+  ];
+
+  for (const name of headerPriority) {
+    const header = msg.internetMessageHeaders?.find(
+      (h) => h.name.toLowerCase() === name.toLowerCase(),
+    );
+    if (header) {
+      const email = extractEmailAddress(header.value);
+      if (isAccountEmail(email)) return email;
+    }
+  }
+
+  // Fall back to To/From on the message envelope
   const candidates = [
     msg.toRecipients?.[0]?.emailAddress?.address,
     msg.from?.emailAddress?.address,
