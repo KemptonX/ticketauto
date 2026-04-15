@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { supabase } from "@/src/lib/supabase";
 import { formatCurrency } from "@/src/lib/currency";
 import { SidebarLogo, NavIcon, SidebarFooter } from "@/app/components/nav-icons";
@@ -48,6 +49,13 @@ type MatchedOrder = {
   event_name: string | null;
   venue: string | null;
   event_date: string | null;
+};
+
+type AddSaleForm = {
+  qty_sold: string;
+  payout_total: string;
+  buyer_email: string;
+  sold_at: string;
 };
 
 type SaleGroup = {
@@ -98,6 +106,11 @@ export default function SalesClient() {
   const [saleEdits, setSaleEdits] = useState<{ qty_sold: string; price_per_ticket: string; sale_total: string; payout_total: string } | null>(null);
   const [showArchived, setShowArchived] = useState(false);
   const [manualSearch, setManualSearch] = useState("");
+  const [showAddSale, setShowAddSale] = useState(false);
+  const [addSaleOrderId, setAddSaleOrderId] = useState<number | null>(null);
+  const [addSaleSearch, setAddSaleSearch] = useState("");
+  const [addSaleForm, setAddSaleForm] = useState<AddSaleForm>({ qty_sold: "1", payout_total: "", buyer_email: "", sold_at: "" });
+  const [savingNewSale, setSavingNewSale] = useState(false);
 
   useEffect(() => {
     async function init() {
@@ -190,7 +203,7 @@ export default function SalesClient() {
 
     const { data: orderData, error: orderError } = await supabase
       .from("orders")
-      .select("id, booking_ref, total_cost, sold_total, qty_bought, account_email, section, row, seat_from, seat_to, event_name, venue, event_date");
+      .select("id, booking_ref, total_cost, sold_total, qty_bought, account_email, listing_status, section, row, seat_from, seat_to, event_name, venue, event_date");
 
     if (orderError) {
       setMessage(orderError.message);
@@ -437,6 +450,67 @@ export default function SalesClient() {
     }
   }
 
+  function openAddSale() {
+    setAddSaleOrderId(null);
+    setAddSaleSearch("");
+    setAddSaleForm({ qty_sold: "1", payout_total: "", buyer_email: "", sold_at: new Date().toISOString().slice(0, 10) });
+    setShowAddSale(true);
+  }
+
+  function closeAddSale() {
+    setShowAddSale(false);
+    setAddSaleOrderId(null);
+    setAddSaleSearch("");
+  }
+
+  async function addSaleManually() {
+    const order = addSaleOrderId != null ? allOrders.find((o) => o.id === addSaleOrderId) : null;
+    const payout = addSaleForm.payout_total !== "" ? Number(addSaleForm.payout_total) : null;
+    const qty = addSaleForm.qty_sold !== "" ? Number(addSaleForm.qty_sold) : null;
+
+    const newSale = {
+      source: "manual" as const,
+      source_message_id: `manual-${Date.now()}`,
+      event_name: order?.event_name ?? null,
+      venue: order?.venue ?? null,
+      event_date: order?.event_date ?? null,
+      sold_at: addSaleForm.sold_at ? new Date(addSaleForm.sold_at).toISOString() : new Date().toISOString(),
+      account_email: order?.account_email ?? null,
+      buyer_email: addSaleForm.buyer_email || null,
+      qty_sold: qty,
+      payout_total: payout,
+      sale_total: payout,
+      price_per_ticket: qty && payout ? payout / qty : payout,
+      currency: "GBP",
+      section: order?.section ?? null,
+      row: order?.row ?? null,
+      seat_from: order?.seat_from ?? null,
+      seat_to: order?.seat_to ?? null,
+      sale_status: "Sold",
+      inventory_order_id: order?.id ?? null,
+      match_confidence: order ? 1 : null,
+    };
+
+    setSavingNewSale(true);
+    setMessage("");
+
+    const { error } = await supabase.from("sales").insert(newSale);
+    if (error) {
+      setMessage(error.message);
+      setSavingNewSale(false);
+      return;
+    }
+
+    if (order) {
+      await syncOrderFromSales(order.id);
+    }
+
+    setSavingNewSale(false);
+    closeAddSale();
+    await loadSales(true);
+    setMessage("Sale added");
+  }
+
   function toggleGroup(key: string) {
     setExpandedGroups((current) =>
       current.includes(key) ? current.filter((value) => value !== key) : [...current, key],
@@ -551,6 +625,24 @@ export default function SalesClient() {
     [selectedSale, allOrders],
   );
 
+  const unsoldOrdersForAdd = useMemo(() => {
+    return allOrders.filter((o) => o.listing_status !== "Sold" && o.listing_status !== "Archived");
+  }, [allOrders]);
+
+  const filteredOrdersForAdd = useMemo(() => {
+    const q = addSaleSearch.trim().toLowerCase();
+    if (!q) return unsoldOrdersForAdd;
+    return unsoldOrdersForAdd.filter((o) =>
+      [o.booking_ref, o.event_name, o.venue, o.section, o.row, o.account_email]
+        .some((f) => f?.toLowerCase().includes(q)),
+    );
+  }, [unsoldOrdersForAdd, addSaleSearch]);
+
+  const selectedOrderForAdd = useMemo(
+    () => (addSaleOrderId != null ? allOrders.find((o) => o.id === addSaleOrderId) ?? null : null),
+    [addSaleOrderId, allOrders],
+  );
+
   const manualResults = useMemo(() => {
     const q = manualSearch.trim().toLowerCase();
     if (!q || !selectedSale) return [];
@@ -600,9 +692,14 @@ export default function SalesClient() {
               Export CSV
             </button>
             {!showArchived && (
-              <button className="secondary-button" onClick={() => void scanSalesNow()} disabled={scanning} type="button">
-                {scanning ? "Scanning..." : "Scan Sales"}
-              </button>
+              <>
+                <button className="secondary-button" onClick={() => void scanSalesNow()} disabled={scanning} type="button">
+                  {scanning ? "Scanning..." : "Scan Sales"}
+                </button>
+                <button className="primary-button" onClick={openAddSale} type="button">
+                  + Add Sale
+                </button>
+              </>
             )}
           </div>
         </header>
@@ -1099,6 +1196,135 @@ export default function SalesClient() {
           </div>
       </aside>
       ) : null}
+
+      {showAddSale && createPortal(
+        <div className="add-sale-overlay" onClick={closeAddSale}>
+          <div className="add-sale-sheet" onClick={(e) => e.stopPropagation()}>
+
+            {/* Header */}
+            <div className="drawer-header">
+              <div>
+                <p className="eyebrow">Manual entry</p>
+                <h4>Add Sale</h4>
+              </div>
+              <button className="drawer-close" type="button" onClick={closeAddSale}>✕</button>
+            </div>
+
+            <div className="add-sale-body">
+              {/* Ticket picker */}
+              <div className="add-sale-section">
+                <p className="add-sale-section-title">Match to a ticket <span className="add-sale-optional">(optional)</span></p>
+                <input
+                  className="field field-search"
+                  placeholder="Search event, booking ref, section, account..."
+                  value={addSaleSearch}
+                  onChange={(e) => setAddSaleSearch(e.target.value)}
+                />
+                <div className="add-sale-order-list">
+                  {filteredOrdersForAdd.length === 0 ? (
+                    <p className="add-sale-empty">No unsold tickets found</p>
+                  ) : (
+                    filteredOrdersForAdd.slice(0, 15).map((order) => {
+                      const selected = addSaleOrderId === order.id;
+                      return (
+                        <button
+                          key={order.id}
+                          type="button"
+                          className={`add-sale-order-row${selected ? " add-sale-order-selected" : ""}`}
+                          onClick={() => setAddSaleOrderId(selected ? null : order.id)}
+                        >
+                          <div className="add-sale-order-info">
+                            <strong>{order.event_name || "Untitled"}</strong>
+                            <span>{order.venue || "—"}{order.section ? ` · ${order.section}` : ""}{order.row ? ` Row ${order.row}` : ""}</span>
+                            <span className="add-sale-order-meta">{order.booking_ref || "No ref"} · {order.account_email || "No account"}</span>
+                          </div>
+                          <div className="add-sale-order-right">
+                            <span className={`status-badge status-static ${order.listing_status === "Listed" ? "status-listed" : order.listing_status === "Problem / Missing" ? "status-problem" : "status-unlisted"}`}>
+                              {order.listing_status || "Unlisted"}
+                            </span>
+                            {selected && <span className="add-sale-check">✓</span>}
+                          </div>
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+                {selectedOrderForAdd && (
+                  <div className="add-sale-matched-chip">
+                    <span className="add-sale-matched-dot" />
+                    Linked to <strong>{selectedOrderForAdd.event_name || selectedOrderForAdd.booking_ref || "Ticket"}</strong>
+                    {selectedOrderForAdd.section ? ` · ${selectedOrderForAdd.section}` : ""}
+                    {selectedOrderForAdd.row ? ` Row ${selectedOrderForAdd.row}` : ""}
+                  </div>
+                )}
+              </div>
+
+              {/* Sale details */}
+              <div className="add-sale-section">
+                <p className="add-sale-section-title">Sale details</p>
+                <div className="drawer-grid">
+                  <label>
+                    <span>Qty sold</span>
+                    <input
+                      className="field"
+                      type="number"
+                      min="1"
+                      value={addSaleForm.qty_sold}
+                      onChange={(e) => setAddSaleForm((f) => ({ ...f, qty_sold: e.target.value }))}
+                    />
+                  </label>
+                  <label>
+                    <span>Total payout (£)</span>
+                    <input
+                      className="field"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder="0.00"
+                      value={addSaleForm.payout_total}
+                      onChange={(e) => setAddSaleForm((f) => ({ ...f, payout_total: e.target.value }))}
+                    />
+                  </label>
+                  <label>
+                    <span>Buyer email <span className="add-sale-optional">(optional)</span></span>
+                    <input
+                      className="field"
+                      type="email"
+                      placeholder="buyer@example.com"
+                      value={addSaleForm.buyer_email}
+                      onChange={(e) => setAddSaleForm((f) => ({ ...f, buyer_email: e.target.value }))}
+                    />
+                  </label>
+                  <label>
+                    <span>Date sold</span>
+                    <input
+                      className="field"
+                      type="date"
+                      value={addSaleForm.sold_at}
+                      onChange={(e) => setAddSaleForm((f) => ({ ...f, sold_at: e.target.value }))}
+                    />
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="drawer-actions">
+              <button className="secondary-button" type="button" onClick={closeAddSale}>Cancel</button>
+              <button
+                className="primary-button"
+                type="button"
+                disabled={savingNewSale || !addSaleForm.payout_total}
+                onClick={() => void addSaleManually()}
+              >
+                {savingNewSale ? "Saving..." : "Add Sale"}
+              </button>
+            </div>
+
+          </div>
+        </div>,
+        document.body,
+      )}
     </div>
   );
 }

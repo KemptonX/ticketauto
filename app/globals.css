@@ -1853,6 +1853,46 @@ select {
   color: var(--text-primary);
 }
 
+.inventory-ticket-block {
+  border-top: 1px solid rgba(35, 35, 42, 0.4);
+}
+
+.inventory-ticket-block .inventory-ticket-row {
+  border-top: none;
+}
+
+.inventory-roi-strip {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1px;
+  background: var(--border);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  margin: 0 0 14px;
+}
+
+.inventory-roi-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 14px;
+  background: var(--surface-raised, var(--surface));
+}
+
+.inventory-roi-cell span {
+  font-size: 10px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.inventory-roi-cell strong {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
 .inventory-pl-row {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -1891,6 +1931,226 @@ select {
 
 .inventory-profit-negative {
   color: #f87171 !important;
+}
+
+/* ── Add Sale Modal ─────────────────────────────────── */
+.add-sale-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.72);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  z-index: 9999;
+  padding: 48px 24px 24px;
+  backdrop-filter: blur(4px);
+  animation: overlayIn 180ms ease;
+}
+
+@keyframes overlayIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.add-sale-sheet {
+  position: relative;
+  width: 100%;
+  max-width: 600px;
+  max-height: calc(100vh - 72px);
+  display: flex;
+  flex-direction: column;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  background:
+    radial-gradient(circle at top left, rgba(255, 79, 163, 0.05), transparent 30%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.025), transparent 24%),
+    linear-gradient(180deg, rgba(17, 17, 22, 0.99), rgba(11, 11, 15, 0.99));
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.04) inset,
+    0 40px 80px rgba(0, 0, 0, 0.6),
+    0 0 0 1px rgba(255, 79, 163, 0.06);
+  animation: sheetIn 220ms cubic-bezier(0.16, 1, 0.3, 1);
+  overflow: hidden;
+}
+
+.add-sale-sheet::before {
+  content: "";
+  position: absolute;
+  left: 20px;
+  right: 20px;
+  top: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 79, 163, 0.6),
+    rgba(155, 92, 255, 0.4),
+    rgba(79, 195, 255, 0.22),
+    transparent
+  );
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+@keyframes sheetIn {
+  from { opacity: 0; transform: translateY(-12px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.add-sale-sheet .drawer-header {
+  padding: 22px 24px 20px;
+  margin-bottom: 0;
+  border-bottom: 1px solid rgba(38, 38, 47, 0.7);
+}
+
+.add-sale-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.add-sale-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.add-sale-section-title {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.add-sale-optional {
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.add-sale-order-list {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow-y: auto;
+  max-height: 220px;
+  background: var(--surface-2);
+}
+
+.add-sale-empty {
+  padding: 24px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+  margin: 0;
+}
+
+.add-sale-order-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 13px 16px;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  text-align: left;
+  transition: background 150ms ease;
+}
+
+.add-sale-order-row:last-child {
+  border-bottom: none;
+}
+
+.add-sale-order-row:hover {
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.add-sale-order-selected {
+  background: rgba(255, 79, 163, 0.06) !important;
+  border-left: 2px solid var(--accent-pink);
+}
+
+.add-sale-order-info {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.add-sale-order-info strong {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.add-sale-order-info span {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.add-sale-order-meta {
+  font-size: 11px !important;
+  color: var(--text-muted) !important;
+}
+
+.add-sale-order-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.add-sale-check {
+  color: var(--accent-pink);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.add-sale-matched-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 16px;
+  background: rgba(255, 79, 163, 0.07);
+  border: 1px solid rgba(255, 79, 163, 0.2);
+  border-radius: 12px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.add-sale-matched-chip strong {
+  color: var(--text-primary);
+}
+
+.add-sale-matched-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent-pink);
+  flex-shrink: 0;
+  box-shadow: 0 0 6px rgba(255, 79, 163, 0.6);
+}
+
+.add-sale-sheet .drawer-grid label span {
+  font-size: 11px;
+}
+
+.add-sale-sheet .drawer-actions {
+  padding: 18px 24px;
+  border-top: 1px solid rgba(38, 38, 47, 0.7);
+  margin-top: 0;
 }
 
 .inline-match-row {

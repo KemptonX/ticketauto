@@ -76,6 +76,7 @@ export default function InventoryClient() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [archivedSalesByOrder, setArchivedSalesByOrder] = useState<Record<number, number>>({});
   const [payoutByOrder, setPayoutByOrder] = useState<Record<number, number>>({});
+  const [qtySoldByOrder, setQtySoldByOrder] = useState<Record<number, number>>({});
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [message, setMessage] = useState("");
@@ -140,16 +141,16 @@ export default function InventoryClient() {
         .not("inventory_order_id", "is", null);
 
       if (matchedSales) {
-        const payoutMap = (matchedSales as MatchedSale[]).reduce<Record<number, number>>(
-          (acc, sale) => {
-            if (sale.inventory_order_id == null) return acc;
-            const payout = sale.payout_total ?? sale.sale_total ?? 0;
-            acc[sale.inventory_order_id] = (acc[sale.inventory_order_id] ?? 0) + payout;
-            return acc;
-          },
-          {},
-        );
+        const payoutMap: Record<number, number> = {};
+        const qtySoldMap: Record<number, number> = {};
+        for (const sale of matchedSales as MatchedSale[]) {
+          if (sale.inventory_order_id == null) continue;
+          const id = sale.inventory_order_id;
+          payoutMap[id] = (payoutMap[id] ?? 0) + (sale.payout_total ?? sale.sale_total ?? 0);
+          qtySoldMap[id] = (qtySoldMap[id] ?? 0) + (sale.qty_sold ?? 1);
+        }
         setPayoutByOrder(payoutMap);
+        setQtySoldByOrder(qtySoldMap);
       }
 
       if (showRefreshing) {
@@ -643,21 +644,57 @@ export default function InventoryClient() {
                           <span>Cost</span>
                           <span>Status</span>
                         </div>
-                        {group.orders.map((order) => (
-                          <div key={order.id} className="inventory-ticket-row">
-                            <div className="inventory-ticket-seat">
-                              <strong>{order.section || "Section —"}</strong>
-                              <span>{formatSeatLabel(order.row, order.seat_from, order.seat_to)}</span>
+                        {group.orders.map((order) => {
+                          const orderQtyBought = order.qty_bought ?? 1;
+                          const orderQtySold = qtySoldByOrder[order.id] ?? 0;
+                          const allSold = orderQtySold >= orderQtyBought;
+                          const orderPayout = payoutByOrder[order.id] ?? 0;
+                          const orderCost = order.total_cost ?? 0;
+                          const orderProfit = orderPayout - orderCost;
+                          const orderRoi = allSold && orderCost > 0 ? (orderProfit / orderCost) * 100 : null;
+
+                          return (
+                            <div key={order.id} className="inventory-ticket-block">
+                              <div className="inventory-ticket-row">
+                                <div className="inventory-ticket-seat">
+                                  <strong>{order.section || "Section —"}</strong>
+                                  <span>{formatSeatLabel(order.row, order.seat_from, order.seat_to)}</span>
+                                </div>
+                                <span className="truncate-text" title={order.account_email || ""}>
+                                  {order.account_email || "No account"}
+                                </span>
+                                <strong className="inventory-cost-value">{formatCurrency(order.total_cost)}</strong>
+                                <span className={`status-badge status-static ${getStatusTone(order.listing_status)}`}>
+                                  {normalizeStatus(order.listing_status)}
+                                </span>
+                              </div>
+                              {orderRoi !== null && (
+                                <div className="inventory-roi-strip">
+                                  <div className="inventory-roi-cell">
+                                    <span>Cost</span>
+                                    <strong>{formatCurrency(orderCost)}</strong>
+                                  </div>
+                                  <div className="inventory-roi-cell">
+                                    <span>Sold for</span>
+                                    <strong>{formatCurrency(orderPayout)}</strong>
+                                  </div>
+                                  <div className="inventory-roi-cell">
+                                    <span>Profit</span>
+                                    <strong className={orderProfit >= 0 ? "inventory-profit-positive" : "inventory-profit-negative"}>
+                                      {orderProfit >= 0 ? "+" : ""}{formatCurrency(orderProfit)}
+                                    </strong>
+                                  </div>
+                                  <div className="inventory-roi-cell">
+                                    <span>ROI</span>
+                                    <strong className={orderRoi >= 0 ? "inventory-profit-positive" : "inventory-profit-negative"}>
+                                      {orderRoi >= 0 ? "+" : ""}{orderRoi.toFixed(1)}%
+                                    </strong>
+                                  </div>
+                                </div>
+                              )}
                             </div>
-                            <span className="truncate-text" title={order.account_email || ""}>
-                              {order.account_email || "No account"}
-                            </span>
-                            <strong className="inventory-cost-value">{formatCurrency(order.total_cost)}</strong>
-                            <span className={`status-badge status-static ${getStatusTone(order.listing_status)}`}>
-                              {normalizeStatus(order.listing_status)}
-                            </span>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     ) : null}
                   </article>
