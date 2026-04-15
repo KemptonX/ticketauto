@@ -799,6 +799,7 @@ export default function SalesClient() {
                     key={group.key}
                     className={`inventory-group-card${group.unmatchedCount > 0 ? " inventory-group-risk" : ""}${expanded ? " inventory-group-open" : ""}`}
                   >
+                    <div className="inventory-group-header-row">
                     <button className="inventory-group-toggle" type="button" onClick={() => toggleGroup(group.key)}>
                       <div className="inventory-group-main">
                         <div className="inventory-group-title">
@@ -841,6 +842,7 @@ export default function SalesClient() {
                         <span className="inventory-chevron">{expanded ? "−" : "+"}</span>
                       </div>
                     </button>
+                    </div>
 
                     {expanded ? (
                       <div className="inventory-ticket-stack sales-ticket-grid">

@@ -1012,6 +1012,9 @@ export default function OrdersClient() {
                 const groupProfit = group.orders.some((o) => o.sold_total != null)
                   ? group.totalSold - group.totalCost
                   : null;
+                const groupRoi = groupProfit != null && group.totalCost > 0
+                  ? (groupProfit / group.totalCost) * 100
+                  : null;
                 const soldRatio = group.totalQty > 0 ? (group.soldCount / group.totalQty) * 100 : 0;
 
                 const groupIds = group.orders.map((o) => o.id);
@@ -1060,6 +1063,12 @@ export default function OrdersClient() {
                             <span>Profit</span>
                             <strong className={groupProfit != null && groupProfit > 0 ? "delta-up" : groupProfit != null && groupProfit < 0 ? "delta-down" : ""}>
                               {groupProfit != null ? formatCurrency(groupProfit) : "—"}
+                            </strong>
+                          </div>
+                          <div className="inventory-metric-chip">
+                            <span>ROI</span>
+                            <strong className={groupRoi != null && groupRoi > 0 ? "delta-up" : groupRoi != null && groupRoi < 0 ? "delta-down" : ""}>
+                              {groupRoi != null ? `${groupRoi.toFixed(1)}%` : "—"}
                             </strong>
                           </div>
                           <div className="inventory-status-row">
