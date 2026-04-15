@@ -786,20 +786,20 @@ export default function OrdersClient() {
       <aside className="orders-sidebar">
         <div>
           <SidebarLogo />
-        </div>
 
-        <nav className="sidebar-nav">
-          {navItems.map((item) => (
-            <Link
-              key={item.label}
-              href={item.href}
-              className={`nav-item${item.active ? " nav-item-active" : ""}`}
-            >
-              <NavIcon href={item.href} />
-              <span>{item.label}</span>
-            </Link>
-          ))}
-        </nav>
+          <nav className="sidebar-nav">
+            {navItems.map((item) => (
+              <Link
+                key={item.label}
+                href={item.href}
+                className={`nav-item${item.active ? " nav-item-active" : ""}`}
+              >
+                <NavIcon href={item.href} />
+                <span>{item.label}</span>
+              </Link>
+            ))}
+          </nav>
+        </div>
 
         <SidebarFooter onLogout={handleLogout} />
       </aside>

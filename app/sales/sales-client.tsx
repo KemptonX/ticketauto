@@ -734,7 +734,7 @@ export default function SalesClient() {
             </button>
           </div>
 
-          <div className="command-grid">
+          <div className="sales-filter-grid">
             <label className="filter-field">
               <span className="filter-label">Search</span>
               <input
@@ -843,7 +843,7 @@ export default function SalesClient() {
                     </button>
 
                     {expanded ? (
-                      <div className="inventory-ticket-stack">
+                      <div className="inventory-ticket-stack sales-ticket-grid">
                         <div className="inventory-ticket-header">
                           <span>Seat</span>
                           <span>Account</span>
