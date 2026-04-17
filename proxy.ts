@@ -1,5 +1,7 @@
-﻿import { NextResponse, type NextRequest } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
+
+export const runtime = "nodejs";
 
 const protectedRoutes = [
   "/orders",
@@ -15,7 +17,7 @@ const protectedRoutes = [
   "/api/scan-sales",
 ];
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request });
 
   const supabase = createServerClient(
@@ -55,7 +57,7 @@ export async function middleware(request: NextRequest) {
   return response;
 }
 
-export const config = {
+export const proxyConfig = {
   matcher: [
     "/login",
     "/orders/:path*",
@@ -64,6 +66,9 @@ export const config = {
     "/inventory/:path*",
     "/analytics/:path*",
     "/connections/:path*",
+    "/scans/:path*",
+    "/viagogo-calculator/:path*",
+    "/costs/:path*",
     "/api/scan-gmail",
     "/api/scan-sales",
   ],
