@@ -1,8 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 
-export const runtime = "nodejs";
-
 const protectedRoutes = [
   "/orders",
   "/sales",
