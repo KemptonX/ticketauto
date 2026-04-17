@@ -1047,7 +1047,7 @@ export default function OrdersClient() {
                         <div className="inventory-group-title">
                           <strong>{group.eventName}</strong>
                           <span>{group.venue}</span>
-                          <small>{group.eventDate}</small>
+                          <small>{formatEventDate(group.eventDate)}</small>
                           {(() => { const d = formatDaysAway(group.dateValue); return d ? <span className={`days-chip ${d.tone}`}>{d.label}</span> : null; })()}
                         </div>
                         <div className="inventory-group-metrics">
@@ -1356,7 +1356,7 @@ export default function OrdersClient() {
               <div className="drawer-hero-copy">
                 <strong>{selectedOrder.event_name || "Untitled ticket"}</strong>
                 <span>{selectedOrder.venue || "Venue missing"}</span>
-                <small>{selectedOrder.event_date || "Date missing"}</small>
+                <small>{formatEventDate(selectedOrder.event_date)}</small>
               </div>
               <div className="drawer-hero-meta">
                 <span className={`status-badge status-static ${getStatusTone(selectedOrder.listing_status)}`}>
@@ -1627,6 +1627,21 @@ function parseOrderDate(value: string | null): Date | null {
   const monthIndex = ["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"].indexOf(monthName.slice(0,3).toLowerCase());
   if (monthIndex === -1) return null;
   return new Date(Number(year), monthIndex, Number(day));
+}
+
+function formatEventDate(value: string | null): string {
+  if (!value) return "Date missing";
+  // Already in a human-readable format (e.g. "Sat 25 Apr 2026 - 6:30 pm") — return as-is
+  if (/^[A-Za-z]{2,3}\s+\d{1,2}\s+[A-Za-z]{3}/i.test(value)) return value;
+  // ISO date: 2026-04-22 or 2026-04-22T...
+  const DAYS = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+  const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  if (/^\d{4}-\d{2}-\d{2}/.test(value)) {
+    const [y, m, d] = value.slice(0, 10).split("-").map(Number);
+    const date = new Date(y, m - 1, d);
+    return `${DAYS[date.getDay()]} ${d} ${MONTHS[m - 1]} ${y}`;
+  }
+  return value;
 }
 
 function formatAddedAt(value: string | null) {
