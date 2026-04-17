@@ -1572,8 +1572,17 @@ function renderDeltaValue(value: number | null, withArrow = false) {
 }
 
 
-function formatEventDate(value: string | null) {
-  return value || "Date missing";
+function formatEventDate(value: string | null): string {
+  if (!value) return "Date missing";
+  if (/^[A-Za-z]{2,3}\s+\d{1,2}\s+[A-Za-z]{3}/i.test(value)) return value;
+  const DAYS = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+  const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  if (/^\d{4}-\d{2}-\d{2}/.test(value)) {
+    const [y, m, d] = value.slice(0, 10).split("-").map(Number);
+    const date = new Date(y, m - 1, d);
+    return `${DAYS[date.getDay()]} ${d} ${MONTHS[m - 1]} ${y}`;
+  }
+  return value;
 }
 
 function formatSoldAt(value: string | null) {
