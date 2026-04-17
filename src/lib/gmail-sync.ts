@@ -503,9 +503,9 @@ function parseBookingRef(subject: string, text: string) {
   }
 
   const patterns = [
-    /order number is\s*([0-9]{2}-[0-9]+\/UK\d+)/i,
-    /\bORDER\b\s*#\s*([0-9]{2}-[0-9]+\/UK\d+)/i,
-    /\b([0-9]{2}-[0-9]+\/UK\d+)\b/i,
+    /order number is\s*([0-9]{1,3}-[0-9]+\/UK\d+)/i,
+    /\bORDER\b\s*#\s*([0-9]{1,3}-[0-9]+\/UK\d+)/i,
+    /\b([0-9]{1,3}-[0-9]+\/UK\d+)\b/i,
   ];
 
   for (const pattern of patterns) {
