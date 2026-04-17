@@ -60,6 +60,7 @@ type OrderGroup = {
   listedCount: number;
   unlistedCount: number;
   problemCount: number;
+  hasNew: boolean;
 };
 
 const sourceLabels: Record<string, string> = {
@@ -699,6 +700,7 @@ export default function OrdersClient() {
           listedCount: 0,
           unlistedCount: 0,
           problemCount: 0,
+          hasNew: false,
           latestAddedAt: 0,
         });
       }
@@ -711,6 +713,7 @@ export default function OrdersClient() {
 
       const addedAt = order.created_at ? new Date(order.created_at).getTime() : 0;
       if (addedAt > group.latestAddedAt) group.latestAddedAt = addedAt;
+      if (addedAt > Date.now() - 86400000) group.hasNew = true;
 
       const status = order.listing_status;
       const qty = order.qty_bought ?? 0;
@@ -1048,7 +1051,10 @@ export default function OrdersClient() {
                           <strong>{group.eventName}</strong>
                           <span>{group.venue}</span>
                           <small>{formatEventDate(group.eventDate)}</small>
-                          {(() => { const d = formatDaysAway(group.dateValue); return d ? <span className={`days-chip ${d.tone}`}>{d.label}</span> : null; })()}
+                          <div className="title-chips">
+                            {group.hasNew && <span className="new-badge">New</span>}
+                            {(() => { const d = formatDaysAway(group.dateValue); return d ? <span className={`days-chip ${d.tone}`}>{d.label}</span> : null; })()}
+                          </div>
                         </div>
                         <div className="inventory-group-metrics">
                           <div className="inventory-metric-chip">
@@ -1115,6 +1121,7 @@ export default function OrdersClient() {
                               const profit = order.sold_total != null ? sold - cost : null;
                               const roi = profit != null && cost > 0 ? (profit / cost) * 100 : null;
                               const active = selectedOrderId === order.id;
+                              const isNew = order.created_at ? new Date(order.created_at).getTime() > Date.now() - 86400000 : false;
 
                               return (
                                 <tr
@@ -1131,7 +1138,10 @@ export default function OrdersClient() {
                                       />
                                     </td>
                                   )}
-                                  <td><span className="mono-text">{order.booking_ref || "No ref"}</span></td>
+                                  <td>
+                                    <span className="mono-text">{order.booking_ref || "No ref"}</span>
+                                    {isNew && <span className="new-badge new-badge-inline">New</span>}
+                                  </td>
                                   <td>
                                     <div className="seat-stack">
                                       <strong>{order.section || "—"}</strong>

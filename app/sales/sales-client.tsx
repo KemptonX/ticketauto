@@ -72,6 +72,7 @@ type SaleGroup = {
   cost: number;
   matchedCount: number;
   unmatchedCount: number;
+  hasNew: boolean;
 };
 
 const navItems = [
@@ -579,12 +580,14 @@ export default function SalesClient() {
           cost: 0,
           matchedCount: 0,
           unmatchedCount: 0,
+          hasNew: false,
         });
       }
 
       const group = map.get(key)!;
       group.sales.push(sale);
       group.salesCount += 1;
+      if (sale.created_at && new Date(sale.created_at).getTime() > Date.now() - 86400000) group.hasNew = true;
       group.ticketsSold += ticketsSold;
       group.soldFor += soldFor;
       if (sale.inventory_order_id != null) {
@@ -806,6 +809,7 @@ export default function SalesClient() {
                           <strong>{group.eventName}</strong>
                           <span>{group.venue}</span>
                           <small>{formatEventDate(group.eventDate)}</small>
+                          {group.hasNew && <span className="new-badge">New</span>}
                         </div>
 
                         <div className="inventory-group-metrics">
@@ -857,6 +861,7 @@ export default function SalesClient() {
                           const matchedOrder = getReferenceOrderForSale(sale, matchedOrders, allOrders);
                           const isUnmatched = sale.inventory_order_id == null;
                           const topSuggestion = isUnmatched ? getMatchSuggestions(sale, allOrders)[0] ?? null : null;
+                          const isNew = sale.created_at ? new Date(sale.created_at).getTime() > Date.now() - 86400000 : false;
                           return (
                             <div key={sale.id}>
                               <div
@@ -875,6 +880,7 @@ export default function SalesClient() {
                                 <div className="inventory-ticket-seat">
                                   <strong>{sale.section || "Section —"}</strong>
                                   <span>{formatSeatLabel(sale.row, sale.seat_from, sale.seat_to)}</span>
+                                  {isNew && <span className="new-badge new-badge-inline">New</span>}
                                 </div>
                                 <span className="truncate-text" title={sale.account_email || ""}>
                                   {sale.account_email || "No account"}
