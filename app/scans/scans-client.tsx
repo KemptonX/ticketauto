@@ -24,19 +24,18 @@ type SyncLog = {
   updated: number | null;
   matched: number | null;
   accounts_scanned: number | null;
+  error: string | null;
 };
+
+type FilterType = "all" | "success" | "failed";
 
 function formatTs(ts: string): string {
   const d = new Date(ts);
   const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-  const day = DAYS[d.getDay()];
-  const date = d.getDate();
-  const month = MONTHS[d.getMonth()];
-  const year = d.getFullYear();
   const hh = String(d.getHours()).padStart(2, "0");
   const mm = String(d.getMinutes()).padStart(2, "0");
-  return `${day} ${date} ${month} ${year} ${hh}:${mm}`;
+  return `${DAYS[d.getDay()]} ${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}, ${hh}:${mm}`;
 }
 
 function timeAgo(ts: string): string {
@@ -53,7 +52,7 @@ function timeAgo(ts: string): string {
 export default function ScansClient() {
   const [logs, setLogs] = useState<SyncLog[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<"all" | "orders" | "sales">("all");
+  const [filter, setFilter] = useState<FilterType>("all");
 
   async function handleLogout() {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -65,7 +64,7 @@ export default function ScansClient() {
       setLoading(true);
       const { data } = await supabase
         .from("sync_log")
-        .select("id, created_at, scan_type, scanned, inserted, updated, matched, accounts_scanned")
+        .select("id, created_at, scan_type, scanned, inserted, updated, matched, accounts_scanned, error")
         .order("created_at", { ascending: false })
         .limit(200);
       setLogs((data as SyncLog[]) || []);
@@ -74,10 +73,16 @@ export default function ScansClient() {
     load();
   }, []);
 
-  const filtered = filter === "all" ? logs : logs.filter((l) => l.scan_type === filter);
+  const filtered = logs.filter((l) => {
+    if (filter === "success") return !l.error;
+    if (filter === "failed") return !!l.error;
+    return true;
+  });
 
-  const totalOrders = logs.filter((l) => l.scan_type === "orders").reduce((s, l) => s + (l.inserted ?? 0), 0);
-  const totalSales = logs.filter((l) => l.scan_type === "sales").reduce((s, l) => s + (l.inserted ?? 0), 0);
+  const successCount = logs.filter((l) => !l.error).length;
+  const failedCount = logs.filter((l) => !!l.error).length;
+  const ticketsAdded = logs.filter((l) => l.scan_type === "orders").reduce((s, l) => s + (l.inserted ?? 0), 0);
+  const salesAdded = logs.filter((l) => l.scan_type === "sales").reduce((s, l) => s + (l.inserted ?? 0), 0);
   const lastScan = logs[0] ? timeAgo(logs[0].created_at) : "—";
 
   return (
@@ -105,100 +110,210 @@ export default function ScansClient() {
         <header className="topbar">
           <div>
             <p className="eyebrow">Tools</p>
-            <h2>Recent Scans</h2>
+            <h2>Scan Logs</h2>
           </div>
         </header>
 
-        <div className="orders-content">
-          {/* Summary chips */}
-          <div className="scans-summary-row">
-            <div className="scans-stat-card">
-              <span className="scans-stat-label">Last Scan</span>
-              <span className="scans-stat-value">{lastScan}</span>
-            </div>
-            <div className="scans-stat-card">
-              <span className="scans-stat-label">Total Scans</span>
-              <span className="scans-stat-value">{logs.length}</span>
-            </div>
-            <div className="scans-stat-card">
-              <span className="scans-stat-label">Tickets Added</span>
-              <span className="scans-stat-value scans-stat-green">{totalOrders}</span>
-            </div>
-            <div className="scans-stat-card">
-              <span className="scans-stat-label">Sales Added</span>
-              <span className="scans-stat-value scans-stat-blue">{totalSales}</span>
+        {/* KPI row */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: "16px" }}>
+          <div className="kpi-card">
+            <span>Last Scan</span>
+            <strong style={{ fontSize: "22px" }}>{lastScan}</strong>
+          </div>
+          <div className="kpi-card">
+            <span>Total Runs</span>
+            <strong>{logs.length}</strong>
+          </div>
+          <div className="kpi-card">
+            <span>Successful</span>
+            <strong style={{ color: "#22c55e" }}>{successCount}</strong>
+          </div>
+          <div className="kpi-card">
+            <span>Tickets Added</span>
+            <strong style={{ color: "#60a5fa" }}>{ticketsAdded}</strong>
+          </div>
+          <div className="kpi-card">
+            <span>Sales Added</span>
+            <strong style={{ color: "#a78bfa" }}>{salesAdded}</strong>
+          </div>
+        </div>
+
+        {/* Table card */}
+        <div className="command-card" style={{ borderRadius: "16px", padding: 0, overflow: "hidden" }}>
+          {/* Header with toggles */}
+          <div className="command-header" style={{ padding: "18px 24px", borderBottom: "1px solid var(--border)" }}>
+            <h4 style={{ fontSize: "15px", fontWeight: 600, letterSpacing: "-0.02em" }}>Recent Scans</h4>
+            <div className="view-toggle">
+              {(["all", "success", "failed"] as FilterType[]).map((f) => (
+                <button
+                  key={f}
+                  type="button"
+                  className={`toggle-btn${filter === f ? " toggle-btn-active" : ""}`}
+                  onClick={() => setFilter(f)}
+                >
+                  {f === "all" ? `All (${logs.length})` : f === "success" ? `Success (${successCount})` : `Failed (${failedCount})`}
+                </button>
+              ))}
             </div>
           </div>
 
-          {/* Filter tabs */}
-          <div className="scans-filter-row">
-            {(["all", "orders", "sales"] as const).map((f) => (
-              <button
-                key={f}
-                className={`scans-filter-btn${filter === f ? " scans-filter-active" : ""}`}
-                onClick={() => setFilter(f)}
-              >
-                {f === "all" ? "All" : f === "orders" ? "Tickets" : "Sales"}
-              </button>
-            ))}
-          </div>
-
-          {/* Log table */}
           {loading ? (
-            <div className="scans-empty">Loading scan logs…</div>
-          ) : filtered.length === 0 ? (
-            <div className="scans-empty">No scan logs found.</div>
-          ) : (
-            <div className="scans-table-wrap">
-              <table className="scans-table">
-                <thead>
-                  <tr>
-                    <th>Time</th>
-                    <th>Type</th>
-                    <th>Emails Scanned</th>
-                    <th>Added</th>
-                    <th>Updated / Matched</th>
-                    <th>Accounts</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filtered.map((log) => {
-                    const isOrders = log.scan_type === "orders";
-                    const secondaryLabel = isOrders ? "Updated" : "Matched";
-                    const secondaryVal = isOrders ? (log.updated ?? 0) : (log.matched ?? 0);
-                    const hasNew = (log.inserted ?? 0) > 0;
-                    return (
-                      <tr key={log.id} className={hasNew ? "scans-row-highlight" : ""}>
-                        <td className="scans-td-time">
-                          <span className="scans-ts">{formatTs(log.created_at)}</span>
-                          <span className="scans-ago">{timeAgo(log.created_at)}</span>
-                        </td>
-                        <td>
-                          <span className={`scans-type-badge scans-type-${log.scan_type}`}>
-                            {isOrders ? "Tickets" : "Sales"}
-                          </span>
-                        </td>
-                        <td className="scans-td-num">{log.scanned ?? 0}</td>
-                        <td className="scans-td-num">
-                          {hasNew ? (
-                            <span className="scans-added-highlight">{log.inserted}</span>
-                          ) : (
-                            <span className="scans-zero">0</span>
-                          )}
-                        </td>
-                        <td className="scans-td-num scans-td-secondary">
-                          {secondaryVal > 0 ? secondaryVal : <span className="scans-zero">0</span>}
-                          <span className="scans-secondary-label">{secondaryLabel}</span>
-                        </td>
-                        <td className="scans-td-num">
-                          {log.accounts_scanned != null ? log.accounts_scanned : "—"}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+            <div style={{ padding: "48px", textAlign: "center", color: "var(--text-muted)", fontSize: "14px" }}>
+              Loading scan logs…
             </div>
+          ) : filtered.length === 0 ? (
+            <div style={{ padding: "48px", textAlign: "center", color: "var(--text-muted)", fontSize: "14px" }}>
+              No scan logs found.
+            </div>
+          ) : (
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
+              <thead>
+                <tr style={{ borderBottom: "1px solid var(--border)" }}>
+                  {["Time", "Type", "Status", "Scanned", "Added", "Updated / Matched", "Accounts"].map((h) => (
+                    <th
+                      key={h}
+                      style={{
+                        padding: "10px 20px",
+                        textAlign: "left",
+                        fontSize: "11px",
+                        fontWeight: 600,
+                        textTransform: "uppercase",
+                        letterSpacing: "0.1em",
+                        color: "var(--text-muted)",
+                        whiteSpace: "nowrap",
+                        background: "rgba(255,255,255,0.02)",
+                      }}
+                    >
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((log, i) => {
+                  const isOrders = log.scan_type === "orders";
+                  const isFailed = !!log.error;
+                  const hasNew = (log.inserted ?? 0) > 0;
+                  const secondaryVal = isOrders ? (log.updated ?? 0) : (log.matched ?? 0);
+                  const secondaryLabel = isOrders ? "upd" : "matched";
+                  return (
+                    <tr
+                      key={log.id}
+                      style={{
+                        borderBottom: i < filtered.length - 1 ? "1px solid rgba(255,255,255,0.04)" : "none",
+                        background: isFailed
+                          ? "rgba(239,68,68,0.04)"
+                          : hasNew
+                          ? "rgba(34,197,94,0.04)"
+                          : "transparent",
+                      }}
+                    >
+                      {/* Time */}
+                      <td style={{ padding: "12px 20px", whiteSpace: "nowrap" }}>
+                        <div style={{ fontSize: "13px", color: "var(--text-primary)" }}>
+                          {formatTs(log.created_at)}
+                        </div>
+                        <div style={{ fontSize: "11px", color: "var(--text-muted)", marginTop: "2px" }}>
+                          {timeAgo(log.created_at)}
+                        </div>
+                      </td>
+
+                      {/* Type */}
+                      <td style={{ padding: "12px 20px" }}>
+                        <span
+                          style={{
+                            display: "inline-block",
+                            padding: "2px 10px",
+                            borderRadius: "20px",
+                            fontSize: "11px",
+                            fontWeight: 700,
+                            letterSpacing: "0.06em",
+                            textTransform: "uppercase",
+                            background: isOrders ? "rgba(96,165,250,0.1)" : "rgba(167,139,250,0.1)",
+                            color: isOrders ? "#60a5fa" : "#a78bfa",
+                            border: `1px solid ${isOrders ? "rgba(96,165,250,0.25)" : "rgba(167,139,250,0.25)"}`,
+                          }}
+                        >
+                          {isOrders ? "Tickets" : "Sales"}
+                        </span>
+                      </td>
+
+                      {/* Status */}
+                      <td style={{ padding: "12px 20px" }}>
+                        {isFailed ? (
+                          <span
+                            title={log.error ?? undefined}
+                            style={{
+                              display: "inline-block",
+                              padding: "2px 10px",
+                              borderRadius: "20px",
+                              fontSize: "11px",
+                              fontWeight: 700,
+                              letterSpacing: "0.06em",
+                              textTransform: "uppercase",
+                              background: "rgba(239,68,68,0.1)",
+                              color: "#f87171",
+                              border: "1px solid rgba(239,68,68,0.25)",
+                              cursor: "help",
+                            }}
+                          >
+                            Failed
+                          </span>
+                        ) : (
+                          <span
+                            style={{
+                              display: "inline-block",
+                              padding: "2px 10px",
+                              borderRadius: "20px",
+                              fontSize: "11px",
+                              fontWeight: 700,
+                              letterSpacing: "0.06em",
+                              textTransform: "uppercase",
+                              background: "rgba(34,197,94,0.1)",
+                              color: "#22c55e",
+                              border: "1px solid rgba(34,197,94,0.25)",
+                            }}
+                          >
+                            OK
+                          </span>
+                        )}
+                      </td>
+
+                      {/* Scanned */}
+                      <td style={{ padding: "12px 20px", textAlign: "center", color: "var(--text-primary)", fontVariantNumeric: "tabular-nums" }}>
+                        {log.scanned ?? 0}
+                      </td>
+
+                      {/* Added */}
+                      <td style={{ padding: "12px 20px", textAlign: "center", fontVariantNumeric: "tabular-nums" }}>
+                        {hasNew ? (
+                          <span style={{ fontWeight: 700, color: "#22c55e" }}>{log.inserted}</span>
+                        ) : (
+                          <span style={{ color: "var(--text-muted)", opacity: 0.4 }}>0</span>
+                        )}
+                      </td>
+
+                      {/* Updated / Matched */}
+                      <td style={{ padding: "12px 20px", textAlign: "center", fontVariantNumeric: "tabular-nums" }}>
+                        {secondaryVal > 0 ? (
+                          <span style={{ color: "var(--text-primary)" }}>
+                            {secondaryVal}{" "}
+                            <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>{secondaryLabel}</span>
+                          </span>
+                        ) : (
+                          <span style={{ color: "var(--text-muted)", opacity: 0.4 }}>—</span>
+                        )}
+                      </td>
+
+                      {/* Accounts */}
+                      <td style={{ padding: "12px 20px", textAlign: "center", color: "var(--text-muted)", fontVariantNumeric: "tabular-nums" }}>
+                        {log.accounts_scanned != null ? log.accounts_scanned : "—"}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           )}
         </div>
       </main>
