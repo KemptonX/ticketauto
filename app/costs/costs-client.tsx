@@ -26,6 +26,7 @@ const navItems = [
   { label: "Analytics", href: "/analytics", active: false },
   { label: "Costs", href: "/costs", active: true },
   { label: "Calculator", href: "/viagogo-calculator", active: false },
+  { label: "Scans", href: "/scans", active: false },
 ];
 
 const CYCLES: { value: BillingCycle; label: string }[] = [
