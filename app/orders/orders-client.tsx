@@ -1652,12 +1652,9 @@ function parseOrderDate(value: string | null): Date | null {
 const UK_CITIES = ["london","manchester","birmingham","glasgow","edinburgh","liverpool","leeds","sheffield","bristol","cardiff","newcastle","nottingham","brighton","leicester","wolverhampton","coventry","reading","belfast","southampton","exeter","york","bath","oxford","cambridge","hull","stoke","sunderland","middlesbrough"];
 
 function getViagogoUrl(eventName: string, venue: string): string {
-  const venueLower = venue.toLowerCase();
-  const city = UK_CITIES.find((c) => venueLower.includes(c));
-  const isUK = city != null;
+  const isUK = UK_CITIES.some((c) => venue.toLowerCase().includes(c));
   const domain = isUK ? "www.viagogo.co.uk" : "www.viagogo.com";
-  const queryParts = [eventName, city ? city.charAt(0).toUpperCase() + city.slice(1) : ""].filter(Boolean);
-  const q = encodeURIComponent(queryParts.join(" "));
+  const q = encodeURIComponent(eventName);
   return `https://${domain}/secure/Search?q=${q}`;
 }
 
