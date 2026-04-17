@@ -955,6 +955,20 @@ select {
   flex-wrap: wrap;
 }
 
+.viagogo-badge {
+  text-decoration: none;
+  color: #00a651 !important;
+  background: rgba(0, 166, 81, 0.08) !important;
+  border-color: rgba(0, 166, 81, 0.3) !important;
+  transition: background 0.15s, border-color 0.15s;
+  cursor: pointer;
+}
+
+.viagogo-badge:hover {
+  background: rgba(0, 166, 81, 0.18) !important;
+  border-color: rgba(0, 166, 81, 0.5) !important;
+}
+
 .days-ok {
   background: #27272e;
   color: #a1a1aa;

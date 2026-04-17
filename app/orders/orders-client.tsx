@@ -1078,6 +1078,16 @@ export default function OrdersClient() {
                             </strong>
                           </div>
                           <div className="inventory-status-row">
+                            <a
+                              href={getViagogoUrl(group.eventName, group.venue)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="status-badge status-static viagogo-badge"
+                              onClick={(e) => e.stopPropagation()}
+                              title={`Search "${group.eventName}" on Viagogo`}
+                            >
+                              Viagogo ↗
+                            </a>
                             <span className="status-badge status-static status-unlisted">Unlisted {group.unlistedCount}</span>
                             <span className="status-badge status-static status-listed">Listed {group.listedCount}</span>
                             <span className="status-badge status-static status-sold">Sold {group.soldCount}</span>
@@ -1637,6 +1647,16 @@ function parseOrderDate(value: string | null): Date | null {
   const monthIndex = ["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"].indexOf(monthName.slice(0,3).toLowerCase());
   if (monthIndex === -1) return null;
   return new Date(Number(year), monthIndex, Number(day));
+}
+
+const UK_INDICATORS = ["london","manchester","birmingham","glasgow","edinburgh","liverpool","leeds","sheffield","bristol","cardiff","newcastle","nottingham","brighton","leicester","wolverhampton","coventry","reading","belfast","southampton","exeter","york","bath","oxford","cambridge","hull","stoke","sunderland","middlesbrough","ovo","o2","academy","arena","co-op","wembley","hydro","utilita","ao arena","first direct","motorpoint"];
+
+function getViagogoUrl(eventName: string, venue: string): string {
+  const combined = `${eventName} ${venue}`.toLowerCase();
+  const isUK = UK_INDICATORS.some((w) => combined.includes(w));
+  const domain = isUK ? "www.viagogo.co.uk" : "www.viagogo.com";
+  const q = encodeURIComponent(`${eventName} ${venue}`);
+  return `https://${domain}/search?q=${q}`;
 }
 
 function formatEventDate(value: string | null): string {
