@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useState } from "react";
 import { SidebarLogo, NavIcon, SidebarFooter } from "@/app/components/nav-icons";
 
-type Market = "uk" | "com";
 type UkField = "display" | "listing" | "payout";
 
 const navItems = [
@@ -43,9 +42,6 @@ function calcUkFromPayout(payout: number) {
 }
 
 export default function ViagogoCalculatorClient() {
-  const [market, setMarket] = useState<Market>("uk");
-
-  // UK state
   const [ukDisplay, setUkDisplay] = useState("");
   const [ukListing, setUkListing] = useState("");
   const [ukPayout, setUkPayout] = useState("");
@@ -56,7 +52,6 @@ export default function ViagogoCalculatorClient() {
   }
 
   function handleUkChange(field: UkField, raw: string) {
-    // Allow free typing — only calculate when a valid number is entered
     const num = parseFloat(raw);
 
     if (field === "display") {
@@ -138,109 +133,73 @@ export default function ViagogoCalculatorClient() {
 
         <section className="command-card">
           <div className="command-header">
-            <div className="view-toggle">
-              <button
-                type="button"
-                className={`toggle-btn${market === "uk" ? " toggle-btn-active" : ""}`}
-                onClick={() => setMarket("uk")}
-              >
-                viagogo.co.uk
-              </button>
-              <button
-                type="button"
-                className={`toggle-btn${market === "com" ? " toggle-btn-active" : ""}`}
-                onClick={() => setMarket("com")}
-              >
-                viagogo.com
-              </button>
-            </div>
-            {market === "uk" && (
-              <button type="button" className="ghost-button" onClick={resetUk}>
-                Reset
-              </button>
-            )}
+            <span className="section-tag" style={{ margin: 0 }}>viagogo.co.uk</span>
+            <button type="button" className="ghost-button" onClick={resetUk}>
+              Reset
+            </button>
           </div>
         </section>
 
-        {market === "uk" && (
-          <section className="table-card">
-            <div className="table-card-header">
-              <div>
-                <p className="section-tag">viagogo.co.uk</p>
-                <h4>Enter any value to calculate the others</h4>
+        <section className="table-card">
+          <div className="table-card-header">
+            <div>
+              <h4>Enter any value to calculate the others</h4>
+            </div>
+          </div>
+
+          <div className="calc-grid">
+            <div className="calc-field">
+              <p className="kpi-label">Display price</p>
+              <p className="calc-hint">What the buyer sees on viagogo</p>
+              <div className="calc-input-wrap">
+                <span className="calc-prefix">£</span>
+                <input
+                  className="field calc-input"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  placeholder="0.00"
+                  value={ukDisplay}
+                  onChange={(e) => handleUkChange("display", e.target.value)}
+                />
               </div>
             </div>
 
-            <div className="calc-grid">
-              <div className="calc-field">
-                <p className="kpi-label">Display price</p>
-                <p className="calc-hint">What the buyer sees on viagogo</p>
-                <div className="calc-input-wrap">
-                  <span className="calc-prefix">£</span>
-                  <input
-                    className="field calc-input"
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    placeholder="0.00"
-                    value={ukDisplay}
-                    onChange={(e) => handleUkChange("display", e.target.value)}
-                  />
-                </div>
-              </div>
-
-              <div className="calc-field">
-                <p className="kpi-label">Listing price</p>
-                <p className="calc-hint">display ÷ 1.1799</p>
-                <div className="calc-input-wrap">
-                  <span className="calc-prefix">£</span>
-                  <input
-                    className="field calc-input"
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    placeholder="0.00"
-                    value={ukListing}
-                    onChange={(e) => handleUkChange("listing", e.target.value)}
-                  />
-                </div>
-              </div>
-
-              <div className="calc-field">
-                <p className="kpi-label">Payout</p>
-                <p className="calc-hint">listing × 0.88</p>
-                <div className="calc-input-wrap">
-                  <span className="calc-prefix">£</span>
-                  <input
-                    className="field calc-input"
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    placeholder="0.00"
-                    value={ukPayout}
-                    onChange={(e) => handleUkChange("payout", e.target.value)}
-                  />
-                </div>
+            <div className="calc-field">
+              <p className="kpi-label">Listing price</p>
+              <p className="calc-hint">display ÷ 1.1799</p>
+              <div className="calc-input-wrap">
+                <span className="calc-prefix">£</span>
+                <input
+                  className="field calc-input"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  placeholder="0.00"
+                  value={ukListing}
+                  onChange={(e) => handleUkChange("listing", e.target.value)}
+                />
               </div>
             </div>
-          </section>
-        )}
 
-        {market === "com" && (
-          <section className="table-card">
-            <div className="table-card-header">
-              <div>
-                <p className="section-tag">viagogo.com</p>
-                <h4>Coming soon</h4>
+            <div className="calc-field">
+              <p className="kpi-label">Payout</p>
+              <p className="calc-hint">listing × 0.88</p>
+              <div className="calc-input-wrap">
+                <span className="calc-prefix">£</span>
+                <input
+                  className="field calc-input"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  placeholder="0.00"
+                  value={ukPayout}
+                  onChange={(e) => handleUkChange("payout", e.target.value)}
+                />
               </div>
             </div>
-            <div className="state-card">
-              <div className="state-orb state-orb-muted" />
-              <h5>Formula not set up yet</h5>
-              <p>Add the .com instructions to unlock this calculator.</p>
-            </div>
-          </section>
-        )}
+          </div>
+        </section>
       </main>
     </div>
   );
