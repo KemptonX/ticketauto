@@ -11,6 +11,7 @@ const protectedRoutes = [
   "/scans",
   "/viagogo-calculator",
   "/costs",
+  "/settings",
   "/api/scan-gmail",
   "/api/scan-sales",
 ];
@@ -67,6 +68,7 @@ export const proxyConfig = {
     "/scans/:path*",
     "/viagogo-calculator/:path*",
     "/costs/:path*",
+    "/settings/:path*",
     "/api/scan-gmail",
     "/api/scan-sales",
   ],
