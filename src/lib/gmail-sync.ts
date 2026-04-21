@@ -1,6 +1,47 @@
 ﻿import type { SupabaseClient } from "@supabase/supabase-js";
 
-const GMAIL_QUERY = 'is:unread (ticketmaster ("Order Update" OR "ticket confirmation" OR "You\'re in!") OR (subject:"Thank you for purchasing tickets for" "AXS Mobile ID"))';
+let _rateCache: { rates: Record<string, number>; fetchedAt: number } | null = null;
+
+async function getGbpRates(): Promise<Record<string, number>> {
+  const now = Date.now();
+  if (_rateCache && now - _rateCache.fetchedAt < 3_600_000) return _rateCache.rates;
+  try {
+    const res = await fetch("https://api.frankfurter.app/latest?from=GBP", { cache: "no-store" });
+    const data = (await res.json()) as { rates?: Record<string, number> };
+    if (data.rates) {
+      _rateCache = { rates: data.rates, fetchedAt: now };
+      return data.rates;
+    }
+  } catch { /* fall through */ }
+  return {};
+}
+
+function isEventInPast(eventDate: string): boolean {
+  if (!eventDate) return false;
+  const cleaned = eventDate
+    .replace(/^(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\s+/i, "")
+    .replace(/^(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+/i, "")
+    .replace(/\s*[•·\-]\s*\d{1,2}:\d{2}.*$/, "")
+    .trim();
+  const d = new Date(cleaned);
+  if (isNaN(d.getTime())) return false;
+  return d < new Date();
+}
+
+async function convertToGbp(rawAmount: string, currency: string): Promise<string> {
+  if (!rawAmount) return "";
+  const num = parseFloat(rawAmount);
+  if (isNaN(num) || num <= 0) return "";
+  const rates = await getGbpRates();
+  const rate = rates[currency];
+  if (!rate) return rawAmount; // fallback: keep original if rate unavailable
+  return String(Math.round((num / rate) * 100) / 100);
+}
+
+const GMAIL_QUERY = [
+  '(ticketmaster -subject:"Welcome to Ticketmaster" ("Order Update" OR "ticket confirmation" OR "You\'re in!" OR "You Got Tickets" OR "Your Ticketmaster order" OR "Order confirm" OR "Confirmacion de compra" OR "compra para" OR "ORDER NUMBER" OR "Order number"))',
+  '(subject:"Thank you for purchasing tickets for" "AXS Mobile ID")',
+].join(' OR ');
 const PROCESSED_LABEL = "My Tickets";
 const FORWARD_TO_ACCOUNT = "kemptoncameron9x@gmail.com";
 
@@ -52,7 +93,9 @@ type OrderInsert = {
   qty_bought: number | null;
   total_cost: number | null;
   source_type: string;
+  listing_status: string;
   user_id: string;
+  email_html: string | null;
 };
 
 export async function syncGmailInbox({
@@ -68,31 +111,47 @@ export async function syncGmailInbox({
   const labelId = await getOrCreateLabel(accessToken, PROCESSED_LABEL);
   const messages = await listMessages(accessToken, GMAIL_QUERY);
 
+  // Fetch full message bodies in parallel batches of 5
+  const BATCH_SIZE = 5;
+  const fullMessages: GmailMessage[] = [];
+  for (let i = 0; i < messages.length; i += BATCH_SIZE) {
+    const chunk = messages.slice(i, i + BATCH_SIZE);
+    const fetched = await Promise.all(chunk.map((m) => getMessage(accessToken, m.id)));
+    fullMessages.push(...fetched);
+  }
+
   let inserted = 0;
   let updated = 0;
   const insertedRefs: string[] = [];
   const updatedRefs: string[] = [];
 
-  for (const message of messages) {
-    const fullMessage = await getMessage(accessToken, message.id);
+  for (let msgIdx = 0; msgIdx < messages.length; msgIdx++) {
+    const message = messages[msgIdx];
+    const fullMessage = fullMessages[msgIdx];
     const headers = fullMessage.payload.headers || [];
     const subject = getHeader(headers, "Subject");
     const body = getBody(fullMessage.payload);
+    const emailHtml = getRawHtml(fullMessage.payload) || null;
     const combined = cleanText(`${subject}\n${body}`);
 
     const from = getHeader(headers, "From");
     const axs = isAxsEmail(from, subject);
+    const intl = !axs && isIntlTmEmail(from, subject);
+    const effectiveFrom = intl ? getEffectiveFrom(from, subject) : from;
 
-    const bookingRef = axs ? parseAxsBookingRef(combined) : parseBookingRef(subject, combined);
+    const bookingRef = axs
+      ? parseAxsBookingRef(combined)
+      : intl
+        ? parseIntlBookingRef(effectiveFrom, subject, combined)
+        : parseBookingRef(subject, combined);
+
+
     if (!bookingRef) {
       continue;
     }
 
-    const accountEmail = extractAccount(headers, combined);
-    const existingOrder = await findExistingOrder(supabase, {
-      bookingRef,
-      userId,
-    });
+    const accountEmail = extractAccount(headers, combined) || gmailAccount.email;
+    const existingOrder = await findExistingOrder(supabase, { bookingRef, userId });
 
     let section: string;
     let row: string;
@@ -109,6 +168,24 @@ export async function syncGmailInbox({
       total = parseAxsTotal(combined);
       qty = parseAxsQty(combined);
       sourceType = "axs";
+    } else if (intl) {
+      section = parseSection(combined);
+      row = parseRow(combined);
+      [seatFrom, seatTo] = parseSeats(combined);
+      qty = parseIntlQty(combined);
+      sourceType = getIntlSourceType(effectiveFrom, subject);
+      const rawTotal = parseIntlTotal(combined);
+      const intlCurrency = SOURCE_CURRENCY[sourceType] ?? "EUR";
+      total = await convertToGbp(rawTotal, intlCurrency);
+
+      // Seat-range fallback for qty (e.g. "Seat 27 - 30" → 4 tickets)
+      if (!qty && seatFrom && seatTo) {
+        const sf = parseInt(seatFrom, 10);
+        const st = parseInt(seatTo, 10);
+        if (!isNaN(sf) && !isNaN(st) && st >= sf && st - sf < 20) {
+          qty = String(st - sf + 1);
+        }
+      }
     } else {
       section = parseSection(combined);
       row = parseRow(combined);
@@ -120,9 +197,9 @@ export async function syncGmailInbox({
 
     const orderData: OrderInsert = {
       booking_ref: bookingRef,
-      event_name: axs ? parseAxsEvent(subject) : parseEvent(combined),
-      venue: axs ? parseAxsVenue(combined) : parseVenue(body),
-      event_date: axs ? parseAxsDate(combined) : parseDate(combined),
+      event_name: axs ? parseAxsEvent(subject) : intl ? parseIntlEvent(effectiveFrom, subject, combined) : parseEvent(combined),
+      venue: axs ? parseAxsVenue(combined) : intl ? parseIntlVenue(effectiveFrom, combined) : parseVenue(body),
+      event_date: axs ? parseAxsDate(combined) : intl ? parseIntlDate(effectiveFrom, combined) : parseDate(combined),
       purchased_at: parsePurchasedAt(headers, combined),
       account_email: accountEmail,
       section,
@@ -132,8 +209,13 @@ export async function syncGmailInbox({
       qty_bought: qty ? Number.parseInt(qty, 10) : null,
       total_cost: total ? Number.parseFloat(total) : null,
       source_type: sourceType,
+      listing_status: "Unlisted",
       user_id: userId,
+      email_html: emailHtml,
     };
+
+    const resolvedDate = orderData.event_date || existingOrder?.event_date || "";
+    const pastEvent = isEventInPast(resolvedDate);
 
     if (existingOrder) {
       const { error } = await supabase
@@ -150,11 +232,13 @@ export async function syncGmailInbox({
           seat_to: orderData.seat_to || existingOrder.seat_to,
           qty_bought: orderData.qty_bought ?? existingOrder.qty_bought,
           total_cost: orderData.total_cost ?? existingOrder.total_cost,
-          listing_status:
-            existingOrder.listing_status === "Archived"
-              ? "Unlisted"
+          listing_status: existingOrder.listing_status === "Sold"
+            ? "Sold"
+            : pastEvent
+              ? "Archived"
               : existingOrder.listing_status ?? "Unlisted",
           source_type: orderData.source_type || existingOrder.source_type,
+          ...(orderData.email_html !== null ? { email_html: orderData.email_html } : {}),
         })
         .eq("id", existingOrder.id);
 
@@ -168,8 +252,13 @@ export async function syncGmailInbox({
       continue;
     }
 
-    const { error } = await supabase.from("orders").insert(orderData);
+    const { error } = await supabase.from("orders").insert({
+      ...orderData,
+      listing_status: pastEvent ? "Archived" : "Unlisted",
+    });
     if (error) {
+      // Duplicate — pre-fetch Map missed it (e.g. RLS hiccup). Skip silently.
+      if (error.code === "23505") continue;
       throw new Error(error.message);
     }
 
@@ -280,12 +369,24 @@ async function gmailRequest<T>(accessToken: string, input: string, init?: Reques
 }
 
 async function listMessages(accessToken: string, query: string) {
-  const url = new URL("https://gmail.googleapis.com/gmail/v1/users/me/messages");
-  url.searchParams.set("q", query);
-  url.searchParams.set("maxResults", "20");
+  const all: Array<{ id: string }> = [];
+  let pageToken: string | undefined;
 
-  const data = await gmailRequest<{ messages?: Array<{ id: string }> }>(accessToken, url.toString());
-  return data.messages || [];
+  do {
+    const url = new URL("https://gmail.googleapis.com/gmail/v1/users/me/messages");
+    url.searchParams.set("q", query);
+    url.searchParams.set("maxResults", "500");
+    if (pageToken) url.searchParams.set("pageToken", pageToken);
+
+    const data = await gmailRequest<{ messages?: Array<{ id: string }>; nextPageToken?: string }>(
+      accessToken,
+      url.toString(),
+    );
+    all.push(...(data.messages ?? []));
+    pageToken = data.nextPageToken;
+  } while (pageToken);
+
+  return all;
 }
 
 async function getMessage(accessToken: string, id: string) {
@@ -387,6 +488,32 @@ function decodeBase64Url(data?: string) {
   return Buffer.from(padded, "base64").toString("utf8");
 }
 
+function getPartCharset(part: GmailPayload): string {
+  const ct = part.headers?.find(h => h.name.toLowerCase() === "content-type")?.value ?? "";
+  return (ct.match(/charset=["']?([^"'\s;]+)/i)?.[1] ?? "utf-8").toLowerCase().replace(/_/g, "-");
+}
+
+function decodeQuotedPrintable(str: string, charset = "utf-8"): string {
+  const noSoftBreaks = str.replace(/=\r?\n/g, "");
+  const byteStr = noSoftBreaks.replace(/=([0-9A-Fa-f]{2})/g, (_, hex) =>
+    String.fromCharCode(parseInt(hex, 16))
+  );
+  const buf = Buffer.from(byteStr, "binary");
+  if (charset === "utf-8" || charset === "utf8") {
+    const utf8 = buf.toString("utf8");
+    if (!utf8.includes("\ufffd")) return utf8;
+    // Declared UTF-8 but has invalid bytes — Gmail forwards can embed latin-1/windows-1252
+    // QP escapes (e.g. =E1 for á) inside a UTF-8 MIME part. Fall back to windows-1252.
+    try { return new TextDecoder("windows-1252").decode(buf); } catch { /* fall through */ }
+    return buf.toString("latin1");
+  }
+  try {
+    return new TextDecoder(charset).decode(buf);
+  } catch {
+    return buf.toString("latin1");
+  }
+}
+
 function stripHtml(text: string) {
   return text
     .replace(/<(script|style)[^>]*>[\s\S]*?<\/\1>/gi, " ")
@@ -394,7 +521,22 @@ function stripHtml(text: string) {
     .replace(/<\/?(p|div|tr|li|ul|ol|table|tbody|thead|tfoot|h[1-6])[^>]*>/gi, "\n")
     .replace(/<\/?(td|th)[^>]*>/gi, " ")
     .replace(/<[^>]+>/g, " ")
-    .replace(/&nbsp;/g, " ");
+    .replace(/&nbsp;/g, " ")
+    .replace(/&euro;/gi, "€")
+    .replace(/&#8364;/g, "€")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&bull;/gi, "•")
+    .replace(/&middot;/gi, "·")
+    .replace(/&rsquo;/gi, "'")
+    .replace(/&lsquo;/gi, "'")
+    .replace(/&rdquo;/gi, "\"")
+    .replace(/&ldquo;/gi, "\"")
+    .replace(/&ndash;/gi, "–")
+    .replace(/&mdash;/gi, "—")
+    .replace(/&#65279;/g, "")
+    .replace(/&#xFEFF;/gi, "");
 }
 
 function cleanText(text: string) {
@@ -408,13 +550,54 @@ function cleanText(text: string) {
     .trim();
 }
 
+function getPartCte(part: GmailPayload): string {
+  return part.headers?.find(
+    (h) => h.name.toLowerCase() === "content-transfer-encoding"
+  )?.value?.toLowerCase().trim() ?? "";
+}
+
+function decodePartData(part: GmailPayload): string {
+  if (!part.body?.data) return "";
+  const decoded = decodeBase64Url(part.body.data);
+  if (getPartCte(part) === "quoted-printable") {
+    return decodeQuotedPrintable(decoded, getPartCharset(part));
+  }
+  return decoded;
+}
+
+function extractPlainText(payload: GmailPayload): string {
+  if (payload.mimeType === "text/plain" && payload.body?.data) {
+    return decodePartData(payload);
+  }
+  for (const part of payload.parts || []) {
+    const text = extractPlainText(part);
+    if (text) return text;
+  }
+  return "";
+}
+
+function getRawHtml(payload: GmailPayload): string {
+  if (payload.mimeType === "text/html" && payload.body?.data) {
+    return decodePartData(payload);
+  }
+  for (const part of payload.parts || []) {
+    const html = getRawHtml(part);
+    if (html) return html;
+  }
+  // Fallback: plain text wrapped in HTML (e.g. text/plain-only emails)
+  const plain = extractPlainText(payload);
+  if (!plain) return "";
+  const escaped = plain.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return `<!DOCTYPE html><html><body><pre style="font-family:sans-serif;white-space:pre-wrap;padding:20px;color:#222">${escaped}</pre></body></html>`;
+}
+
 function getBody(payload: GmailPayload): string {
   const parts: string[] = [];
 
   const walk = (part: GmailPayload) => {
     const data = part.body?.data;
     if (data) {
-      let decoded = decodeBase64Url(data);
+      let decoded = decodePartData(part);
       if (part.mimeType === "text/html") {
         decoded = stripHtml(decoded);
       }
@@ -449,6 +632,9 @@ function isAccountEmail(email: string) {
     "noreply",
     "no-reply",
     "do-not-reply",
+    "bounces+",
+    "bounce+",
+    "mailer-daemon",
   ];
 
   return email !== FORWARD_TO_ACCOUNT && !ignoredFragments.some((fragment) => email.includes(fragment));
@@ -506,6 +692,9 @@ function parseBookingRef(subject: string, text: string) {
     /order number is\s*([0-9]{1,3}-[0-9]+\/UK\d+)/i,
     /\bORDER\b\s*#\s*([0-9]{1,3}-[0-9]+\/UK\d+)/i,
     /\b([0-9]{1,3}-[0-9]+\/UK\d+)\b/i,
+    // Non-UK slash refs (US, AU, IE, etc.)
+    /\bORDER\b\s*#\s*([0-9]{1,3}-[0-9]+\/[A-Z]{2,}\d*)/i,
+    /\b([0-9]{1,3}-[0-9]+\/[A-Z]{2,}\d*)\b/i,
   ];
 
   for (const pattern of patterns) {
@@ -560,13 +749,20 @@ function parseEvent(subject: string) {
   return "";
 }
 
-function parseDate(subject: string) {
-  return (
-    subject.match(/((?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday).*?\d{2}:\d{2})/i)?.[1] ||
-    subject.match(/\b(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\s+\d{1,2}\s+[A-Z][a-z]{2,8}\s+\d{4}\b/i)?.[0] ||
-    subject.match(/\b(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+\d{2}\s+[A-Z][a-z]{2}\s+\d{4}\s+[•\-]?\s*\d{1,2}:\d{2}\s*(?:am|pm)?\b/i)?.[0] ||
-    ""
-  );
+function parseDate(text: string) {
+  // Full day name with time (require digit after day to avoid "Sunday Sunday 26..." doubling)
+  const p1 = text.match(/((?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\s+\d{1,2}.*?\d{2}:\d{2})/i)?.[1];
+  if (p1) return p1;
+  // Full day name without time
+  const p2 = text.match(/\b(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\s+\d{1,2}\s+[A-Z][a-z]{2,8}\s+\d{4}\b/i)?.[0];
+  if (p2) return p2;
+  // Abbreviated day with time: "Sun 26 Apr 2026 • 7:30 pm"
+  const p3 = text.match(/\b(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+\d{1,2}\s+[A-Z][a-z]{2,8}\s+\d{4}\s*[•·\-]\s*\d{1,2}:\d{2}\s*(?:am|pm)?\b/i)?.[0];
+  if (p3) return p3;
+  // Abbreviated day without time: "Sun 26 Apr 2026"
+  const p4 = text.match(/\b(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+\d{1,2}\s+[A-Z][a-z]{2,8}\s+\d{4}\b/i)?.[0];
+  if (p4) return p4;
+  return "";
 }
 
 function parseVenue(text: string) {
@@ -627,8 +823,9 @@ function parseTotal(text: string) {
 
 function parseSection(text: string) {
   const patterns = [
-    /\bSECTION\s*[:\-]?\s*(.+?)(?=\s+\bROW\b|\s+\bSEAT(?:S)?\b|[\n\r]|$)/i,
-    /\bSEC(?:TION)?\.?\s*[:\-]?\s*(.+?)(?=\s+\bROW\b|\s+\bSEAT(?:S)?\b|[\n\r]|$)/i,
+    /\bSECTION\s*[:\-]?\s*(.+?)(?=\s+\b(?:ROW|SEAT|Fila|Asiento)\b|[\n\r]|$)/i,
+    /\bSector\s+(\S+)/i,
+    /\bSEC(?:tor|tion)\.?\s*[:\-]?\s*(.+?)(?=\s+\b(?:ROW|SEAT|Fila|Asiento)\b|[\n\r]|$)/i,
     /\b(Pitch Standing|Standing|General Admission)\b/i,
   ];
 
@@ -643,7 +840,11 @@ function parseSection(text: string) {
 }
 
 function parseRow(text: string) {
-  return text.match(/\bROW\s*[:\-]?\s*([A-Z0-9]+)\b/i)?.[1]?.trim() || "";
+  return (
+    text.match(/\bROW\s*[:\-]?\s*([A-Z0-9]+)\b/i)?.[1]?.trim() ||
+    text.match(/\bFila\s*[:\-]?\s*([A-Z0-9]+)\b/i)?.[1]?.trim() ||
+    ""
+  );
 }
 
 function parseSeats(text: string): [string, string] {
@@ -651,6 +852,7 @@ function parseSeats(text: string): [string, string] {
     /\bSEAT(?:S)?\s*[:\-]?\s*(\d+)\s*(?:-|to|–)\s*(\d+)\b/i,
     /\bSEAT(?:S)?\s*[:\-]?\s*(\d+)\s*,\s*(\d+)\b/i,
     /\bSEAT(?:S)?\s*[:\-]?\s*(\d+)\b/i,
+    /\bAsiento\s*[:\-]?\s*(\d+)/i,
   ];
 
   for (const pattern of patterns) {
@@ -664,7 +866,11 @@ function parseSeats(text: string): [string, string] {
 }
 
 function parsePurchasedAt(headers: GmailHeader[], text: string) {
-  return getHeader(headers, "Date") || text.match(/Date:\s*(.+)/i)?.[1]?.trim() || "";
+  const raw = getHeader(headers, "Date") || text.match(/Date:\s*(.+)/i)?.[1]?.trim() || "";
+  if (!raw) return "";
+  const cleaned = raw.replace(/\s+\([^)]+\)\s*$/, ""); // strip "(UTC)" / "(PST)" etc.
+  const d = new Date(cleaned);
+  return isNaN(d.getTime()) ? "" : d.toISOString();
 }
 
 // ── AXS ──────────────────────────────────────────────────────────────────────
@@ -726,36 +932,54 @@ function parseAxsVenue(text: string) {
 }
 
 function parseAxsQty(text: string) {
-  return text.match(/(\d+)\s+Tickets?\s*[-–]/i)?.[1] || "";
-}
-
-// Seat format: "110|R|6-7" (compact) or "Regular 107 | M | 220-223" (spaced)
-function parseAxsSection(text: string) {
-  // Compact: word before first pipe e.g. "110|R|6-7"
-  const compact = text.match(/\b(\w+)\|[A-Z0-9]+\|[\d-]+/i);
-  if (compact) return compact[1];
-  // Spaced: label + space + section before pipe e.g. "Regular 107 | M | ..."
   return (
-    text.match(/(?:Regular|Floor|Block|Stand|Section|Sec)\s+(\S+)\s*\|/i)?.[1] ||
-    text.match(/([^\s|]+)\s*\|\s*[A-Z0-9]+\s*\|\s*\d+/i)?.[1]?.trim() ||
+    text.match(/(\d+)\s+Tickets?\s*[-–]/i)?.[1] ||
+    text.match(/(\d+)\s+Tickets?\b/i)?.[1] ||
     ""
   );
 }
 
+// Seat format: "110|R|6-7" (compact) or "Regular 107 | M | 220-223" (spaced)
+function parseAxsSection(text: string) {
+  // Compact pipe: "110|R|6-7"
+  const compact = text.match(/\b(\w+)\|[A-Z0-9]+\|[\d-]+/i);
+  if (compact) return compact[1];
+  // Spaced pipe: "Regular 107 | M | ..."
+  const piped =
+    text.match(/(?:Regular|Floor|Block|Stand|Section|Sec)\s+(\S+)\s*\|/i)?.[1] ||
+    text.match(/([^\s|]+)\s*\|\s*[A-Z0-9]+\s*\|\s*\d+/i)?.[1]?.trim();
+  if (piped) return piped;
+  // Plain text: "Block 110" / "Section A2"
+  return text.match(/\b(?:Block|Section|Stand|Floor)\s+([A-Z0-9]+)\b/i)?.[1]?.trim() || "";
+}
+
 function parseAxsRow(text: string) {
-  // Matches both "110|R|6-7" and "107 | M | 220"
-  return text.match(/\w+\s*\|s*\s*([A-Z0-9]+)\s*\|\s*\d+/i)?.[1]?.trim() ||
-    text.match(/\|\s*([A-Z0-9]+)\s*\|\s*\d+/i)?.[1]?.trim() || "";
+  // Pipe formats
+  return (
+    text.match(/\w+\s*\|\s*([A-Z0-9]+)\s*\|\s*\d+/i)?.[1]?.trim() ||
+    text.match(/\|\s*([A-Z0-9]+)\s*\|\s*\d+/i)?.[1]?.trim() ||
+    // Plain text: "Row G" / "Row 12"
+    text.match(/\bRow\s+([A-Z0-9]+)\b/i)?.[1]?.trim() ||
+    ""
+  );
 }
 
 function parseAxsSeats(text: string): [string, string] {
-  // "110|R|6-7" or "107 | M | 220-223"
+  // Pipe compact range: "110|R|6-7"
   const rangeCompact = text.match(/\w+\|[A-Z0-9]+\|(\d+)[-–](\d+)/i);
   if (rangeCompact) return [rangeCompact[1], rangeCompact[2]];
+  // Pipe spaced range: "| R | 6-7"
   const rangeSpaced = text.match(/\|\s*[A-Z0-9]+\s*\|\s*(\d+)[-–](\d+)/i);
   if (rangeSpaced) return [rangeSpaced[1], rangeSpaced[2]];
-  const single = text.match(/\|[A-Z0-9]+\|(\d+)/i) || text.match(/\|\s*[A-Z0-9]+\s*\|\s*(\d+)/i);
-  if (single) return [single[1], single[1]];
+  // Pipe single
+  const pipeSingle = text.match(/\|[A-Z0-9]+\|(\d+)/i) || text.match(/\|\s*[A-Z0-9]+\s*\|\s*(\d+)/i);
+  if (pipeSingle) return [pipeSingle[1], pipeSingle[1]];
+  // Plain text: "Seats 14-15" / "Seat 14 - 15"
+  const textRange = text.match(/\bSeats?\s+(\d+)\s*[-–]\s*(\d+)/i);
+  if (textRange) return [textRange[1], textRange[2]];
+  // Plain text: "Seat 14"
+  const textSingle = text.match(/\bSeat\s+(\d+)\b/i);
+  if (textSingle) return [textSingle[1], textSingle[1]];
   return ["", ""];
 }
 
@@ -763,5 +987,289 @@ function parseAxsTotal(text: string) {
   // Handle bold markers: "Total: *£124.65*"
   const matches = [...text.matchAll(/Total[:\s]+\*?[£$€]?\s*([0-9]+\.[0-9]{2})\*?/gi)];
   return matches.at(-1)?.[1] || "";
+}
+
+// ── International TM (DE / ES / IT / US) ─────────────────────────────────────
+
+// For forwarded emails the From header is the forwarder, not the original sender.
+// Detect the effective TM domain from the subject so all parsing functions work correctly.
+function getEffectiveFrom(from: string, subject: string): string {
+  if (from.toLowerCase().includes("ticketmaster")) return from;
+  const s = subject.toLowerCase();
+  if (s.includes("confirmacion de compra") || s.includes("confirmación de compra")) return "noreply@ticketmaster.es";
+  if (/^(?:fwd:\s*)?order\s+confirm\s+\d/i.test(s)) return "noreply@ticketmaster.it";
+  if (s.includes("your ticketmaster order")) return "noreply@ticketmaster.de";
+  return from;
+}
+
+const SOURCE_CURRENCY: Record<string, string> = {
+  ticketmaster_us:  "USD",
+  ticketmaster_de:  "EUR",
+  ticketmaster_es:  "EUR",
+  ticketmaster_it:  "EUR",
+  ticketmaster_fr:  "EUR",
+  ticketmaster_nl:  "EUR",
+  ticketmaster_be:  "EUR",
+  ticketmaster_au:  "AUD",
+  ticketmaster_ca:  "CAD",
+  ticketmaster_mx:  "MXN",
+  ticketmaster_se:  "SEK",
+  ticketmaster_no:  "NOK",
+  ticketmaster_dk:  "DKK",
+  ticketmaster_pl:  "PLN",
+  ticketmaster_ch:  "CHF",
+};
+
+function isIntlTmEmail(from: string, subject: string) {
+  const f = from.toLowerCase();
+  const s = subject.toLowerCase();
+  return (
+    f.includes("ticketmaster.de") ||
+    f.includes("ticketmaster.es") ||
+    f.includes("ticketmaster.it") ||
+    s.includes("you got tickets to") ||
+    s.includes("your ticketmaster order") ||
+    s.startsWith("order confirm ") ||
+    s.includes("confirmacion de compra") ||
+    s.includes("confirmación de compra")
+  );
+}
+
+function getIntlSourceType(from: string, subject: string): string {
+  const f = from.toLowerCase();
+  const s = subject.toLowerCase();
+  if (f.includes("ticketmaster.de")) return "ticketmaster_de";
+  if (f.includes("ticketmaster.es")) return "ticketmaster_es";
+  if (f.includes("ticketmaster.it")) return "ticketmaster_it";
+  if (s.includes("you got tickets") || f.includes("email.ticketmaster.com")) return "ticketmaster_us";
+  return "ticketmaster_direct";
+}
+
+function parseIntlBookingRef(from: string, subject: string, text: string): string {
+  const f = from.toLowerCase();
+
+  // US TM: "Order # 7-54076/DAL" or "Order # 21-43317/NV2"
+  const usRef = text.match(/\bOrder\s*#\s*([0-9]{1,3}-[0-9]+\/[A-Z0-9]+)/i)?.[1];
+  if (usRef) return usRef;
+
+  // DE: "ORDER NUMBER: 32535020"
+  if (f.includes("ticketmaster.de")) {
+    const ref = text.match(/ORDER\s+NUMBER\s*:?\s*(\d{5,})/i)?.[1];
+    if (ref) return `DE-${ref}`;
+  }
+
+  // ES: "NÚMERO DE REFERENCIA: 10361399" or in subject "referencia 010361399"
+  if (f.includes("ticketmaster.es")) {
+    const ref =
+      text.match(/(?:N[ÚU]MERO\s+DE\s+REFERENCIA)\s*:?\s*(\d{5,})/i)?.[1] ||
+      subject.match(/referencia\s+0*(\d{5,})/i)?.[1];
+    if (ref) return `ES-${ref}`;
+  }
+
+  // IT: "Order number\n3549083" or "Order number 3549083"
+  if (f.includes("ticketmaster.it")) {
+    const ref = text.match(/Order\s+number[\s\n\r:]*(\d{5,})/i)?.[1];
+    if (ref) return `IT-${ref}`;
+  }
+
+  return "";
+}
+
+function parseIntlEvent(from: string, subject: string, text: string): string {
+  const f = from.toLowerCase();
+
+  // US: "You Got Tickets To EVENT NAME"
+  const usMatch = subject.match(/You Got Tickets To\s+(.+)/i);
+  if (usMatch) return usMatch[1].trim();
+
+  // ES: "Confirmacion de compra para EVENT, número de referencia..."
+  const esMatch = subject.match(/Confirmaci[oó]n\s+de\s+compra\s+para\s+(.+?),?\s*n[uú]mero\s+de\s+referencia/i);
+  if (esMatch) return esMatch[1].trim();
+
+  // DE: event is a capitalised line after ORDER NUMBER
+  if (f.includes("ticketmaster.de")) {
+    const lines = text.split(/\n/).map((l) => l.trim()).filter(Boolean);
+    for (let i = 0; i < lines.length; i++) {
+      if (/ORDER\s+NUMBER/i.test(lines[i])) {
+        for (let j = i + 1; j < Math.min(i + 5, lines.length); j++) {
+          const candidate = lines[j];
+          if (candidate && candidate.length > 8 && !/^\d+\s*x/i.test(candidate) && !/^(Level|Section|Seat|Ticket|Mobile|View)/i.test(candidate)) {
+            return candidate;
+          }
+        }
+      }
+    }
+  }
+
+  // IT: first meaningful capitalised line in body
+  if (f.includes("ticketmaster.it")) {
+    const lines = text.split(/\n/).map((l) => l.trim()).filter(Boolean);
+    for (const line of lines) {
+      if (
+        line.length > 10 &&
+        /^[A-Z]/.test(line) &&
+        !/^(Order|Total|Your|Dear|Thank|Congratulation|We\s|This|Please|Information|You|Ticketmaster)/i.test(line)
+      ) {
+        return line;
+      }
+    }
+  }
+
+  return "";
+}
+
+function parseIntlVenue(from: string, text: string): string {
+  const f = from.toLowerCase();
+
+  // DE: venue appears on the line immediately before the German date
+  if (f.includes("ticketmaster.de")) {
+    const lines = text.split(/\n/).map((l) => l.trim()).filter(Boolean);
+    for (let i = 1; i < lines.length; i++) {
+      if (/(?:Montag|Dienstag|Mittwoch|Donnerstag|Freitag|Samstag|Sonntag)/i.test(lines[i])) {
+        const candidate = lines[i - 1];
+        if (candidate && candidate.length > 3 && !/^\d+\s*x/i.test(candidate)) {
+          return candidate;
+        }
+      }
+    }
+  }
+
+  // ES: venue — find text between booking ref and event date (pre-RESUMEN only)
+  if (f.includes("ticketmaster.es")) {
+    const resumenIdx = text.search(/\bRESUMEN\b/i);
+    const esText = resumenIdx > 0 ? text.slice(0, resumenIdx) : text;
+    const refIdx = esText.search(/(?:N[ÚU]MERO\s+DE\s+REFERENCIA|REFERENCIA\s*:)/i);
+    const dateIdx = esText.search(/(lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo)[^0-9]{0,10}\d{1,2}\s+de\s+\w+\s+de\s+\d{4}/i);
+    const searchText = refIdx >= 0 && dateIdx > refIdx
+      ? esText.slice(refIdx, dateIdx)
+      : esText;
+    const lines = searchText.split(/\n/).map((l) => l.trim()).filter((l) =>
+      l.length > 4 &&
+      !/^(?:n[uú]mero|referencia|\d+$|subject:|date:|from:|to:|ya\s+tienes|ver\s+entradas|fwd:|[-]{3}|\[image|&#)/i.test(l) &&
+      !/ticketmaster/i.test(l)
+    );
+    const venue = lines[lines.length - 1];
+    if (venue) return venue;
+  }
+
+  // US: venue is the line after the date line — anchor to "Order #" to skip email headers
+  const usVenueAnchor = text.search(/Order\s*#/i);
+  const usVenueText = usVenueAnchor >= 0 ? text.slice(usVenueAnchor) : text;
+  const usLines = usVenueText.split(/\n/).map((l) => l.trim()).filter(Boolean);
+  for (let i = 0; i < usLines.length; i++) {
+    if (/(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec).+\d{4}/i.test(usLines[i])) {
+      for (let j = i + 1; j < Math.min(i + 4, usLines.length); j++) {
+        const candidate = usLines[j].replace(/&[a-z]+;/gi, " ").replace(/\s+/g, " ").trim();
+        if (
+          candidate.length > 5 &&
+          !/^(?:subject:|date:|from:|to:|get\s+dir|view\s+|transfer|manage\s+|important|download|your\s+ticket|section|sec\b|row\b|seat)/i.test(candidate)
+        ) {
+          return candidate;
+        }
+      }
+    }
+  }
+
+  return "";
+}
+
+const DE_MONTHS: Record<string, string> = {
+  januar: "Jan", februar: "Feb", märz: "Mar", april: "Apr", mai: "May",
+  juni: "Jun", juli: "Jul", august: "Aug", september: "Sep",
+  oktober: "Oct", november: "Nov", dezember: "Dec",
+};
+
+const ES_MONTHS: Record<string, string> = {
+  enero: "Jan", febrero: "Feb", marzo: "Mar", abril: "Apr", mayo: "May",
+  junio: "Jun", julio: "Jul", agosto: "Aug", septiembre: "Sep",
+  octubre: "Oct", noviembre: "Nov", diciembre: "Dec",
+};
+
+const ES_DAYS: Record<string, string> = {
+  lunes: "Monday", martes: "Tuesday", miércoles: "Wednesday", miercoles: "Wednesday",
+  jueves: "Thursday", viernes: "Friday", sábado: "Saturday", sabado: "Saturday",
+  domingo: "Sunday",
+};
+
+function parseIntlDate(from: string, text: string): string {
+  const f = from.toLowerCase();
+
+  // DE: "Sonntag, 12. Juli 2026, 20:00 Uhr"
+  if (f.includes("ticketmaster.de")) {
+    const m = text.match(/(?:Montag|Dienstag|Mittwoch|Donnerstag|Freitag|Samstag|Sonntag),?\s+(\d{1,2})\.\s+(Januar|Februar|März|April|Mai|Juni|Juli|August|September|Oktober|November|Dezember)\s+(\d{4})/i);
+    if (m) {
+      const month = DE_MONTHS[m[2].toLowerCase()] ?? m[2];
+      return `${m[1]} ${month} ${m[3]}`;
+    }
+  }
+
+  // ES: event date — search before RESUMEN section to avoid matching the purchase date
+  if (f.includes("ticketmaster.es")) {
+    const resumenIdx = text.search(/\bRESUMEN\b/i);
+    const esText = resumenIdx > 0 ? text.slice(0, resumenIdx) : text;
+    const m = esText.match(/(lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo)[^0-9]{0,10}(\d{1,2})\s+de\s+(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)\s+de\s+(\d{4})(?:[^0-9]{0,15}(\d{1,2}:\d{2}))?/i);
+    if (m) {
+      const day = ES_DAYS[m[1].toLowerCase()] ?? m[1];
+      const month = ES_MONTHS[m[3].toLowerCase()] ?? m[3];
+      const time = m[5] ? ` · ${m[5]}` : "";
+      return `${day} ${m[2]} ${month} ${m[4]}${time}`;
+    }
+  }
+
+  // US: anchor to "Order #" to skip email-header text in text/plain parts
+  const usAnchor = text.search(/Order\s*#/i);
+  const usText = usAnchor >= 0 ? text.slice(usAnchor) : text;
+
+  // "Sat · May 02, 2026 · 8:00 PM" or "Sat, May 02, 2026"
+  const usM = usText.match(/(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)[a-z]*\s*[·,\s]+\s*((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{1,2},?\s+\d{4}(?:\s*[·,]?\s*\d{1,2}:\d{2}\s*(?:AM|PM)?)?)/i);
+  if (usM) return usM[1].trim();
+
+  const usDate = usText.match(/((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{1,2},?\s+\d{4})/i)?.[1];
+  if (usDate) return usDate;
+
+  return "";
+}
+
+function parseIntlTotal(text: string): string {
+  const cleaned = cleanText(text);
+
+  // ES: grand total in RESUMEN DE PAGO section — "*1.068,00 €*" (dot-thousands, comma-decimal)
+  // Currency symbol may be mangled; match anything non-digit/non-word after the number
+  const resumenM = cleaned.match(/RESUMEN\s+DE\s+PAGO[\s\S]{0,500}?\*?(\d{1,3}(?:\.\d{3})+),(\d{2})\s*(?:EUR|€|[^\d\w\s]|\*|\n|$)/i);
+  if (resumenM) return `${resumenM[1].replace(/\./g, "")}.${resumenM[2]}`;
+
+  // EUR dot-thousands separator: "1.068,00 €"
+  const eurThousands = cleaned.match(/(\d{1,3}(?:\.\d{3})+),(\d{2})\s*(?:EUR|€|[^\d\w\s])/i);
+  if (eurThousands) return `${eurThousands[1].replace(/\./g, "")}.${eurThousands[2]}`;
+
+  // EUR comma-decimal: "722,00 EUR" or "180,50 €"
+  const eurComma = cleaned.match(/(\d{1,6}),(\d{2})\s*(?:EUR|€|[^\d\w\s])/i);
+  if (eurComma) return `${eurComma[1]}.${eurComma[2]}`;
+
+  // EUR dot-decimal: "12.00 €" or "€ 12.00"
+  const eurDot =
+    cleaned.match(/(?:€|EUR)\s*(\d+\.\d{2})/i)?.[1] ||
+    cleaned.match(/(\d+\.\d{2})\s*(?:€|EUR)/i)?.[1];
+  if (eurDot) return eurDot;
+
+  // USD total line: "Total: $512.76" or "Total:&nbsp;$512.76"
+  const usdTotal = [...cleaned.matchAll(/Total[:\s&]+\$\s*([\d,]+\.\d{2})/gi)];
+  if (usdTotal.length > 0) return (usdTotal.at(-1)?.[1] ?? "").replace(/,/g, "");
+
+  // USD bare: "$512.76"
+  const usdBare = cleaned.match(/\$\s*([0-9]+\.[0-9]{2})/);
+  if (usdBare) return usdBare[1];
+
+  return "";
+}
+
+function parseIntlQty(text: string): string {
+  return (
+    text.match(/([1-9]\d{0,2})\s*x\s+(?:tickets?|Mobile Ticket)/i)?.[1] ||
+    text.match(/([1-9]\d{0,2})\s+tickets?\b/i)?.[1] ||
+    text.match(/([1-9]\d{0,2})\s+entradas?(?:\/s|\(s\))?\b/i)?.[1] ||
+    text.match(/^([1-9]\d{0,2})\s*x\b/im)?.[1] ||
+    ""
+  );
 }
 

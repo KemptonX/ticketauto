@@ -34,6 +34,7 @@ type Order = {
   listing_status: string | null;
   source_type: string | null;
   created_at: string | null;
+  email_html: string | null;
 };
 
 
@@ -43,6 +44,11 @@ const sourceOptions = [
   "All",
   "ticketmaster_direct",
   "ticketmaster_resale",
+  "ticketmaster_us",
+  "ticketmaster_de",
+  "ticketmaster_es",
+  "ticketmaster_it",
+  "axs",
   "manual",
 ];
 
@@ -67,6 +73,15 @@ const sourceLabels: Record<string, string> = {
   All: "All",
   ticketmaster_direct: "TM Direct",
   ticketmaster_resale: "TM Resale",
+  ticketmaster_us: "TM US",
+  ticketmaster_de: "TM DE",
+  ticketmaster_es: "TM ES",
+  ticketmaster_it: "TM IT",
+  ticketmaster_fr: "TM FR",
+  ticketmaster_nl: "TM NL",
+  ticketmaster_au: "TM AU",
+  ticketmaster_ca: "TM CA",
+  axs: "AXS",
   manual: "Manual",
 };
 
@@ -74,6 +89,15 @@ const sourceTypeOptions = [
   { value: "manual", label: "Manual" },
   { value: "ticketmaster_direct", label: "TM Direct" },
   { value: "ticketmaster_resale", label: "TM Resale" },
+  { value: "ticketmaster_us", label: "TM US" },
+  { value: "ticketmaster_de", label: "TM DE" },
+  { value: "ticketmaster_es", label: "TM ES" },
+  { value: "ticketmaster_it", label: "TM IT" },
+  { value: "ticketmaster_fr", label: "TM FR" },
+  { value: "ticketmaster_nl", label: "TM NL" },
+  { value: "ticketmaster_au", label: "TM AU" },
+  { value: "ticketmaster_ca", label: "TM CA" },
+  { value: "axs", label: "AXS" },
 ];
 
 type NewTicketForm = {
@@ -129,6 +153,8 @@ export default function OrdersClient() {
   const [message, setMessage] = useState("");
   const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
+  const [addingAccount, setAddingAccount] = useState(false);
+  const [newAccountInput, setNewAccountInput] = useState("");
   const [newTicket, setNewTicket] = useState<NewTicketForm>(defaultNewTicket);
 
   const [showArchived, setShowArchived] = useState(false);
@@ -223,20 +249,19 @@ export default function OrdersClient() {
       const insertedRefs = Array.isArray(result.insertedRefs) ? result.insertedRefs : [];
       const updatedRefs = Array.isArray(result.updatedRefs) ? result.updatedRefs : [];
 
-      if (insertedRefs.length > 0 || updatedRefs.length > 0) {
-        resetFilters();
-        const focusRef = insertedRefs[0] || updatedRefs[0];
-        if (focusRef) setSearch(focusRef);
-      }
+      resetFilters();
 
       const accountResults = Array.isArray(result.accountResults) ? result.accountResults : [];
       const errors: string[] = Array.isArray(result.errors) ? result.errors : [];
-      const accountCount = accountResults.length;
-      const summary = accountCount > 1
-        ? `${accountCount} accounts — ${inserted} new, ${updated} updated`
+
+      const accountLines = accountResults.length > 0
+        ? accountResults
+            .map((a: { email: string; inserted: number; updated: number }) =>
+              `${a.email}: +${a.inserted} new, ${a.updated} updated`)
+            .join(" · ")
         : `${inserted} new, ${updated} updated`;
-      const errorNote = errors.length > 0 ? ` (${errors.length} account error${errors.length > 1 ? "s" : ""})` : "";
-      setMessage(`Scan complete: ${summary}${errorNote}`);
+      const errorNote = errors.length > 0 ? ` — ${errors.join("; ")}` : "";
+      setMessage(`Scan complete: ${accountLines}${errorNote}`);
       void loadSyncLog();
     } catch {
       setMessage("Scan failed");
@@ -313,14 +338,14 @@ export default function OrdersClient() {
   }
 
   async function loadAccounts() {
-    const { data } = await supabase
-      .from("gmail_accounts")
-      .select("email")
-      .eq("is_active", true)
-      .order("is_primary", { ascending: false });
-    if (data) {
-      setAccounts((data as { email: string }[]).map((a) => a.email));
-    }
+    const [{ data: inboxData }, { data: orderData }] = await Promise.all([
+      supabase.from("gmail_accounts").select("email").eq("is_active", true).order("is_primary", { ascending: false }),
+      supabase.from("orders").select("account_email").not("account_email", "is", null),
+    ]);
+    const fromInboxes = (inboxData ?? []).map((a: { email: string }) => a.email);
+    const fromOrders = (orderData ?? []).map((o: { account_email: string }) => o.account_email).filter(Boolean);
+    const merged = Array.from(new Set([...fromInboxes, ...fromOrders])).filter(Boolean).sort();
+    setAccounts(merged);
   }
 
   async function loadSyncLog() {
@@ -1296,15 +1321,42 @@ export default function OrdersClient() {
               </label>
               <label>
                 <span>Account</span>
-                {accounts.length > 0 ? (
-                  <select className="field" value={newTicket.account_email} onChange={(e) => setNewTicket((t) => ({ ...t, account_email: e.target.value }))}>
-                    <option value="">— Select account —</option>
-                    {accounts.map((email) => (
-                      <option key={email} value={email}>{email}</option>
-                    ))}
-                  </select>
+                <select
+                  className="field"
+                  value={newTicket.account_email}
+                  onChange={(e) => setNewTicket((t) => ({ ...t, account_email: e.target.value }))}
+                >
+                  <option value="">— Select account —</option>
+                  {accounts.map((email) => (
+                    <option key={email} value={email}>{email}</option>
+                  ))}
+                </select>
+                {addingAccount ? (
+                  <div style={{ display: "flex", gap: "6px", marginTop: "6px" }}>
+                    <input
+                      className="field"
+                      placeholder="buyer@email.com"
+                      value={newAccountInput}
+                      onChange={(e) => setNewAccountInput(e.target.value)}
+                      autoFocus
+                    />
+                    <button
+                      type="button"
+                      className="ghost-button"
+                      onClick={() => {
+                        const email = newAccountInput.trim().toLowerCase();
+                        if (email && !accounts.includes(email)) setAccounts((a) => [...a, email].sort());
+                        if (email) setNewTicket((t) => ({ ...t, account_email: email }));
+                        setNewAccountInput("");
+                        setAddingAccount(false);
+                      }}
+                    >Add</button>
+                    <button type="button" className="ghost-button" onClick={() => { setAddingAccount(false); setNewAccountInput(""); }}>✕</button>
+                  </div>
                 ) : (
-                  <input className="field" placeholder="buyer@email.com" value={newTicket.account_email} onChange={(e) => setNewTicket((t) => ({ ...t, account_email: e.target.value }))} />
+                  <button type="button" className="ghost-button" style={{ marginTop: "6px", fontSize: "12px" }} onClick={() => setAddingAccount(true)}>
+                    + Add account
+                  </button>
                 )}
               </label>
               <label>
@@ -1363,13 +1415,39 @@ export default function OrdersClient() {
             <p className="eyebrow">Ticket detail</p>
             <h4>{selectedOrder.event_name || "Untitled ticket"}</h4>
           </div>
-          <button
-            className="drawer-close"
-            type="button"
-            onClick={() => setSelectedOrderId(null)}
-          >
-            ×
-          </button>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            {selectedOrder.email_html && (
+              <button
+                type="button"
+                onClick={() => window.open(`/api/email-pdf/${selectedOrder.id}`, "_blank")}
+                title="Download confirmation email as PDF"
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "5px",
+                  padding: "5px 12px",
+                  fontSize: "12px",
+                  fontWeight: 600,
+                  background: "#026cdf",
+                  color: "#fff",
+                  border: "none",
+                  borderRadius: "6px",
+                  cursor: "pointer",
+                  letterSpacing: "0.02em",
+                }}
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                Confirmation
+              </button>
+            )}
+            <button
+              className="drawer-close"
+              type="button"
+              onClick={() => setSelectedOrderId(null)}
+            >
+              ×
+            </button>
+          </div>
         </div>
 
         <div className="drawer-content">
@@ -1432,27 +1510,42 @@ export default function OrdersClient() {
               </label>
               <label>
                 <span>Account</span>
-                {accounts.length > 0 ? (
-                  <select
-                    className="field"
-                    value={selectedOrder.account_email ?? ""}
-                    onChange={(e) =>
-                      updateOrder(selectedOrder.id, "account_email", e.target.value)
-                    }
-                  >
-                    <option value="">— Select account —</option>
-                    {accounts.map((email) => (
-                      <option key={email} value={email}>{email}</option>
-                    ))}
-                  </select>
+                <select
+                  className="field"
+                  value={selectedOrder.account_email ?? ""}
+                  onChange={(e) => updateOrder(selectedOrder.id, "account_email", e.target.value)}
+                >
+                  <option value="">— Select account —</option>
+                  {accounts.map((email) => (
+                    <option key={email} value={email}>{email}</option>
+                  ))}
+                </select>
+                {addingAccount ? (
+                  <div style={{ display: "flex", gap: "6px", marginTop: "6px" }}>
+                    <input
+                      className="field"
+                      placeholder="buyer@email.com"
+                      value={newAccountInput}
+                      onChange={(e) => setNewAccountInput(e.target.value)}
+                      autoFocus
+                    />
+                    <button
+                      type="button"
+                      className="ghost-button"
+                      onClick={() => {
+                        const email = newAccountInput.trim().toLowerCase();
+                        if (email && !accounts.includes(email)) setAccounts((a) => [...a, email].sort());
+                        if (email) updateOrder(selectedOrder.id, "account_email", email);
+                        setNewAccountInput("");
+                        setAddingAccount(false);
+                      }}
+                    >Add</button>
+                    <button type="button" className="ghost-button" onClick={() => { setAddingAccount(false); setNewAccountInput(""); }}>✕</button>
+                  </div>
                 ) : (
-                  <input
-                    className="field"
-                    value={selectedOrder.account_email ?? ""}
-                    onChange={(e) =>
-                      updateOrder(selectedOrder.id, "account_email", e.target.value)
-                    }
-                  />
+                  <button type="button" className="ghost-button" style={{ marginTop: "6px", fontSize: "12px" }} onClick={() => setAddingAccount(true)}>
+                    + Add account
+                  </button>
                 )}
               </label>
               <label>

@@ -776,7 +776,7 @@ export default function SettingsClient() {
             <section className="hero-card connections-hero">
               <div>
                 <p className="section-tag">Connections</p>
-                <h3>Connect Gmail &amp; Outlook per member</h3>
+                <h3>Connect Gmail &amp; Outlook inboxes</h3>
               </div>
               <div className="hero-meta">
                 <div>

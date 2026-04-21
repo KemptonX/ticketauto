@@ -50,6 +50,8 @@ export async function GET(request: NextRequest) {
     byUser.get(account.user_id)!.push(account);
   }
 
+  const allUserIds = new Set([...byUser.keys()]);
+
   const summary = {
     users: byUser.size,
     ordersScanned: 0,
@@ -61,31 +63,32 @@ export async function GET(request: NextRequest) {
     errors: [] as string[],
   };
 
-  for (const [userId, userAccounts] of byUser) {
+  for (const userId of allUserIds) {
+    const userAccounts = byUser.get(userId) ?? [];
+
     // Gmail (orders) — primary account only
-    const primaryAccount = userAccounts.find((a) => a.is_primary) ?? userAccounts[0];
-
-    try {
-      const orderResult = await syncGmailInbox({
-        supabase,
-        gmailAccount: primaryAccount,
-        userId,
-      });
-
-      summary.ordersScanned += orderResult.scanned;
-      summary.ordersInserted += orderResult.inserted;
-      summary.ordersUpdated += orderResult.updated ?? 0;
-
-      await supabase.from("sync_log").insert({
-        user_id: userId,
-        scan_type: "orders",
-        scanned: orderResult.scanned,
-        inserted: orderResult.inserted,
-        updated: orderResult.updated ?? 0,
-      });
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Gmail scan failed";
-      summary.errors.push(`orders:${userId.slice(0, 8)}: ${msg}`);
+    if (userAccounts.length > 0) {
+      const primaryAccount = userAccounts.find((a) => a.is_primary) ?? userAccounts[0];
+      try {
+        const orderResult = await syncGmailInbox({
+          supabase,
+          gmailAccount: primaryAccount,
+          userId,
+        });
+        summary.ordersScanned += orderResult.scanned;
+        summary.ordersInserted += orderResult.inserted;
+        summary.ordersUpdated += orderResult.updated ?? 0;
+        await supabase.from("sync_log").insert({
+          user_id: userId,
+          scan_type: "orders",
+          scanned: orderResult.scanned,
+          inserted: orderResult.inserted,
+          updated: orderResult.updated ?? 0,
+        });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Gmail scan failed";
+        summary.errors.push(`orders:${userId.slice(0, 8)}: ${msg}`);
+      }
     }
 
     // Viagogo sales — all accounts for this user

@@ -27,7 +27,7 @@ export async function POST() {
       return NextResponse.json({ error: accountError.message }, { status: 500 });
     }
 
-    if (!allAccounts || allAccounts.length === 0) {
+    if ((!allAccounts || allAccounts.length === 0)) {
       return NextResponse.json(
         { error: "Connect an inbox in Connections before running a scan" },
         { status: 400 },
@@ -42,7 +42,7 @@ export async function POST() {
     const accountResults: { email: string; provider: string; inserted: number; updated: number }[] = [];
     const errors: string[] = [];
 
-    for (const account of allAccounts) {
+    for (const account of allAccounts ?? []) {
       if (!account.access_token) {
         errors.push(`${account.email}: OAuth incomplete`);
         continue;
@@ -70,13 +70,20 @@ export async function POST() {
       }
     }
 
-    await supabase.from("sync_log").insert({
+    const { data: logRow } = await supabase.from("sync_log").insert({
       user_id: user.id,
       scan_type: "orders",
       scanned: totalScanned,
       inserted: totalInserted,
       updated: totalUpdated,
-    });
+    }).select("id").single();
+
+    if (logRow?.id) {
+      await supabase.from("sync_log").update({
+        account_results: accountResults,
+        errors_detail: errors,
+      }).eq("id", logRow.id);
+    }
 
     return NextResponse.json({
       ok: true,
