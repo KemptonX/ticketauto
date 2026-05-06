@@ -174,10 +174,10 @@ export default function ClientsClient() {
 
       let matchesEvent = true;
       if (eventFilter !== "all") {
-        const today = new Date().toISOString().slice(0, 10);
-        const lastEventDate = c.sales[0]?.event_date ?? null;
-        if (eventFilter === "past") matchesEvent = !!lastEventDate && lastEventDate < today;
-        if (eventFilter === "future") matchesEvent = !!lastEventDate && lastEventDate >= today;
+        const today = new Date(); today.setHours(0, 0, 0, 0);
+        const d = parseEventDate(c.sales[0]?.event_date ?? null);
+        if (eventFilter === "past") matchesEvent = !!d && d < today;
+        if (eventFilter === "future") matchesEvent = !!d && d >= today;
       }
 
       return matchesSearch && matchesContact && matchesEmailType && matchesEvent;
@@ -490,7 +490,7 @@ export default function ClientsClient() {
                             <ProxyBadge email={client.email} />
                           </div>
                           <div style={{ fontSize: "11px", color: "var(--muted)", marginTop: "2px" }}>
-                            {client.sales.slice(0, 2).map((s) => s.event_name).filter(Boolean).join(" · ") || "No event name"}
+                            {client.sales.slice(0, 2).map((s) => [s.event_name, s.event_date ? formatShortDate(s.event_date) : null].filter(Boolean).join(" · ")).join("  |  ") || "No event"}
                             {client.sales.length > 2 ? ` +${client.sales.length - 2} more` : ""}
                           </div>
                         </td>
@@ -743,6 +743,15 @@ export default function ClientsClient() {
       )}
     </div>
   );
+}
+
+function parseEventDate(value: string | null): Date | null {
+  if (!value) return null;
+  const d = new Date(value);
+  if (!Number.isNaN(d.getTime())) return d;
+  const m = value.match(/(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})/);
+  if (m) return new Date(`${m[2]} ${m[1]}, ${m[3]}`);
+  return null;
 }
 
 function formatDate(iso: string) {
