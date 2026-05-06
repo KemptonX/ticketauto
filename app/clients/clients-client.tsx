@@ -411,6 +411,7 @@ export default function ClientsClient() {
                             <span style={{ fontWeight: 500, fontSize: "13px" }}>{client.email}</span>
                             {hasBeenEmailed && <span className="status-badge badge-sold" style={{ fontSize: "10px", padding: "1px 6px" }}>✓ Emailed</span>}
                             {isRepeat && <span className="status-badge badge-unlisted" style={{ fontSize: "10px", padding: "1px 6px" }}>Repeat</span>}
+                            <ProxyBadge email={client.email} />
                           </div>
                           <div style={{ fontSize: "11px", color: "var(--muted)", marginTop: "2px" }}>
                             {client.sales.slice(0, 2).map((s) => s.event_name).filter(Boolean).join(" · ") || "No event name"}
@@ -467,9 +468,8 @@ export default function ClientsClient() {
                 <strong style={{ wordBreak: "break-all" }}>{selectedClient.email}</strong>
                 <span style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap", marginTop: "0.25rem" }}>
                   {selectedClient.purchaseCount > 1 && <span className="status-badge badge-sold">Repeat buyer</span>}
-                  {selectedClient.lastPurchaseAt && selectedClient.lastPurchaseAt > new Date(Date.now() - THIRTY_DAYS).toISOString() && (
-                    <span className="status-badge badge-listed">Recent</span>
-                  )}
+                  {sentClientEmails[selectedClient.email.toLowerCase()] && <span className="status-badge badge-sold">✓ Emailed</span>}
+                  <ProxyBadge email={selectedClient.email} />
                 </span>
               </div>
               <div className="drawer-hero-meta">
@@ -670,4 +670,69 @@ function timeAgo(iso: string | null) {
   if (days < 30) return `${Math.floor(days / 7)}w ago`;
   if (days < 365) return `${Math.floor(days / 30)}mo ago`;
   return `${Math.floor(days / 365)}y ago`;
+}
+
+const KNOWN_PROVIDERS = new Set([
+  "gmail.com","googlemail.com",
+  "outlook.com","outlook.co.uk","outlook.fr","outlook.de","outlook.es","outlook.it","outlook.com.au",
+  "hotmail.com","hotmail.co.uk","hotmail.fr","hotmail.de","hotmail.es","hotmail.it","hotmail.com.au",
+  "live.com","live.co.uk","live.fr","live.de","live.com.au","live.nl",
+  "msn.com",
+  "yahoo.com","yahoo.co.uk","yahoo.fr","yahoo.de","yahoo.es","yahoo.it","yahoo.co.jp","yahoo.com.au","ymail.com",
+  "icloud.com","me.com","mac.com",
+  "aol.com","aol.co.uk",
+  "protonmail.com","proton.me",
+  "mail.com","gmx.com","gmx.de","gmx.net",
+  "zoho.com",
+  "yandex.com","yandex.ru",
+  "web.de","t-online.de",
+  "orange.fr","wanadoo.fr","free.fr","laposte.net","sfr.fr",
+  "bt.com","btinternet.com","sky.com","ntlworld.com","virginmedia.com","talktalk.net","blueyonder.co.uk",
+  "comcast.net","att.net","verizon.net","sbcglobal.net","cox.net","bellsouth.net","earthlink.net",
+  "shaw.ca","rogers.com","telus.net","bell.net",
+  "tiscali.it","libero.it","virgilio.it","alice.it",
+  "seznam.cz","centrum.cz",
+  "wp.pl","onet.pl","interia.pl",
+]);
+
+function getProxyScore(email: string): number {
+  const lower = email.toLowerCase();
+  const at = lower.indexOf("@");
+  if (at === -1) return 0;
+  const domain = lower.slice(at + 1);
+  const local = lower.slice(0, at);
+
+  if (domain.includes("viagogo")) return 98;
+  if (KNOWN_PROVIDERS.has(domain)) return 0;
+
+  // Score by how random the local part looks
+  const digits = (local.match(/\d/g) || []).length;
+  const isHexLike = /^[a-f0-9]{8,}$/.test(local);
+  const noWords = !/[a-z]{4,}/.test(local);
+
+  if (isHexLike || (local.length >= 10 && digits >= 5 && noWords)) return 85;
+  if (local.length >= 8 && digits >= 3) return 72;
+  return 60;
+}
+
+function ProxyBadge({ email }: { email: string }) {
+  const score = getProxyScore(email);
+  if (score === 0) return null;
+  const isViagogoKnown = email.toLowerCase().includes("viagogo");
+  const color = score >= 90 ? "#ef4444" : score >= 70 ? "#f59e0b" : "#94a3b8";
+  const label = isViagogoKnown ? "Viagogo email" : `~${score}% proxy`;
+  return (
+    <span style={{
+      fontSize: "10px",
+      padding: "1px 6px",
+      background: `${color}22`,
+      color,
+      border: `1px solid ${color}55`,
+      borderRadius: "4px",
+      fontWeight: 600,
+      whiteSpace: "nowrap",
+    }}>
+      {label}
+    </span>
+  );
 }
