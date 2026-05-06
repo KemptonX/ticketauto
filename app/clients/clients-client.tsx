@@ -50,8 +50,7 @@ export default function ClientsClient() {
   const [message, setMessage] = useState("");
   const [sentClientEmails, setSentClientEmails] = useState<Record<string, true>>({});
 
-  const [bulkOnlyReal, setBulkOnlyReal] = useState(false);
-  const [bulkOnlyNotSent, setBulkOnlyNotSent] = useState(false);
+  const [emailTypeFilter, setEmailTypeFilter] = useState<"all" | "real" | "proxy">("all");
 
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [emailTargets, setEmailTargets] = useState<string[]>([]);
@@ -140,27 +139,25 @@ export default function ClientsClient() {
         c.sales.some((s) => s.event_name?.toLowerCase().includes(search.toLowerCase()));
 
       const hasSent = !!sentClientEmails[c.email.toLowerCase()];
-      const matchesFilter =
+      const matchesContact =
         filterType === "all" ||
         (filterType === "sent" && hasSent) ||
         (filterType === "notsent" && !hasSent);
 
-      return matchesSearch && matchesFilter;
+      const score = getProxyScore(c.email);
+      const matchesEmailType =
+        emailTypeFilter === "all" ||
+        (emailTypeFilter === "real" && score === 0) ||
+        (emailTypeFilter === "proxy" && score > 0);
+
+      return matchesSearch && matchesContact && matchesEmailType;
     });
-  }, [clients, search, filterType, sentClientEmails]);
+  }, [clients, search, filterType, emailTypeFilter, sentClientEmails]);
 
   const selectedClient = selectedEmail ? clients.find((c) => c.email === selectedEmail) ?? null : null;
 
   const sentCount = useMemo(() => clients.filter((c) => !!sentClientEmails[c.email.toLowerCase()]).length, [clients, sentClientEmails]);
   const notSentCount = clients.length - sentCount;
-
-  const bulkTargets = useMemo(() => {
-    return filteredClients.filter((c) => {
-      if (bulkOnlyReal && getProxyScore(c.email) > 0) return false;
-      if (bulkOnlyNotSent && !!sentClientEmails[c.email.toLowerCase()]) return false;
-      return true;
-    });
-  }, [filteredClients, bulkOnlyReal, bulkOnlyNotSent, sentClientEmails]);
 
   async function loadAccountsAndOpenModal(targets: string[], subject: string, body: string) {
     setEmailTargets(targets);
@@ -203,10 +200,10 @@ export default function ClientsClient() {
   }
 
   function openBulkEmail() {
-    if (bulkTargets.length === 0) return;
+    if (filteredClients.length === 0) return;
     const tmpl = loadTemplate();
     void loadAccountsAndOpenModal(
-      bulkTargets.map((c) => c.email),
+      filteredClients.map((c) => c.email),
       tmpl.subject,
       tmpl.body,
     );
@@ -291,9 +288,9 @@ export default function ClientsClient() {
             <button type="button" className="secondary-button" onClick={() => void loadSales()}>
               Refresh
             </button>
-            {bulkTargets.length > 0 && (
+            {filteredClients.length > 0 && (
               <button type="button" className="primary-button" onClick={openBulkEmail}>
-                Email {bulkTargets.length} Client{bulkTargets.length !== 1 ? "s" : ""}
+                Email {filteredClients.length} Client{filteredClients.length !== 1 ? "s" : ""}
               </button>
             )}
           </div>
@@ -348,57 +345,44 @@ export default function ClientsClient() {
               <button type="button" className={`toggle-btn${filterType === "all" ? " toggle-btn-active" : ""}`} onClick={() => setFilterType("all")}>
                 All ({clients.length})
               </button>
-              <button type="button" className={`toggle-btn${filterType === "sent" ? " toggle-btn-active" : ""}`} onClick={() => setFilterType("sent")}>
-                Sent ({sentCount})
-              </button>
               <button type="button" className={`toggle-btn${filterType === "notsent" ? " toggle-btn-active" : ""}`} onClick={() => setFilterType("notsent")}>
                 Not Sent ({notSentCount})
               </button>
+              <button type="button" className={`toggle-btn${filterType === "sent" ? " toggle-btn-active" : ""}`} onClick={() => setFilterType("sent")}>
+                Sent ({sentCount})
+              </button>
             </div>
-            <button type="button" className="ghost-button" onClick={() => { setSearch(""); setFilterType("all"); }}>
+            <button type="button" className="ghost-button" onClick={() => { setSearch(""); setFilterType("all"); setEmailTypeFilter("all"); }}>
               Reset
             </button>
           </div>
+
           <div className="sales-filter-grid">
-            <label className="filter-field" style={{ gridColumn: "1 / -1" }}>
+            <label className="filter-field">
               <span className="filter-label">Search</span>
               <input
                 className="field field-search"
-                placeholder="Search by email or event name..."
+                placeholder="Search email or event..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
             </label>
-          </div>
-
-          <div style={{ padding: "0.75rem 0 0.25rem", borderTop: "1px solid var(--border)", marginTop: "0.75rem" }}>
-            <p className="section-tag" style={{ marginBottom: "0.5rem" }}>Bulk send filters — {bulkTargets.length} client{bulkTargets.length !== 1 ? "s" : ""} selected</p>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
-              <button
-                type="button"
-                className={bulkOnlyReal ? "toggle-btn toggle-btn-active" : "toggle-btn"}
-                onClick={() => setBulkOnlyReal((v) => !v)}
-              >
-                ✓ Real emails only
-              </button>
-              <button
-                type="button"
-                className={bulkOnlyNotSent ? "toggle-btn toggle-btn-active" : "toggle-btn"}
-                onClick={() => setBulkOnlyNotSent((v) => !v)}
-              >
-                Not yet emailed
-              </button>
-              {(bulkOnlyReal || bulkOnlyNotSent) && (
-                <button
-                  type="button"
-                  className="ghost-button"
-                  style={{ fontSize: "0.8rem" }}
-                  onClick={() => { setBulkOnlyReal(false); setBulkOnlyNotSent(false); }}
-                >
-                  Clear filters
-                </button>
-              )}
-            </div>
+            <label className="filter-field">
+              <span className="filter-label">Email type</span>
+              <select className="field" value={emailTypeFilter} onChange={(e) => setEmailTypeFilter(e.target.value as "all" | "real" | "proxy")}>
+                <option value="all">All emails</option>
+                <option value="real">Real emails only</option>
+                <option value="proxy">Possible proxy only</option>
+              </select>
+            </label>
+            <label className="filter-field">
+              <span className="filter-label">Contact status</span>
+              <select className="field" value={filterType} onChange={(e) => setFilterType(e.target.value as "all" | "sent" | "notsent")}>
+                <option value="all">All clients</option>
+                <option value="notsent">Not yet emailed</option>
+                <option value="sent">Previously emailed</option>
+              </select>
+            </label>
           </div>
         </section>
 
