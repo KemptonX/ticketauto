@@ -250,11 +250,28 @@ export default function ClientsClient() {
     const errors: string[] = [];
 
     for (const to of emailTargets) {
+      let subject = emailSubject;
+      let body = emailBody;
+      if (subject.includes("{{") || body.includes("{{")) {
+        const client = clients.find((c) => c.email.toLowerCase() === to.toLowerCase());
+        const lastSale = client?.sales[0];
+        const vars = {
+          customer_name: to.split("@")[0],
+          event_name: lastSale?.event_name ?? "",
+          event_date: lastSale?.event_date ?? "",
+          venue: "",
+          section: "",
+          seats: "",
+          quantity: lastSale?.qty_sold ?? "",
+        };
+        subject = interpolate(subject, vars);
+        body = interpolate(body, vars);
+      }
       try {
         const res = await fetch("/api/send-client-email", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ to, accountId: emailFromAccountId, subject: emailSubject, body: emailBody }),
+          body: JSON.stringify({ to, accountId: emailFromAccountId, subject, body }),
         });
         const result = await res.json();
         if (!res.ok) {
