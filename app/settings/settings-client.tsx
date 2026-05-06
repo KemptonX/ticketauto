@@ -1241,156 +1241,156 @@ export default function SettingsClient() {
               </div>
             </section>
 
-            {/* Editor card — template picker + all fields in one card */}
-            <section className="command-card connections-command-card">
-              <div className="command-header">
-                <div>
-                  <p className="section-tag">Email composer</p>
-                  <h4>Build your buyer email</h4>
-                </div>
-                <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
-                  {templateSaved && <span className="status-badge badge-sold">Saved</span>}
-                  <button type="button" className="primary-button" onClick={handleSaveTemplate}>Save</button>
-                </div>
-              </div>
-
-              {/* Active template strip */}
-              <div className="connections-cta-row">
-                <div className="connections-cta-copy">
-                  <strong>Active template</strong>
-                  <span>Used when sending emails from the Sales and Clients pages. Switch or create new templates below.</span>
-                </div>
-                <div style={{ display: "flex", gap: "0.5rem", flexShrink: 0 }}>
-                  <select
-                    className="command-input"
-                    style={{ minWidth: "180px" }}
-                    value={activeTemplateId}
-                    onChange={(e) => switchTemplate(e.target.value)}
-                  >
+            {/* Template picker */}
+            <section className="command-card">
+              <div className="clients-filter-row">
+                <label className="filter-field" style={{ flex: "1 1 180px" }}>
+                  <span className="filter-label">Active template</span>
+                  <select className="field" value={activeTemplateId} onChange={(e) => switchTemplate(e.target.value)}>
                     {templates.map((t) => (
                       <option key={t.id} value={t.id}>{t.name}</option>
                     ))}
                   </select>
-                  <button type="button" className="secondary-button" onClick={handleNewTemplate}>+ New</button>
-                  <button
-                    type="button"
-                    className="ghost-button"
-                    style={{ color: templates.length <= 1 ? "var(--muted)" : "#ef4444" }}
-                    disabled={templates.length <= 1}
-                    onClick={handleDeleteTemplate}
-                  >
-                    Delete
-                  </button>
-                </div>
-              </div>
-
-              {/* Name + Subject on same row */}
-              <div className="connections-form" style={{ gridTemplateColumns: "1fr 1.5fr", marginBottom: "20px" }}>
-                <label className="field-label">
-                  <span>Template name</span>
+                </label>
+                <label className="filter-field" style={{ flex: "1 1 160px" }}>
+                  <span className="filter-label">Template name</span>
                   <input
-                    className="command-input"
+                    className="field"
                     type="text"
                     value={templateName}
                     onChange={(e) => setTemplateName(e.target.value)}
                     placeholder="e.g. Thank-you, VIP, Resale"
                   />
                 </label>
-                <label className="field-label">
-                  <span>Subject line</span>
+                <div className="filter-field" style={{ flex: "0 0 auto", justifyContent: "flex-end" }}>
+                  <span className="filter-label" style={{ visibility: "hidden" }}>_</span>
+                  <div style={{ display: "flex", gap: "8px" }}>
+                    <button type="button" className="secondary-button" onClick={handleNewTemplate}>+ New</button>
+                    <button
+                      type="button"
+                      className="ghost-button"
+                      style={{ color: templates.length <= 1 ? "var(--muted)" : "#ef4444" }}
+                      disabled={templates.length <= 1}
+                      onClick={handleDeleteTemplate}
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            {/* Editor */}
+            <section className="table-card">
+              <div className="table-card-header" style={{ padding: "20px 24px 16px" }}>
+                <div>
+                  <p className="section-tag">Editor</p>
+                  <h4>Subject &amp; body</h4>
+                </div>
+                <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                  {templateSaved && <span className="status-badge badge-sold">Saved</span>}
+                </div>
+              </div>
+
+              <div style={{ padding: "20px 24px 24px", display: "flex", flexDirection: "column", gap: "20px" }}>
+                {/* Subject */}
+                <label className="filter-field">
+                  <span className="filter-label">Subject line</span>
                   <input
-                    className="command-input"
+                    className="field"
                     type="text"
                     value={templateSubject}
                     onChange={(e) => setTemplateSubject(e.target.value)}
                     placeholder="Your tickets – {{event_name}}"
                   />
                 </label>
-              </div>
 
-              {/* Variable chips */}
-              <div style={{ marginBottom: "20px" }}>
-                <p className="section-tag" style={{ marginBottom: "10px" }}>Insert variable at cursor position in body</p>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
-                  {TEMPLATE_VARS.map((v) => (
-                    <button
-                      key={v.key}
-                      type="button"
-                      className="secondary-button"
-                      style={{ fontSize: "0.75rem", padding: "4px 10px", fontFamily: "monospace" }}
-                      title={v.description}
-                      onClick={() => insertVariable(v.key)}
-                    >
-                      {v.key}
-                    </button>
-                  ))}
+                {/* Variable chips */}
+                <div>
+                  <p className="filter-label" style={{ marginBottom: "10px" }}>Insert variable at cursor</p>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                    {TEMPLATE_VARS.map((v) => (
+                      <button
+                        key={v.key}
+                        type="button"
+                        className="secondary-button"
+                        style={{ fontSize: "12px", padding: "4px 10px", fontFamily: "monospace" }}
+                        title={v.description}
+                        onClick={() => insertVariable(v.key)}
+                      >
+                        {v.key}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              </div>
 
-              {/* Body */}
-              <label className="field-label">
-                <span>Email body</span>
-                <textarea
-                  ref={bodyTextareaRef}
-                  className="command-input"
-                  value={templateBody}
-                  onChange={(e) => setTemplateBody(e.target.value)}
-                  rows={14}
-                  style={{ resize: "vertical", fontFamily: "monospace", fontSize: "0.8125rem", lineHeight: 1.6 }}
-                />
-              </label>
+                {/* Body */}
+                <label className="filter-field">
+                  <span className="filter-label">Email body</span>
+                  <textarea
+                    ref={bodyTextareaRef}
+                    className="field"
+                    value={templateBody}
+                    onChange={(e) => setTemplateBody(e.target.value)}
+                    rows={14}
+                    style={{ resize: "vertical", fontFamily: "monospace", fontSize: "13px", lineHeight: 1.6 }}
+                  />
+                </label>
 
-              <div style={{ display: "flex", gap: "0.75rem", marginTop: "20px" }}>
-                <button type="button" className="primary-button" onClick={handleSaveTemplate}>
-                  Save template
-                </button>
-                <button
-                  type="button"
-                  className="ghost-button"
-                  onClick={() => { setTemplateSubject(DEFAULT_SUBJECT); setTemplateBody(DEFAULT_BODY); }}
-                >
-                  Reset to default
-                </button>
+                <div style={{ display: "flex", gap: "10px" }}>
+                  <button type="button" className="primary-button" onClick={handleSaveTemplate}>
+                    Save template
+                  </button>
+                  <button
+                    type="button"
+                    className="ghost-button"
+                    onClick={() => { setTemplateSubject(DEFAULT_SUBJECT); setTemplateBody(DEFAULT_BODY); }}
+                  >
+                    Reset to default
+                  </button>
+                </div>
               </div>
             </section>
 
-            {/* Live preview */}
-            <section className="command-card connections-command-card">
-              <div className="command-header">
+            {/* Preview */}
+            <section className="table-card">
+              <div className="table-card-header" style={{ padding: "20px 24px 16px" }}>
                 <div>
                   <p className="section-tag">Preview</p>
                   <h4>How it looks for a real buyer</h4>
                 </div>
               </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-                <div style={{ padding: "12px 16px", background: "var(--surface-2)", borderRadius: "10px", fontSize: "0.8125rem", color: "var(--muted)", border: "1px solid var(--border)" }}>
-                  <strong style={{ color: "var(--text-primary)" }}>Subject: </strong>
-                  {interpolate(templateSubject, {
-                    customer_name: "Jane Smith",
-                    event_name: "Coldplay – Music of the Spheres",
-                    event_date: "Sat 14 Jun 2025",
-                    venue: "Wembley Stadium",
-                    section: "Block 201",
-                    seats: "Row M, Seats 12–14",
-                    quantity: "3",
-                  })}
-                </div>
-                <pre style={{
-                  whiteSpace: "pre-wrap",
-                  wordBreak: "break-word",
-                  fontSize: "0.8125rem",
-                  lineHeight: 1.7,
-                  color: "var(--text-primary)",
-                  background: "var(--surface-2)",
-                  border: "1px solid var(--border)",
-                  borderRadius: "10px",
-                  padding: "16px 20px",
-                  margin: 0,
-                  fontFamily: "inherit",
-                }}>
-                  {templatePreview}
-                </pre>
-                <p style={{ fontSize: "0.75rem", color: "var(--muted)" }}>
+              <div style={{ padding: "20px 24px 24px", display: "flex", flexDirection: "column", gap: "12px" }}>
+                <label className="filter-field">
+                  <span className="filter-label">Subject</span>
+                  <div className="field" style={{ color: "var(--text-primary)", fontSize: "13px" }}>
+                    {interpolate(templateSubject, {
+                      customer_name: "Jane Smith",
+                      event_name: "Coldplay – Music of the Spheres",
+                      event_date: "Sat 14 Jun 2025",
+                      venue: "Wembley Stadium",
+                      section: "Block 201",
+                      seats: "Row M, Seats 12–14",
+                      quantity: "3",
+                    })}
+                  </div>
+                </label>
+                <label className="filter-field">
+                  <span className="filter-label">Body</span>
+                  <pre className="field" style={{
+                    whiteSpace: "pre-wrap",
+                    wordBreak: "break-word",
+                    fontSize: "13px",
+                    lineHeight: 1.7,
+                    color: "var(--text-primary)",
+                    margin: 0,
+                    fontFamily: "inherit",
+                    minHeight: "200px",
+                  }}>
+                    {templatePreview}
+                  </pre>
+                </label>
+                <p style={{ fontSize: "12px", color: "var(--muted)" }}>
                   Sample data only — real emails use the buyer&apos;s actual ticket details.
                 </p>
               </div>
