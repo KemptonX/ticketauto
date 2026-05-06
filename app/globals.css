@@ -1630,6 +1630,13 @@ select {
   gap: 18px;
 }
 
+.clients-filter-row {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: flex-end;
+  gap: 12px;
+}
+
 /* Sales page — 5-column ticket rows */
 .sales-ticket-grid .inventory-ticket-header,
 .sales-ticket-grid .inventory-ticket-row {

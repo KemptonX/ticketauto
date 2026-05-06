@@ -393,25 +393,8 @@ export default function ClientsClient() {
 
         {/* Filter + Search */}
         <section className="command-card">
-          <div className="command-header">
-            <div className="view-toggle">
-              <button type="button" className={`toggle-btn${filterType === "all" ? " toggle-btn-active" : ""}`} onClick={() => setFilterType("all")}>
-                All ({clients.length})
-              </button>
-              <button type="button" className={`toggle-btn${filterType === "notsent" ? " toggle-btn-active" : ""}`} onClick={() => setFilterType("notsent")}>
-                Not Sent ({notSentCount})
-              </button>
-              <button type="button" className={`toggle-btn${filterType === "sent" ? " toggle-btn-active" : ""}`} onClick={() => setFilterType("sent")}>
-                Sent ({sentCount})
-              </button>
-            </div>
-            <button type="button" className="ghost-button" onClick={() => { setSearch(""); setFilterType("all"); setEmailTypeFilter("all"); setEventFilter("all"); }}>
-              Reset
-            </button>
-          </div>
-
-          <div className="sales-filter-grid">
-            <label className="filter-field">
+          <div className="clients-filter-row">
+            <label className="filter-field" style={{ flex: "2 1 160px" }}>
               <span className="filter-label">Search</span>
               <input
                 className="field field-search"
@@ -420,30 +403,36 @@ export default function ClientsClient() {
                 onChange={(e) => setSearch(e.target.value)}
               />
             </label>
-            <label className="filter-field">
+            <label className="filter-field" style={{ flex: "1 1 120px" }}>
               <span className="filter-label">Email type</span>
               <select className="field" value={emailTypeFilter} onChange={(e) => setEmailTypeFilter(e.target.value as "all" | "real" | "proxy")}>
                 <option value="all">All emails</option>
-                <option value="real">Real emails only</option>
-                <option value="proxy">Possible proxy only</option>
+                <option value="real">Real only</option>
+                <option value="proxy">Proxy only</option>
               </select>
             </label>
-            <label className="filter-field">
+            <label className="filter-field" style={{ flex: "1 1 120px" }}>
               <span className="filter-label">Contact status</span>
               <select className="field" value={filterType} onChange={(e) => setFilterType(e.target.value as "all" | "sent" | "notsent")}>
                 <option value="all">All clients</option>
-                <option value="notsent">Not yet emailed</option>
-                <option value="sent">Previously emailed</option>
+                <option value="notsent">Not emailed</option>
+                <option value="sent">Emailed</option>
               </select>
             </label>
-            <label className="filter-field">
+            <label className="filter-field" style={{ flex: "1 1 120px" }}>
               <span className="filter-label">Event timing</span>
               <select className="field" value={eventFilter} onChange={(e) => setEventFilter(e.target.value as "all" | "past" | "future")}>
                 <option value="all">All events</option>
-                <option value="future">Upcoming events</option>
-                <option value="past">Past events</option>
+                <option value="future">Upcoming</option>
+                <option value="past">Past</option>
               </select>
             </label>
+            <div className="filter-field" style={{ flex: "0 0 auto", justifyContent: "flex-end" }}>
+              <span className="filter-label" style={{ visibility: "hidden" }}>_</span>
+              <button type="button" className="ghost-button" onClick={() => { setSearch(""); setFilterType("all"); setEmailTypeFilter("all"); setEventFilter("all"); }}>
+                Reset
+              </button>
+            </div>
           </div>
         </section>
 
