@@ -50,6 +50,9 @@ export default function ClientsClient() {
   const [message, setMessage] = useState("");
   const [sentClientEmails, setSentClientEmails] = useState<Record<string, true>>({});
 
+  const [bulkOnlyReal, setBulkOnlyReal] = useState(false);
+  const [bulkOnlyNotSent, setBulkOnlyNotSent] = useState(false);
+
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [emailTargets, setEmailTargets] = useState<string[]>([]);
   const [emailSubject, setEmailSubject] = useState("");
@@ -150,6 +153,15 @@ export default function ClientsClient() {
 
   const sentCount = useMemo(() => clients.filter((c) => !!sentClientEmails[c.email.toLowerCase()]).length, [clients, sentClientEmails]);
   const notSentCount = clients.length - sentCount;
+
+  const bulkTargets = useMemo(() => {
+    return filteredClients.filter((c) => {
+      if (bulkOnlyReal && getProxyScore(c.email) > 0) return false;
+      if (bulkOnlyNotSent && !!sentClientEmails[c.email.toLowerCase()]) return false;
+      return true;
+    });
+  }, [filteredClients, bulkOnlyReal, bulkOnlyNotSent, sentClientEmails]);
+
   async function loadAccountsAndOpenModal(targets: string[], subject: string, body: string) {
     setEmailTargets(targets);
     setEmailSubject(subject);
@@ -191,10 +203,10 @@ export default function ClientsClient() {
   }
 
   function openBulkEmail() {
-    const targets = filteredClients.map((c) => c.email);
+    if (bulkTargets.length === 0) return;
     const tmpl = loadTemplate();
     void loadAccountsAndOpenModal(
-      targets,
+      bulkTargets.map((c) => c.email),
       tmpl.subject,
       tmpl.body,
     );
@@ -279,9 +291,9 @@ export default function ClientsClient() {
             <button type="button" className="secondary-button" onClick={() => void loadSales()}>
               Refresh
             </button>
-            {filteredClients.length > 0 && (
+            {bulkTargets.length > 0 && (
               <button type="button" className="primary-button" onClick={openBulkEmail}>
-                Email {filteredClients.length === clients.length ? "All" : filteredClients.length} Clients
+                Email {bulkTargets.length} Client{bulkTargets.length !== 1 ? "s" : ""}
               </button>
             )}
           </div>
@@ -357,6 +369,36 @@ export default function ClientsClient() {
                 onChange={(e) => setSearch(e.target.value)}
               />
             </label>
+          </div>
+
+          <div style={{ padding: "0.75rem 0 0.25rem", borderTop: "1px solid var(--border)", marginTop: "0.75rem" }}>
+            <p className="section-tag" style={{ marginBottom: "0.5rem" }}>Bulk send filters — {bulkTargets.length} client{bulkTargets.length !== 1 ? "s" : ""} selected</p>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem" }}>
+              <button
+                type="button"
+                className={bulkOnlyReal ? "toggle-btn toggle-btn-active" : "toggle-btn"}
+                onClick={() => setBulkOnlyReal((v) => !v)}
+              >
+                ✓ Real emails only
+              </button>
+              <button
+                type="button"
+                className={bulkOnlyNotSent ? "toggle-btn toggle-btn-active" : "toggle-btn"}
+                onClick={() => setBulkOnlyNotSent((v) => !v)}
+              >
+                Not yet emailed
+              </button>
+              {(bulkOnlyReal || bulkOnlyNotSent) && (
+                <button
+                  type="button"
+                  className="ghost-button"
+                  style={{ fontSize: "0.8rem" }}
+                  onClick={() => { setBulkOnlyReal(false); setBulkOnlyNotSent(false); }}
+                >
+                  Clear filters
+                </button>
+              )}
+            </div>
           </div>
         </section>
 
