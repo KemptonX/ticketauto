@@ -1241,14 +1241,36 @@ export default function SettingsClient() {
               </div>
             </section>
 
-            {/* Template management */}
+            {/* Editor card — template picker + all fields in one card */}
             <section className="command-card connections-command-card">
               <div className="command-header">
                 <div>
-                  <p className="section-tag">Templates</p>
-                  <h4>Select or create a template</h4>
+                  <p className="section-tag">Email composer</p>
+                  <h4>Build your buyer email</h4>
                 </div>
-                <div style={{ display: "flex", gap: "0.5rem" }}>
+                <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                  {templateSaved && <span className="status-badge badge-sold">Saved</span>}
+                  <button type="button" className="primary-button" onClick={handleSaveTemplate}>Save</button>
+                </div>
+              </div>
+
+              {/* Active template strip */}
+              <div className="connections-cta-row">
+                <div className="connections-cta-copy">
+                  <strong>Active template</strong>
+                  <span>Used when sending emails from the Sales and Clients pages. Switch or create new templates below.</span>
+                </div>
+                <div style={{ display: "flex", gap: "0.5rem", flexShrink: 0 }}>
+                  <select
+                    className="command-input"
+                    style={{ minWidth: "180px" }}
+                    value={activeTemplateId}
+                    onChange={(e) => switchTemplate(e.target.value)}
+                  >
+                    {templates.map((t) => (
+                      <option key={t.id} value={t.id}>{t.name}</option>
+                    ))}
+                  </select>
                   <button type="button" className="secondary-button" onClick={handleNewTemplate}>+ New</button>
                   <button
                     type="button"
@@ -1261,22 +1283,9 @@ export default function SettingsClient() {
                   </button>
                 </div>
               </div>
-              <div className="connections-form" style={{ paddingTop: 0 }}>
-                <p style={{ color: "var(--muted)", fontSize: "0.8125rem", gridColumn: "1 / -1" }}>
-                  The active template is used when sending emails from the Sales and Clients pages.
-                </p>
-                <label className="field-label">
-                  <span>Active template</span>
-                  <select
-                    className="command-input"
-                    value={activeTemplateId}
-                    onChange={(e) => switchTemplate(e.target.value)}
-                  >
-                    {templates.map((t) => (
-                      <option key={t.id} value={t.id}>{t.name}</option>
-                    ))}
-                  </select>
-                </label>
+
+              {/* Name + Subject on same row */}
+              <div className="connections-form" style={{ gridTemplateColumns: "1fr 1.5fr", marginBottom: "20px" }}>
                 <label className="field-label">
                   <span>Template name</span>
                   <input
@@ -1284,24 +1293,9 @@ export default function SettingsClient() {
                     type="text"
                     value={templateName}
                     onChange={(e) => setTemplateName(e.target.value)}
-                    placeholder="e.g. Thank-you, VIP buyer, Resale"
+                    placeholder="e.g. Thank-you, VIP, Resale"
                   />
                 </label>
-              </div>
-            </section>
-
-            {/* Editor */}
-            <section className="command-card connections-command-card">
-              <div className="command-header">
-                <div>
-                  <p className="section-tag">Editor</p>
-                  <h4>Subject &amp; body</h4>
-                </div>
-                {templateSaved && (
-                  <span className="status-badge badge-sold" style={{ alignSelf: "center" }}>Saved</span>
-                )}
-              </div>
-              <div style={{ padding: "0 1.5rem 1.5rem", display: "flex", flexDirection: "column", gap: "1.25rem" }}>
                 <label className="field-label">
                   <span>Subject line</span>
                   <input
@@ -1312,49 +1306,51 @@ export default function SettingsClient() {
                     placeholder="Your tickets – {{event_name}}"
                   />
                 </label>
+              </div>
 
-                <div>
-                  <p className="section-tag" style={{ marginBottom: "0.5rem" }}>Insert variable at cursor</p>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: "0.375rem" }}>
-                    {TEMPLATE_VARS.map((v) => (
-                      <button
-                        key={v.key}
-                        type="button"
-                        className="secondary-button"
-                        style={{ fontSize: "0.75rem", padding: "0.25rem 0.625rem", fontFamily: "monospace" }}
-                        title={v.description}
-                        onClick={() => insertVariable(v.key)}
-                      >
-                        {v.key}
-                      </button>
-                    ))}
-                  </div>
+              {/* Variable chips */}
+              <div style={{ marginBottom: "20px" }}>
+                <p className="section-tag" style={{ marginBottom: "10px" }}>Insert variable at cursor position in body</p>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                  {TEMPLATE_VARS.map((v) => (
+                    <button
+                      key={v.key}
+                      type="button"
+                      className="secondary-button"
+                      style={{ fontSize: "0.75rem", padding: "4px 10px", fontFamily: "monospace" }}
+                      title={v.description}
+                      onClick={() => insertVariable(v.key)}
+                    >
+                      {v.key}
+                    </button>
+                  ))}
                 </div>
+              </div>
 
-                <label className="field-label">
-                  <span>Email body</span>
-                  <textarea
-                    ref={bodyTextareaRef}
-                    className="command-input"
-                    value={templateBody}
-                    onChange={(e) => setTemplateBody(e.target.value)}
-                    rows={14}
-                    style={{ resize: "vertical", fontFamily: "monospace", fontSize: "0.8125rem", lineHeight: 1.6 }}
-                  />
-                </label>
+              {/* Body */}
+              <label className="field-label">
+                <span>Email body</span>
+                <textarea
+                  ref={bodyTextareaRef}
+                  className="command-input"
+                  value={templateBody}
+                  onChange={(e) => setTemplateBody(e.target.value)}
+                  rows={14}
+                  style={{ resize: "vertical", fontFamily: "monospace", fontSize: "0.8125rem", lineHeight: 1.6 }}
+                />
+              </label>
 
-                <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
-                  <button type="button" className="primary-button" onClick={handleSaveTemplate}>
-                    Save template
-                  </button>
-                  <button
-                    type="button"
-                    className="ghost-button"
-                    onClick={() => { setTemplateSubject(DEFAULT_SUBJECT); setTemplateBody(DEFAULT_BODY); }}
-                  >
-                    Reset to default
-                  </button>
-                </div>
+              <div style={{ display: "flex", gap: "0.75rem", marginTop: "20px" }}>
+                <button type="button" className="primary-button" onClick={handleSaveTemplate}>
+                  Save template
+                </button>
+                <button
+                  type="button"
+                  className="ghost-button"
+                  onClick={() => { setTemplateSubject(DEFAULT_SUBJECT); setTemplateBody(DEFAULT_BODY); }}
+                >
+                  Reset to default
+                </button>
               </div>
             </section>
 
@@ -1366,8 +1362,8 @@ export default function SettingsClient() {
                   <h4>How it looks for a real buyer</h4>
                 </div>
               </div>
-              <div style={{ padding: "0 1.5rem 1.5rem", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-                <div style={{ padding: "0.625rem 1rem", background: "var(--surface-2)", borderRadius: "6px", fontSize: "0.8125rem", color: "var(--muted)", border: "1px solid var(--border)" }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                <div style={{ padding: "12px 16px", background: "var(--surface-2)", borderRadius: "10px", fontSize: "0.8125rem", color: "var(--muted)", border: "1px solid var(--border)" }}>
                   <strong style={{ color: "var(--text-primary)" }}>Subject: </strong>
                   {interpolate(templateSubject, {
                     customer_name: "Jane Smith",
@@ -1387,8 +1383,8 @@ export default function SettingsClient() {
                   color: "var(--text-primary)",
                   background: "var(--surface-2)",
                   border: "1px solid var(--border)",
-                  borderRadius: "8px",
-                  padding: "1rem 1.25rem",
+                  borderRadius: "10px",
+                  padding: "16px 20px",
                   margin: 0,
                   fontFamily: "inherit",
                 }}>
