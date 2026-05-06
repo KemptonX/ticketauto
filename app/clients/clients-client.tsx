@@ -746,10 +746,15 @@ export default function ClientsClient() {
 
 function parseEventDate(value: string | null): Date | null {
   if (!value) return null;
-  const d = new Date(value);
-  if (!Number.isNaN(d.getTime())) return d;
-  const m = value.match(/(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})/);
-  if (m) return new Date(`${m[2]} ${m[1]}, ${m[3]}`);
+  const normalized = value.replace(/\s*\|\s*/g, " ").replace(/,\s*/g, ", ").trim();
+  const direct = new Date(normalized);
+  if (!Number.isNaN(direct.getTime())) return direct;
+  // "Mon 14 Jun 2025" or "Jun 14 2025"
+  const mf = normalized.match(/([A-Za-z]+)\s+(\d{1,2})\s+(\d{4})/);
+  if (mf) { const d = new Date(`${mf[1]} ${mf[2]} ${mf[3]}`); if (!Number.isNaN(d.getTime())) return d; }
+  // "14 Jun 2025"
+  const dm = normalized.match(/(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})/);
+  if (dm) { const d = new Date(`${dm[2]} ${dm[1]} ${dm[3]}`); if (!Number.isNaN(d.getTime())) return d; }
   return null;
 }
 
