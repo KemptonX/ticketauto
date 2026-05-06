@@ -5,7 +5,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "re
 import { useSearchParams } from "next/navigation";
 import { supabase } from "@/src/lib/supabase";
 import { CURRENCY_OPTIONS, getCurrencyCode, setCurrencyCode, formatCurrency } from "@/src/lib/currency";
-import { TEMPLATE_VARS, DEFAULT_SUBJECT, DEFAULT_BODY, loadTemplate, saveTemplate, interpolate } from "@/src/lib/email-template";
+import { TEMPLATE_VARS, DEFAULT_SUBJECT, DEFAULT_BODY, EmailTemplate, loadTemplates, saveTemplates, loadActiveTemplateId, saveActiveTemplateId, interpolate } from "@/src/lib/email-template";
 import { SidebarLogo, NavIcon, SidebarFooter } from "@/app/components/nav-icons";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -394,21 +394,70 @@ export default function SettingsClient() {
   }
 
   // ── Client email template state ──
+  const [templates, setTemplates] = useState<EmailTemplate[]>([]);
+  const [activeTemplateId, setActiveTemplateId] = useState("");
+  const [templateName, setTemplateName] = useState("");
   const [templateSubject, setTemplateSubject] = useState(DEFAULT_SUBJECT);
   const [templateBody, setTemplateBody] = useState(DEFAULT_BODY);
   const [templateSaved, setTemplateSaved] = useState(false);
   const bodyTextareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
-    const t = loadTemplate();
-    setTemplateSubject(t.subject);
-    setTemplateBody(t.body);
+    const ts = loadTemplates();
+    const activeId = loadActiveTemplateId();
+    const active = ts.find((t) => t.id === activeId) ?? ts[0];
+    setTemplates(ts);
+    setActiveTemplateId(active?.id ?? "");
+    setTemplateName(active?.name ?? "");
+    setTemplateSubject(active?.subject ?? DEFAULT_SUBJECT);
+    setTemplateBody(active?.body ?? DEFAULT_BODY);
   }, []);
 
+  function switchTemplate(id: string) {
+    const t = templates.find((t) => t.id === id);
+    if (!t) return;
+    setActiveTemplateId(id);
+    saveActiveTemplateId(id);
+    setTemplateName(t.name);
+    setTemplateSubject(t.subject);
+    setTemplateBody(t.body);
+  }
+
   function handleSaveTemplate() {
-    saveTemplate(templateSubject, templateBody);
+    const updated = templates.map((t) =>
+      t.id === activeTemplateId ? { ...t, name: templateName, subject: templateSubject, body: templateBody } : t
+    );
+    setTemplates(updated);
+    saveTemplates(updated);
+    saveActiveTemplateId(activeTemplateId);
     setTemplateSaved(true);
     setTimeout(() => setTemplateSaved(false), 2000);
+  }
+
+  function handleNewTemplate() {
+    const id = Date.now().toString();
+    const newT: EmailTemplate = { id, name: "New template", subject: DEFAULT_SUBJECT, body: DEFAULT_BODY };
+    const updated = [...templates, newT];
+    setTemplates(updated);
+    saveTemplates(updated);
+    setActiveTemplateId(id);
+    saveActiveTemplateId(id);
+    setTemplateName(newT.name);
+    setTemplateSubject(newT.subject);
+    setTemplateBody(newT.body);
+  }
+
+  function handleDeleteTemplate() {
+    if (templates.length <= 1) return;
+    const updated = templates.filter((t) => t.id !== activeTemplateId);
+    setTemplates(updated);
+    saveTemplates(updated);
+    const first = updated[0];
+    setActiveTemplateId(first.id);
+    saveActiveTemplateId(first.id);
+    setTemplateName(first.name);
+    setTemplateSubject(first.subject);
+    setTemplateBody(first.body);
   }
 
   function insertVariable(key: string) {
@@ -1204,8 +1253,48 @@ export default function SettingsClient() {
               </div>
               <div style={{ padding: "1.5rem", display: "flex", flexDirection: "column", gap: "1.25rem" }}>
                 <p style={{ color: "var(--muted)", fontSize: "0.875rem" }}>
-                  This template is used when sending thank-you emails from the Sales and Clients pages. Click a variable chip to insert it at the cursor position in the body.
+                  The active template is used when sending emails from the Sales and Clients pages. Click a variable chip to insert it at the cursor position in the body.
                 </p>
+
+                {/* Template selector */}
+                <div style={{ display: "flex", gap: "0.625rem", alignItems: "flex-end", flexWrap: "wrap" }}>
+                  <label className="field-label" style={{ flex: "1 1 180px", marginBottom: 0 }}>
+                    <span>Select template</span>
+                    <select
+                      className="command-input"
+                      value={activeTemplateId}
+                      onChange={(e) => switchTemplate(e.target.value)}
+                    >
+                      {templates.map((t) => (
+                        <option key={t.id} value={t.id}>{t.name}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <button type="button" className="secondary-button" onClick={handleNewTemplate}>
+                    + New template
+                  </button>
+                  <button
+                    type="button"
+                    className="ghost-button"
+                    style={{ color: templates.length <= 1 ? "var(--muted)" : "var(--danger, #ef4444)" }}
+                    disabled={templates.length <= 1}
+                    onClick={handleDeleteTemplate}
+                  >
+                    Delete
+                  </button>
+                </div>
+
+                {/* Template name */}
+                <label className="field-label">
+                  <span>Template name</span>
+                  <input
+                    className="command-input"
+                    type="text"
+                    value={templateName}
+                    onChange={(e) => setTemplateName(e.target.value)}
+                    placeholder="e.g. Thank-you email, VIP buyer, Resale"
+                  />
+                </label>
 
                 {/* Subject */}
                 <label className="field-label">

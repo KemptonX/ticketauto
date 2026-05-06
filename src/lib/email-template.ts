@@ -8,6 +8,13 @@ export type TemplateVars = {
   quantity?: string | number;
 };
 
+export type EmailTemplate = {
+  id: string;
+  name: string;
+  subject: string;
+  body: string;
+};
+
 export const TEMPLATE_VARS: { key: string; label: string; description: string }[] = [
   { key: "{{customer_name}}", label: "Customer name", description: "Taken from buyer email" },
   { key: "{{event_name}}", label: "Event name", description: "Name of the event" },
@@ -35,19 +42,56 @@ If you have any questions please don't hesitate to get in touch.
 
 Thanks`;
 
-const STORAGE_KEY = "client_email_template";
+const LEGACY_KEY = "client_email_template";
+const TEMPLATES_KEY = "client_email_templates_v2";
+const ACTIVE_ID_KEY = "client_email_active_id";
+
+export function loadTemplates(): EmailTemplate[] {
+  try {
+    const stored = localStorage.getItem(TEMPLATES_KEY);
+    if (stored) return JSON.parse(stored) as EmailTemplate[];
+    // migrate old single template
+    const old = localStorage.getItem(LEGACY_KEY);
+    if (old) {
+      const parsed = JSON.parse(old) as { subject: string; body: string };
+      return [{ id: "default", name: "Default", subject: parsed.subject, body: parsed.body }];
+    }
+  } catch { /* ignore */ }
+  return [{ id: "default", name: "Default", subject: DEFAULT_SUBJECT, body: DEFAULT_BODY }];
+}
+
+export function saveTemplates(templates: EmailTemplate[]): void {
+  try {
+    localStorage.setItem(TEMPLATES_KEY, JSON.stringify(templates));
+  } catch { /* ignore */ }
+}
+
+export function loadActiveTemplateId(): string {
+  try {
+    return localStorage.getItem(ACTIVE_ID_KEY) ?? "";
+  } catch { return ""; }
+}
+
+export function saveActiveTemplateId(id: string): void {
+  try {
+    localStorage.setItem(ACTIVE_ID_KEY, id);
+  } catch { /* ignore */ }
+}
 
 export function loadTemplate(): { subject: string; body: string } {
   try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) return JSON.parse(stored) as { subject: string; body: string };
+    const templates = loadTemplates();
+    if (templates.length === 0) return { subject: DEFAULT_SUBJECT, body: DEFAULT_BODY };
+    const activeId = loadActiveTemplateId();
+    const active = templates.find((t) => t.id === activeId) ?? templates[0];
+    return { subject: active.subject, body: active.body };
   } catch { /* ignore */ }
   return { subject: DEFAULT_SUBJECT, body: DEFAULT_BODY };
 }
 
 export function saveTemplate(subject: string, body: string): void {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ subject, body }));
+    localStorage.setItem(LEGACY_KEY, JSON.stringify({ subject, body }));
   } catch { /* ignore */ }
 }
 
