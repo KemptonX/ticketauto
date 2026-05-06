@@ -1763,14 +1763,14 @@ select {
 .inventory-group-metrics {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: 8px;
   justify-content: flex-end;
 }
 
 .inventory-metric-chip {
-  min-width: 120px;
-  border-radius: 16px;
-  padding: 12px 14px;
+  min-width: 96px;
+  border-radius: 14px;
+  padding: 10px 12px;
   background: rgba(255, 255, 255, 0.02);
   border: 1px solid rgba(35, 35, 42, 0.9);
 }
@@ -1814,8 +1814,8 @@ select {
 
 .inventory-metric-chip strong {
   display: block;
-  margin-top: 8px;
-  font-size: 20px;
+  margin-top: 6px;
+  font-size: 17px;
   color: var(--text-primary);
   letter-spacing: -0.03em;
 }
