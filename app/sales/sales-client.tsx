@@ -121,12 +121,14 @@ export default function SalesClient() {
   const [emailError, setEmailError] = useState("");
   const [connectedAccounts, setConnectedAccounts] = useState<{ id: string; email: string; provider: string }[]>([]);
   const [emailFromAccountId, setEmailFromAccountId] = useState<string>("");
-  const [thankYouSentIds, setThankYouSentIds] = useState<Set<number>>(new Set());
+  const [thankYouSentIds, setThankYouSentIds] = useState<Record<number, true>>({});
 
   useEffect(() => {
     try {
       const stored = JSON.parse(localStorage.getItem("sent_thankyou_sale_ids") || "[]") as number[];
-      setThankYouSentIds(new Set(stored));
+      const rec: Record<number, true> = {};
+      for (const id of stored) rec[id] = true;
+      setThankYouSentIds(rec);
     } catch { /* ignore */ }
   }, []);
 
@@ -561,31 +563,34 @@ export default function SalesClient() {
 
   function markThankYouSent(saleId: number) {
     setThankYouSentIds((prev) => {
-      const next = new Set(prev);
-      next.add(saleId);
-      try { localStorage.setItem("sent_thankyou_sale_ids", JSON.stringify([...next])); } catch { /* ignore */ }
+      const next = { ...prev, [saleId]: true as const };
+      try {
+        localStorage.setItem("sent_thankyou_sale_ids", JSON.stringify(Object.keys(next).map(Number)));
+      } catch { /* ignore */ }
       return next;
     });
   }
 
   async function sendBuyerEmail() {
     if (!selectedSale) return;
+    const saleId = selectedSale.id;
+    const buyerEmail = selectedSale.buyer_email;
     setSendingEmail(true);
     setEmailError("");
     try {
       const response = await fetch("/api/send-buyer-email", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ saleId: selectedSale.id, accountId: emailFromAccountId, subject: emailSubject, body: emailBody }),
+        body: JSON.stringify({ saleId, accountId: emailFromAccountId, subject: emailSubject, body: emailBody }),
       });
       const result = await response.json();
       if (!response.ok) {
         setEmailError(result.error || "Failed to send email");
         return;
       }
-      markThankYouSent(selectedSale.id);
+      markThankYouSent(saleId);
       closeEmailModal();
-      setMessage(`Email sent to ${selectedSale.buyer_email}`);
+      setMessage(`Email sent to ${buyerEmail}`);
     } catch (err) {
       setEmailError(err instanceof Error ? err.message : "Failed to send email");
     } finally {
@@ -968,7 +973,7 @@ export default function SalesClient() {
                                 </span>
                                 <div style={{ display: "flex", flexDirection: "column", gap: "2px", minWidth: 0 }}>
                                   <span className="truncate-text" title={sale.buyer_email || ""}>{sale.buyer_email || "—"}</span>
-                                  {sale.buyer_email && thankYouSentIds.has(sale.id) && (
+                                  {sale.buyer_email && thankYouSentIds[sale.id] && (
                                     <span style={{ fontSize: "10px", color: "#22c55e", fontWeight: 600, letterSpacing: "0.02em" }}>✓ Email sent</span>
                                   )}
                                 </div>
@@ -1156,7 +1161,7 @@ export default function SalesClient() {
                   type="button"
                   onClick={() => void openEmailModal()}
                 >
-                  {thankYouSentIds.has(selectedSale.id) ? "✓ Email Sent" : "Send Email"}
+                  {thankYouSentIds[selectedSale.id] ? "✓ Email Sent" : "Send Email"}
                 </button>
               ) : null}
               <button
