@@ -1233,58 +1233,50 @@ export default function SettingsClient() {
             <section className="hero-card connections-hero">
               <div>
                 <p className="section-tag">Clients</p>
-                <h3>Email template for buyers</h3>
+                <h3>Email templates for buyers</h3>
               </div>
               <div className="hero-meta">
+                <div><span className="hero-meta-label">Templates</span><strong>{templates.length}</strong></div>
                 <div><span className="hero-meta-label">Variables</span><strong>{TEMPLATE_VARS.length}</strong></div>
-                <div><span className="hero-meta-label">Storage</span><strong>Browser</strong></div>
               </div>
             </section>
 
-            <section className="table-card">
-              <div className="table-card-header">
+            {/* Template management */}
+            <section className="command-card connections-command-card">
+              <div className="command-header">
                 <div>
-                  <p className="section-tag">Template editor</p>
-                  <h4>Customise your thank-you email</h4>
+                  <p className="section-tag">Templates</p>
+                  <h4>Select or create a template</h4>
                 </div>
-                {templateSaved && (
-                  <span className="status-badge badge-sold" style={{ alignSelf: "center" }}>Saved</span>
-                )}
-              </div>
-              <div style={{ padding: "1.5rem", display: "flex", flexDirection: "column", gap: "1.25rem" }}>
-                <p style={{ color: "var(--muted)", fontSize: "0.875rem" }}>
-                  The active template is used when sending emails from the Sales and Clients pages. Click a variable chip to insert it at the cursor position in the body.
-                </p>
-
-                {/* Template selector */}
-                <div style={{ display: "flex", gap: "0.625rem", alignItems: "flex-end", flexWrap: "wrap" }}>
-                  <label className="field-label" style={{ flex: "1 1 180px", marginBottom: 0 }}>
-                    <span>Select template</span>
-                    <select
-                      className="command-input"
-                      value={activeTemplateId}
-                      onChange={(e) => switchTemplate(e.target.value)}
-                    >
-                      {templates.map((t) => (
-                        <option key={t.id} value={t.id}>{t.name}</option>
-                      ))}
-                    </select>
-                  </label>
-                  <button type="button" className="secondary-button" onClick={handleNewTemplate}>
-                    + New template
-                  </button>
+                <div style={{ display: "flex", gap: "0.5rem" }}>
+                  <button type="button" className="secondary-button" onClick={handleNewTemplate}>+ New</button>
                   <button
                     type="button"
                     className="ghost-button"
-                    style={{ color: templates.length <= 1 ? "var(--muted)" : "var(--danger, #ef4444)" }}
+                    style={{ color: templates.length <= 1 ? "var(--muted)" : "#ef4444" }}
                     disabled={templates.length <= 1}
                     onClick={handleDeleteTemplate}
                   >
                     Delete
                   </button>
                 </div>
-
-                {/* Template name */}
+              </div>
+              <div className="connections-form" style={{ paddingTop: 0 }}>
+                <p style={{ color: "var(--muted)", fontSize: "0.8125rem", gridColumn: "1 / -1" }}>
+                  The active template is used when sending emails from the Sales and Clients pages.
+                </p>
+                <label className="field-label">
+                  <span>Active template</span>
+                  <select
+                    className="command-input"
+                    value={activeTemplateId}
+                    onChange={(e) => switchTemplate(e.target.value)}
+                  >
+                    {templates.map((t) => (
+                      <option key={t.id} value={t.id}>{t.name}</option>
+                    ))}
+                  </select>
+                </label>
                 <label className="field-label">
                   <span>Template name</span>
                   <input
@@ -1292,11 +1284,24 @@ export default function SettingsClient() {
                     type="text"
                     value={templateName}
                     onChange={(e) => setTemplateName(e.target.value)}
-                    placeholder="e.g. Thank-you email, VIP buyer, Resale"
+                    placeholder="e.g. Thank-you, VIP buyer, Resale"
                   />
                 </label>
+              </div>
+            </section>
 
-                {/* Subject */}
+            {/* Editor */}
+            <section className="command-card connections-command-card">
+              <div className="command-header">
+                <div>
+                  <p className="section-tag">Editor</p>
+                  <h4>Subject &amp; body</h4>
+                </div>
+                {templateSaved && (
+                  <span className="status-badge badge-sold" style={{ alignSelf: "center" }}>Saved</span>
+                )}
+              </div>
+              <div style={{ padding: "0 1.5rem 1.5rem", display: "flex", flexDirection: "column", gap: "1.25rem" }}>
                 <label className="field-label">
                   <span>Subject line</span>
                   <input
@@ -1308,9 +1313,8 @@ export default function SettingsClient() {
                   />
                 </label>
 
-                {/* Variable chips */}
                 <div>
-                  <p className="section-tag" style={{ marginBottom: "0.5rem" }}>Insert variable into body</p>
+                  <p className="section-tag" style={{ marginBottom: "0.5rem" }}>Insert variable at cursor</p>
                   <div style={{ display: "flex", flexWrap: "wrap", gap: "0.375rem" }}>
                     {TEMPLATE_VARS.map((v) => (
                       <button
@@ -1327,7 +1331,6 @@ export default function SettingsClient() {
                   </div>
                 </div>
 
-                {/* Body */}
                 <label className="field-label">
                   <span>Email body</span>
                   <textarea
@@ -1347,10 +1350,7 @@ export default function SettingsClient() {
                   <button
                     type="button"
                     className="ghost-button"
-                    onClick={() => {
-                      setTemplateSubject(DEFAULT_SUBJECT);
-                      setTemplateBody(DEFAULT_BODY);
-                    }}
+                    onClick={() => { setTemplateSubject(DEFAULT_SUBJECT); setTemplateBody(DEFAULT_BODY); }}
                   >
                     Reset to default
                   </button>
@@ -1359,15 +1359,15 @@ export default function SettingsClient() {
             </section>
 
             {/* Live preview */}
-            <section className="table-card">
-              <div className="table-card-header">
+            <section className="command-card connections-command-card">
+              <div className="command-header">
                 <div>
                   <p className="section-tag">Preview</p>
                   <h4>How it looks for a real buyer</h4>
                 </div>
               </div>
-              <div style={{ padding: "1.5rem" }}>
-                <div style={{ marginBottom: "0.75rem", padding: "0.625rem 1rem", background: "var(--surface-2)", borderRadius: "6px", fontSize: "0.8125rem", color: "var(--muted)" }}>
+              <div style={{ padding: "0 1.5rem 1.5rem", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                <div style={{ padding: "0.625rem 1rem", background: "var(--surface-2)", borderRadius: "6px", fontSize: "0.8125rem", color: "var(--muted)", border: "1px solid var(--border)" }}>
                   <strong style={{ color: "var(--text-primary)" }}>Subject: </strong>
                   {interpolate(templateSubject, {
                     customer_name: "Jane Smith",
@@ -1386,6 +1386,7 @@ export default function SettingsClient() {
                   lineHeight: 1.7,
                   color: "var(--text-primary)",
                   background: "var(--surface-2)",
+                  border: "1px solid var(--border)",
                   borderRadius: "8px",
                   padding: "1rem 1.25rem",
                   margin: 0,
@@ -1393,8 +1394,8 @@ export default function SettingsClient() {
                 }}>
                   {templatePreview}
                 </pre>
-                <p style={{ marginTop: "0.75rem", fontSize: "0.75rem", color: "var(--muted)" }}>
-                  Sample data used for preview only. Real emails will contain the buyer&apos;s actual ticket details.
+                <p style={{ fontSize: "0.75rem", color: "var(--muted)" }}>
+                  Sample data only — real emails use the buyer&apos;s actual ticket details.
                 </p>
               </div>
             </section>
