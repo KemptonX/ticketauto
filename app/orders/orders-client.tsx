@@ -1109,6 +1109,10 @@ export default function OrdersClient() {
                             <strong>{formatCurrency(group.totalCost)}</strong>
                           </div>
                           <div className="inventory-metric-chip">
+                            <span>Revenue</span>
+                            <strong>{group.totalSold > 0 ? formatCurrency(group.totalSold) : "—"}</strong>
+                          </div>
+                          <div className="inventory-metric-chip">
                             <span>Profit</span>
                             <strong className={groupProfit != null && groupProfit > 0 ? "delta-up" : groupProfit != null && groupProfit < 0 ? "delta-down" : ""}>
                               {groupProfit != null ? formatCurrency(groupProfit) : "—"}
