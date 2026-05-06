@@ -57,6 +57,7 @@ export default function ClientsClient() {
   const [sentEmailLog, setSentEmailLog] = useState<SentEmailRecord[]>([]);
 
   const [emailTypeFilter, setEmailTypeFilter] = useState<"all" | "real" | "proxy">("all");
+  const [eventFilter, setEventFilter] = useState<"all" | "past" | "future">("all");
 
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [emailTargets, setEmailTargets] = useState<string[]>([]);
@@ -171,9 +172,17 @@ export default function ClientsClient() {
         (emailTypeFilter === "real" && score === 0) ||
         (emailTypeFilter === "proxy" && score > 0);
 
-      return matchesSearch && matchesContact && matchesEmailType;
+      let matchesEvent = true;
+      if (eventFilter !== "all") {
+        const today = new Date().toISOString().slice(0, 10);
+        const lastEventDate = c.sales[0]?.event_date ?? null;
+        if (eventFilter === "past") matchesEvent = !!lastEventDate && lastEventDate < today;
+        if (eventFilter === "future") matchesEvent = !!lastEventDate && lastEventDate >= today;
+      }
+
+      return matchesSearch && matchesContact && matchesEmailType && matchesEvent;
     });
-  }, [clients, search, filterType, emailTypeFilter, sentClientEmails]);
+  }, [clients, search, filterType, emailTypeFilter, eventFilter, sentClientEmails]);
 
   const selectedClient = selectedEmail ? clients.find((c) => c.email === selectedEmail) ?? null : null;
 
@@ -396,7 +405,7 @@ export default function ClientsClient() {
                 Sent ({sentCount})
               </button>
             </div>
-            <button type="button" className="ghost-button" onClick={() => { setSearch(""); setFilterType("all"); setEmailTypeFilter("all"); }}>
+            <button type="button" className="ghost-button" onClick={() => { setSearch(""); setFilterType("all"); setEmailTypeFilter("all"); setEventFilter("all"); }}>
               Reset
             </button>
           </div>
@@ -425,6 +434,14 @@ export default function ClientsClient() {
                 <option value="all">All clients</option>
                 <option value="notsent">Not yet emailed</option>
                 <option value="sent">Previously emailed</option>
+              </select>
+            </label>
+            <label className="filter-field">
+              <span className="filter-label">Event timing</span>
+              <select className="field" value={eventFilter} onChange={(e) => setEventFilter(e.target.value as "all" | "past" | "future")}>
+                <option value="all">All events</option>
+                <option value="future">Upcoming events</option>
+                <option value="past">Past events</option>
               </select>
             </label>
           </div>
