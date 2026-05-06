@@ -38,8 +38,8 @@ type Order = {
 };
 
 
-const statusOptions = ["All", "Unlisted", "Listed", "Sold", "Problem / Missing"];
-const quickStatusOptions = ["Unlisted", "Listed", "Sold", "Problem / Missing"];
+const statusOptions = ["All", "Unlisted", "Listed", "Partially Sold", "Sold", "Problem / Missing"];
+const quickStatusOptions = ["Unlisted", "Listed", "Partially Sold", "Sold", "Problem / Missing"];
 const sourceOptions = [
   "All",
   "ticketmaster_direct",
@@ -63,6 +63,7 @@ type OrderGroup = {
   totalCost: number;
   totalSold: number;
   soldCount: number;
+  partiallySoldCount: number;
   listedCount: number;
   unlistedCount: number;
   problemCount: number;
@@ -145,6 +146,7 @@ const navItems = [
 
 export default function OrdersClient() {
   const [orders, setOrders] = useState<Order[]>([]);
+  const [soldQtyByOrderId, setSoldQtyByOrderId] = useState<Map<number, number>>(new Map());
   const [accounts, setAccounts] = useState<string[]>([]);
   const [syncLog, setSyncLog] = useState<SyncLogEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -188,6 +190,17 @@ export default function OrdersClient() {
     const { data, error } = await (archived
       ? query.eq("listing_status", "Archived")
       : query.or("listing_status.is.null,listing_status.neq.Archived"));
+
+    // Fetch matched sales to get actual qty_sold per order
+    const { data: salesData } = await supabase
+      .from("sales")
+      .select("inventory_order_id, qty_sold")
+      .not("inventory_order_id", "is", null);
+    const qtyMap = new Map<number, number>();
+    for (const s of (salesData ?? []) as { inventory_order_id: number; qty_sold: number | null }[]) {
+      qtyMap.set(s.inventory_order_id, (qtyMap.get(s.inventory_order_id) ?? 0) + (s.qty_sold ?? 0));
+    }
+    setSoldQtyByOrderId(qtyMap);
 
     if (error) {
       setMessage(error.message);
@@ -724,6 +737,7 @@ export default function OrdersClient() {
           totalCost: 0,
           totalSold: 0,
           soldCount: 0,
+          partiallySoldCount: 0,
           listedCount: 0,
           unlistedCount: 0,
           problemCount: 0,
@@ -744,7 +758,9 @@ export default function OrdersClient() {
 
       const status = order.listing_status;
       const qty = order.qty_bought ?? 0;
-      if (status === "Sold") group.soldCount += qty;
+      const actualSold = soldQtyByOrderId.get(order.id) ?? qty;
+      if (status === "Sold") group.soldCount += actualSold;
+      else if (status === "Partially Sold") { group.soldCount += actualSold; group.partiallySoldCount += 1; }
       else if (status === "Listed") group.listedCount += qty;
       else if (status === "Problem / Missing") group.problemCount += qty;
       else group.unlistedCount += qty;
@@ -758,7 +774,7 @@ export default function OrdersClient() {
       if (b.dateValue) return 1;
       return a.eventName.localeCompare(b.eventName);
     });
-  }, [filteredOrders, sortBy]);
+  }, [filteredOrders, sortBy, soldQtyByOrderId]);
 
   const selectedOrder =
     orders.find((order) => order.id === selectedOrderId) ?? null;
@@ -1117,6 +1133,7 @@ export default function OrdersClient() {
                             </a>
                             <span className="status-badge status-static status-unlisted">Unlisted {group.unlistedCount}</span>
                             <span className="status-badge status-static status-listed">Listed {group.listedCount}</span>
+                            {group.partiallySoldCount > 0 && <span className="status-badge status-static status-partial">Partial {group.partiallySoldCount}</span>}
                             <span className="status-badge status-static status-sold">Sold {group.soldCount}</span>
                           </div>
                         </div>

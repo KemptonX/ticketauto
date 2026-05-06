@@ -1468,6 +1468,13 @@ select {
   box-shadow: 0 0 18px rgba(40, 199, 111, 0.14);
 }
 
+.status-partial {
+  background: rgba(245, 158, 11, 0.18);
+  border-color: rgba(245, 158, 11, 0.42);
+  color: #fde68a;
+  box-shadow: 0 0 18px rgba(245, 158, 11, 0.14);
+}
+
 .status-problem {
   background: rgba(255, 82, 82, 0.18);
   border-color: rgba(255, 82, 82, 0.42);
