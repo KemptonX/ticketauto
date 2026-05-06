@@ -133,8 +133,6 @@ export default function ClientsClient() {
     const cut = new Date(Date.now() - THIRTY_DAYS).toISOString();
     return clients.filter((c) => c.lastPurchaseAt && c.lastPurchaseAt > cut).length;
   }, [clients]);
-  const totalRevenue = clients.reduce((s, c) => s + c.totalSpend, 0);
-
   async function loadAccountsAndOpenModal(targets: string[], subject: string, body: string) {
     setEmailTargets(targets);
     setEmailSubject(subject);
@@ -275,7 +273,7 @@ export default function ClientsClient() {
           <div className="hero-meta">
             <div><span className="hero-meta-label">Total clients</span><strong>{clients.length}</strong></div>
             <div><span className="hero-meta-label">Repeat buyers</span><strong style={{ color: "#22c55e" }}>{repeatCount}</strong></div>
-            <div><span className="hero-meta-label">Total revenue</span><strong>{formatCurrency(totalRevenue)}</strong></div>
+            <div><span className="hero-meta-label">Active (30 days)</span><strong style={{ color: "#a78bfa" }}>{recentCount}</strong></div>
           </div>
         </section>
 
@@ -295,11 +293,6 @@ export default function ClientsClient() {
             <p className="kpi-label">Active (30 days)</p>
             <strong className="kpi-value" style={{ color: "#a78bfa" }}>{recentCount}</strong>
             <span className="kpi-trend">bought in the last month</span>
-          </article>
-          <article className="kpi-card">
-            <p className="kpi-label">Total revenue</p>
-            <strong className="kpi-value">{formatCurrency(totalRevenue)}</strong>
-            <span className="kpi-trend">across all sales</span>
           </article>
         </section>
 

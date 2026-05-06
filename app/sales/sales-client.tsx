@@ -121,6 +121,14 @@ export default function SalesClient() {
   const [emailError, setEmailError] = useState("");
   const [connectedAccounts, setConnectedAccounts] = useState<{ id: string; email: string; provider: string }[]>([]);
   const [emailFromAccountId, setEmailFromAccountId] = useState<string>("");
+  const [thankYouSentIds, setThankYouSentIds] = useState<Set<number>>(new Set());
+
+  useEffect(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem("sent_thankyou_sale_ids") || "[]") as number[];
+      setThankYouSentIds(new Set(stored));
+    } catch { /* ignore */ }
+  }, []);
 
   useEffect(() => {
     async function init() {
@@ -551,6 +559,15 @@ export default function SalesClient() {
     setEmailFromAccountId("");
   }
 
+  function markThankYouSent(saleId: number) {
+    setThankYouSentIds((prev) => {
+      const next = new Set(prev);
+      next.add(saleId);
+      try { localStorage.setItem("sent_thankyou_sale_ids", JSON.stringify([...next])); } catch { /* ignore */ }
+      return next;
+    });
+  }
+
   async function sendBuyerEmail() {
     if (!selectedSale) return;
     setSendingEmail(true);
@@ -566,6 +583,7 @@ export default function SalesClient() {
         setEmailError(result.error || "Failed to send email");
         return;
       }
+      markThankYouSent(selectedSale.id);
       closeEmailModal();
       setMessage(`Email sent to ${selectedSale.buyer_email}`);
     } catch (err) {
@@ -948,8 +966,11 @@ export default function SalesClient() {
                                 <span className="truncate-text" title={sale.account_email || ""}>
                                   {sale.account_email || "No account"}
                                 </span>
-                                <span className="truncate-text" title={sale.buyer_email || ""}>
-                                  {sale.buyer_email || "—"}
+                                <span className="truncate-text" title={sale.buyer_email || ""} style={{ display: "flex", alignItems: "center", gap: "0.35rem", flexWrap: "wrap" }}>
+                                  <span>{sale.buyer_email || "—"}</span>
+                                  {sale.buyer_email && thankYouSentIds.has(sale.id) && (
+                                    <span className="status-badge badge-sold" style={{ fontSize: "10px", padding: "1px 6px", whiteSpace: "nowrap" }}>✓ Sent</span>
+                                  )}
                                 </span>
                                 <strong className="inventory-cost-value">
                                   {formatCurrency(sale.payout_total ?? sale.sale_total)}
@@ -1135,7 +1156,7 @@ export default function SalesClient() {
                   type="button"
                   onClick={() => void openEmailModal()}
                 >
-                  Send Email
+                  {thankYouSentIds.has(selectedSale.id) ? "✓ Email Sent" : "Send Email"}
                 </button>
               ) : null}
               <button
