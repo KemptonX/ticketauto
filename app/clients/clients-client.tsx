@@ -41,6 +41,12 @@ type Client = {
 
 type ConnectedAccount = { id: string; email: string; provider: string };
 
+type SentEmailRecord = {
+  to: string;
+  subject: string;
+  sentAt: string;
+};
+
 export default function ClientsClient() {
   const [sales, setSales] = useState<SaleRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -48,7 +54,7 @@ export default function ClientsClient() {
   const [filterType, setFilterType] = useState<"all" | "sent" | "notsent">("all");
   const [selectedEmail, setSelectedEmail] = useState<string | null>(null);
   const [message, setMessage] = useState("");
-  const [sentClientEmails, setSentClientEmails] = useState<Record<string, true>>({});
+  const [sentEmailLog, setSentEmailLog] = useState<SentEmailRecord[]>([]);
 
   const [emailTypeFilter, setEmailTypeFilter] = useState<"all" | "real" | "proxy">("all");
 
@@ -68,19 +74,34 @@ export default function ClientsClient() {
 
   useEffect(() => {
     try {
-      const stored = JSON.parse(localStorage.getItem("sent_client_emails") || "[]") as string[];
-      const rec: Record<string, true> = {};
-      for (const email of stored) rec[email] = true;
-      setSentClientEmails(rec);
+      const raw = localStorage.getItem("sent_client_email_log");
+      if (raw) {
+        setSentEmailLog(JSON.parse(raw) as SentEmailRecord[]);
+        return;
+      }
+      // migrate old boolean list
+      const old = localStorage.getItem("sent_client_emails");
+      if (old) {
+        const emails = JSON.parse(old) as string[];
+        const migrated: SentEmailRecord[] = emails.map((e) => ({ to: e, subject: "", sentAt: "" }));
+        setSentEmailLog(migrated);
+      }
     } catch { /* ignore */ }
   }, []);
 
-  function markEmailsSent(emails: string[]) {
-    setSentClientEmails((prev) => {
-      const next = { ...prev };
-      for (const e of emails) next[e.toLowerCase()] = true;
+  const sentClientEmails = useMemo<Record<string, true>>(() => {
+    const rec: Record<string, true> = {};
+    for (const r of sentEmailLog) rec[r.to.toLowerCase()] = true;
+    return rec;
+  }, [sentEmailLog]);
+
+  function logEmailsSent(emails: string[], subject: string) {
+    setSentEmailLog((prev) => {
+      const sentAt = new Date().toISOString();
+      const newEntries: SentEmailRecord[] = emails.map((e) => ({ to: e.toLowerCase(), subject, sentAt }));
+      const next = [...prev, ...newEntries];
       try {
-        localStorage.setItem("sent_client_emails", JSON.stringify(Object.keys(next)));
+        localStorage.setItem("sent_client_email_log", JSON.stringify(next));
       } catch { /* ignore */ }
       return next;
     });
@@ -158,6 +179,7 @@ export default function ClientsClient() {
 
   const sentCount = useMemo(() => clients.filter((c) => !!sentClientEmails[c.email.toLowerCase()]).length, [clients, sentClientEmails]);
   const notSentCount = clients.length - sentCount;
+  const totalEmailsSent = sentEmailLog.length;
 
   async function loadAccountsAndOpenModal(targets: string[], subject: string, body: string) {
     setEmailTargets(targets);
@@ -247,7 +269,7 @@ export default function ClientsClient() {
     }
 
     const successTargets = emailTargets.filter((t) => !errors.some((e) => e.startsWith(t)));
-    if (successTargets.length > 0) markEmailsSent(successTargets);
+    if (successTargets.length > 0) logEmailsSent(successTargets, emailSubject);
 
     setSendingEmail(false);
 
@@ -314,8 +336,8 @@ export default function ClientsClient() {
           </div>
           <div className="hero-meta">
             <div><span className="hero-meta-label">Total clients</span><strong>{clients.length}</strong></div>
-            <div><span className="hero-meta-label">Emailed</span><strong style={{ color: "#22c55e" }}>{sentCount}</strong></div>
-            <div><span className="hero-meta-label">Not emailed</span><strong style={{ color: "#f59e0b" }}>{notSentCount}</strong></div>
+            <div><span className="hero-meta-label">Emails sent</span><strong style={{ color: "#22c55e" }}>{totalEmailsSent}</strong></div>
+            <div><span className="hero-meta-label">Not yet contacted</span><strong style={{ color: "#f59e0b" }}>{notSentCount}</strong></div>
           </div>
         </section>
 
@@ -327,14 +349,14 @@ export default function ClientsClient() {
             <span className="kpi-trend">unique buyer emails</span>
           </article>
           <article className="kpi-card">
-            <p className="kpi-label">Emailed</p>
-            <strong className="kpi-value" style={{ color: "#22c55e" }}>{sentCount}</strong>
-            <span className="kpi-trend">initial email sent</span>
+            <p className="kpi-label">Total emails sent</p>
+            <strong className="kpi-value" style={{ color: "#22c55e" }}>{totalEmailsSent}</strong>
+            <span className="kpi-trend">across all clients</span>
           </article>
           <article className="kpi-card">
-            <p className="kpi-label">Not emailed</p>
-            <strong className="kpi-value" style={{ color: "#f59e0b" }}>{notSentCount}</strong>
-            <span className="kpi-trend">yet to contact</span>
+            <p className="kpi-label">Clients contacted</p>
+            <strong className="kpi-value" style={{ color: "#a78bfa" }}>{sentCount}</strong>
+            <span className="kpi-trend">{notSentCount} yet to contact</span>
           </article>
         </section>
 
@@ -545,6 +567,30 @@ export default function ClientsClient() {
                 ))}
               </div>
             </section>
+
+            {(() => {
+              const clientLog = sentEmailLog.filter((r) => r.to === selectedClient.email.toLowerCase());
+              if (clientLog.length === 0) return null;
+              return (
+                <section style={{ marginTop: "1.25rem" }}>
+                  <p className="section-tag" style={{ marginBottom: "0.5rem" }}>Email history ({clientLog.length})</p>
+                  <div className="inventory-ticket-stack">
+                    <div className="inventory-ticket-header">
+                      <span>Subject</span>
+                      <span style={{ textAlign: "right" }}>Sent</span>
+                    </div>
+                    {[...clientLog].reverse().map((r, i) => (
+                      <div key={i} className="inventory-ticket-row">
+                        <div className="inventory-ticket-seat" style={{ gridColumn: "1 / -1" }}>
+                          <strong style={{ fontSize: "12px" }}>{r.subject || "(no subject)"}</strong>
+                          <span style={{ fontSize: "11px" }}>{r.sentAt ? formatDate(r.sentAt) : "—"}{r.sentAt ? ` · ${timeAgo(r.sentAt)}` : ""}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              );
+            })()}
           </div>
         </aside>
       )}
