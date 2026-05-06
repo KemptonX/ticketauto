@@ -502,7 +502,7 @@ export default function DeskClient() {
             <span className="kpi-accent" />
             <p>Projected payout</p>
             <strong>{formatCurrency(metrics.thisMonthPayout)}</strong>
-            <span>from sold April events</span>
+            <span>from sold {new Date().toLocaleString("en-GB", { month: "long" })} events</span>
           </article>
         </section>
 
