@@ -746,15 +746,19 @@ export default function ClientsClient() {
 
 function parseEventDate(value: string | null): Date | null {
   if (!value) return null;
-  const normalized = value.replace(/\s*\|\s*/g, " ").replace(/,\s*/g, ", ").trim();
-  const direct = new Date(normalized);
-  if (!Number.isNaN(direct.getTime())) return direct;
-  // "Mon 14 Jun 2025" or "Jun 14 2025"
-  const mf = normalized.match(/([A-Za-z]+)\s+(\d{1,2})\s+(\d{4})/);
-  if (mf) { const d = new Date(`${mf[1]} ${mf[2]} ${mf[3]}`); if (!Number.isNaN(d.getTime())) return d; }
+  // strip leading weekday name e.g. "Sat " or "Saturday " so "Sat 14 Jun 2025" → "14 Jun 2025"
+  const stripped = value.replace(/^[A-Za-z]{2,9}\s+(?=\d)/, "").trim();
+  // ISO: "2025-06-14"
+  if (/^\d{4}-\d{2}-\d{2}/.test(stripped)) {
+    const [y, m, d] = stripped.slice(0, 10).split("-").map(Number);
+    return new Date(y, m - 1, d);
+  }
   // "14 Jun 2025"
-  const dm = normalized.match(/(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})/);
+  const dm = stripped.match(/^(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})/);
   if (dm) { const d = new Date(`${dm[2]} ${dm[1]} ${dm[3]}`); if (!Number.isNaN(d.getTime())) return d; }
+  // "Jun 14 2025"
+  const mf = stripped.match(/^([A-Za-z]+)\s+(\d{1,2})\s+(\d{4})/);
+  if (mf) { const d = new Date(`${mf[1]} ${mf[2]} ${mf[3]}`); if (!Number.isNaN(d.getTime())) return d; }
   return null;
 }
 
