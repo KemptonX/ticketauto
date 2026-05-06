@@ -356,7 +356,12 @@ export default function ClientsClient() {
           <article className="kpi-card">
             <p className="kpi-label">Clients contacted</p>
             <strong className="kpi-value" style={{ color: "#a78bfa" }}>{sentCount}</strong>
-            <span className="kpi-trend">{notSentCount} yet to contact</span>
+            <span className="kpi-trend">have received an email</span>
+          </article>
+          <article className="kpi-card">
+            <p className="kpi-label">Uncontacted</p>
+            <strong className="kpi-value" style={{ color: "#f59e0b" }}>{notSentCount}</strong>
+            <span className="kpi-trend">yet to receive first email</span>
           </article>
         </section>
 
