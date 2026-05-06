@@ -746,20 +746,26 @@ export default function ClientsClient() {
 
 function parseEventDate(value: string | null): Date | null {
   if (!value) return null;
-  // strip leading weekday name e.g. "Sat " or "Saturday " so "Sat 14 Jun 2025" → "14 Jun 2025"
-  const stripped = value.replace(/^[A-Za-z]{2,9}\s+(?=\d)/, "").trim();
+  const MONTHS = ["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"];
   // ISO: "2025-06-14"
-  if (/^\d{4}-\d{2}-\d{2}/.test(stripped)) {
-    const [y, m, d] = stripped.slice(0, 10).split("-").map(Number);
+  if (/^\d{4}-\d{2}-\d{2}/.test(value)) {
+    const [y, m, d] = value.slice(0, 10).split("-").map(Number);
     return new Date(y, m - 1, d);
   }
-  // "14 Jun 2025"
-  const dm = stripped.match(/^(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})/);
-  if (dm) { const d = new Date(`${dm[2]} ${dm[1]} ${dm[3]}`); if (!Number.isNaN(d.getTime())) return d; }
-  // "Jun 14 2025"
-  const mf = stripped.match(/^([A-Za-z]+)\s+(\d{1,2})\s+(\d{4})/);
-  if (mf) { const d = new Date(`${mf[1]} ${mf[2]} ${mf[3]}`); if (!Number.isNaN(d.getTime())) return d; }
-  return null;
+  // Day-first (handles leading weekday too): "Sat 14 Jun 2025" / "14 Jun 2025" / "14 June 2025"
+  const dayFirst = value.match(/(\d{1,2})\s+([A-Za-z]{3,9})\s+(\d{4})/);
+  if (dayFirst) {
+    const mi = MONTHS.indexOf(dayFirst[2].slice(0, 3).toLowerCase());
+    if (mi !== -1) return new Date(Number(dayFirst[3]), mi, Number(dayFirst[1]));
+  }
+  // Month-first: "June 14 2025" / "Jun 14, 2025"
+  const monthFirst = value.match(/([A-Za-z]{3,9})\s+(\d{1,2})[,\s]+(\d{4})/);
+  if (monthFirst) {
+    const mi = MONTHS.indexOf(monthFirst[1].slice(0, 3).toLowerCase());
+    if (mi !== -1) return new Date(Number(monthFirst[3]), mi, Number(monthFirst[2]));
+  }
+  const native = new Date(value);
+  return Number.isNaN(native.getTime()) ? null : native;
 }
 
 function formatDate(iso: string) {
