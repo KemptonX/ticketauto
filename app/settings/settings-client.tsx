@@ -5,6 +5,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "re
 import { useSearchParams } from "next/navigation";
 import { supabase } from "@/src/lib/supabase";
 import { CURRENCY_OPTIONS, getCurrencyCode, setCurrencyCode, formatCurrency } from "@/src/lib/currency";
+import { TEMPLATE_VARS, DEFAULT_SUBJECT, DEFAULT_BODY, loadTemplate, saveTemplate, interpolate } from "@/src/lib/email-template";
 import { SidebarLogo, NavIcon, SidebarFooter } from "@/app/components/nav-icons";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -371,11 +372,12 @@ export default function SettingsClient() {
   const searchParams = useSearchParams();
 
   // Tab
-  const [activeTab, setActiveTab] = useState<"connections" | "import" | "currency">(() => {
+  const [activeTab, setActiveTab] = useState<"connections" | "import" | "currency" | "clients">(() => {
     if (typeof window !== "undefined") {
       const t = new URLSearchParams(window.location.search).get("tab");
       if (t === "import") return "import";
       if (t === "currency") return "currency";
+      if (t === "clients") return "clients";
     }
     return "connections";
   });
@@ -390,6 +392,50 @@ export default function SettingsClient() {
     setCurrencySaved(true);
     setTimeout(() => setCurrencySaved(false), 2000);
   }
+
+  // ── Client email template state ──
+  const [templateSubject, setTemplateSubject] = useState(DEFAULT_SUBJECT);
+  const [templateBody, setTemplateBody] = useState(DEFAULT_BODY);
+  const [templateSaved, setTemplateSaved] = useState(false);
+  const bodyTextareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    const t = loadTemplate();
+    setTemplateSubject(t.subject);
+    setTemplateBody(t.body);
+  }, []);
+
+  function handleSaveTemplate() {
+    saveTemplate(templateSubject, templateBody);
+    setTemplateSaved(true);
+    setTimeout(() => setTemplateSaved(false), 2000);
+  }
+
+  function insertVariable(key: string) {
+    const ta = bodyTextareaRef.current;
+    if (!ta) {
+      setTemplateBody((prev) => prev + key);
+      return;
+    }
+    const start = ta.selectionStart;
+    const end = ta.selectionEnd;
+    const next = templateBody.slice(0, start) + key + templateBody.slice(end);
+    setTemplateBody(next);
+    requestAnimationFrame(() => {
+      ta.focus();
+      ta.setSelectionRange(start + key.length, start + key.length);
+    });
+  }
+
+  const templatePreview = interpolate(templateBody, {
+    customer_name: "Jane Smith",
+    event_name: "Coldplay – Music of the Spheres",
+    event_date: "Sat 14 Jun 2025",
+    venue: "Wembley Stadium",
+    section: "Block 201",
+    seats: "Row M, Seats 12–14",
+    quantity: "3",
+  });
 
   // ── Connections state ──
   const [accounts, setAccounts] = useState<GmailAccount[]>([]);
@@ -768,6 +814,9 @@ export default function SettingsClient() {
             <button type="button" className={`toggle-btn${activeTab === "currency" ? " toggle-btn-active" : ""}`} onClick={() => setActiveTab("currency")}>
               Currency
             </button>
+            <button type="button" className={`toggle-btn${activeTab === "clients" ? " toggle-btn-active" : ""}`} onClick={() => setActiveTab("clients")}>
+              Clients
+            </button>
           </div>
         </section>
 
@@ -1126,6 +1175,140 @@ export default function SettingsClient() {
                 </div>
               </section>
             )}
+          </>
+        )}
+
+        {/* ── Clients tab ── */}
+        {activeTab === "clients" && (
+          <>
+            <section className="hero-card connections-hero">
+              <div>
+                <p className="section-tag">Clients</p>
+                <h3>Email template for buyers</h3>
+              </div>
+              <div className="hero-meta">
+                <div><span className="hero-meta-label">Variables</span><strong>{TEMPLATE_VARS.length}</strong></div>
+                <div><span className="hero-meta-label">Storage</span><strong>Browser</strong></div>
+              </div>
+            </section>
+
+            <section className="table-card">
+              <div className="table-card-header">
+                <div>
+                  <p className="section-tag">Template editor</p>
+                  <h4>Customise your thank-you email</h4>
+                </div>
+                {templateSaved && (
+                  <span className="status-badge badge-sold" style={{ alignSelf: "center" }}>Saved</span>
+                )}
+              </div>
+              <div style={{ padding: "1.5rem", display: "flex", flexDirection: "column", gap: "1.25rem" }}>
+                <p style={{ color: "var(--muted)", fontSize: "0.875rem" }}>
+                  This template is used when sending thank-you emails from the Sales and Clients pages. Click a variable chip to insert it at the cursor position in the body.
+                </p>
+
+                {/* Subject */}
+                <label className="field-label">
+                  <span>Subject line</span>
+                  <input
+                    className="command-input"
+                    type="text"
+                    value={templateSubject}
+                    onChange={(e) => setTemplateSubject(e.target.value)}
+                    placeholder="Your tickets – {{event_name}}"
+                  />
+                </label>
+
+                {/* Variable chips */}
+                <div>
+                  <p className="section-tag" style={{ marginBottom: "0.5rem" }}>Insert variable into body</p>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "0.375rem" }}>
+                    {TEMPLATE_VARS.map((v) => (
+                      <button
+                        key={v.key}
+                        type="button"
+                        className="secondary-button"
+                        style={{ fontSize: "0.75rem", padding: "0.25rem 0.625rem", fontFamily: "monospace" }}
+                        title={v.description}
+                        onClick={() => insertVariable(v.key)}
+                      >
+                        {v.key}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Body */}
+                <label className="field-label">
+                  <span>Email body</span>
+                  <textarea
+                    ref={bodyTextareaRef}
+                    className="command-input"
+                    value={templateBody}
+                    onChange={(e) => setTemplateBody(e.target.value)}
+                    rows={14}
+                    style={{ resize: "vertical", fontFamily: "monospace", fontSize: "0.8125rem", lineHeight: 1.6 }}
+                  />
+                </label>
+
+                <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
+                  <button type="button" className="primary-button" onClick={handleSaveTemplate}>
+                    Save template
+                  </button>
+                  <button
+                    type="button"
+                    className="ghost-button"
+                    onClick={() => {
+                      setTemplateSubject(DEFAULT_SUBJECT);
+                      setTemplateBody(DEFAULT_BODY);
+                    }}
+                  >
+                    Reset to default
+                  </button>
+                </div>
+              </div>
+            </section>
+
+            {/* Live preview */}
+            <section className="table-card">
+              <div className="table-card-header">
+                <div>
+                  <p className="section-tag">Preview</p>
+                  <h4>How it looks for a real buyer</h4>
+                </div>
+              </div>
+              <div style={{ padding: "1.5rem" }}>
+                <div style={{ marginBottom: "0.75rem", padding: "0.625rem 1rem", background: "var(--surface-2)", borderRadius: "6px", fontSize: "0.8125rem", color: "var(--muted)" }}>
+                  <strong style={{ color: "var(--text-primary)" }}>Subject: </strong>
+                  {interpolate(templateSubject, {
+                    customer_name: "Jane Smith",
+                    event_name: "Coldplay – Music of the Spheres",
+                    event_date: "Sat 14 Jun 2025",
+                    venue: "Wembley Stadium",
+                    section: "Block 201",
+                    seats: "Row M, Seats 12–14",
+                    quantity: "3",
+                  })}
+                </div>
+                <pre style={{
+                  whiteSpace: "pre-wrap",
+                  wordBreak: "break-word",
+                  fontSize: "0.8125rem",
+                  lineHeight: 1.7,
+                  color: "var(--text-primary)",
+                  background: "var(--surface-2)",
+                  borderRadius: "8px",
+                  padding: "1rem 1.25rem",
+                  margin: 0,
+                  fontFamily: "inherit",
+                }}>
+                  {templatePreview}
+                </pre>
+                <p style={{ marginTop: "0.75rem", fontSize: "0.75rem", color: "var(--muted)" }}>
+                  Sample data used for preview only. Real emails will contain the buyer&apos;s actual ticket details.
+                </p>
+              </div>
+            </section>
           </>
         )}
 

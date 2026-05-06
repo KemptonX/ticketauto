@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { supabase } from "@/src/lib/supabase";
 import { formatCurrency } from "@/src/lib/currency";
+import { loadTemplate, interpolate } from "@/src/lib/email-template";
 import { SidebarLogo, NavIcon, SidebarFooter } from "@/app/components/nav-icons";
 
 type Sale = {
@@ -534,10 +535,19 @@ export default function SalesClient() {
   async function openEmailModal() {
     if (!selectedSale) return;
     const seatLabel = formatSeatLabel(selectedSale.row, selectedSale.seat_from, selectedSale.seat_to);
-    setEmailSubject(`Your tickets – ${selectedSale.event_name || "Event"}`);
-    setEmailBody(
-      `Hi,\n\nHere are your ticket details for the upcoming event:\n\nEvent: ${selectedSale.event_name || "—"}\nVenue: ${selectedSale.venue || "—"}\nDate: ${selectedSale.event_date || "—"}\nSection: ${selectedSale.section || "—"}\n${seatLabel}\nQuantity: ${selectedSale.qty_sold ?? "—"}\n\nIf you have any questions, please don't hesitate to get in touch.\n\nThanks`,
-    );
+    const customerName = selectedSale.buyer_email?.split("@")[0] ?? "";
+    const tmpl = loadTemplate();
+    const vars = {
+      customer_name: customerName,
+      event_name: selectedSale.event_name ?? "",
+      event_date: formatEventDate(selectedSale.event_date),
+      venue: selectedSale.venue ?? "",
+      section: selectedSale.section ?? "",
+      seats: seatLabel,
+      quantity: selectedSale.qty_sold ?? "",
+    };
+    setEmailSubject(interpolate(tmpl.subject, vars));
+    setEmailBody(interpolate(tmpl.body, vars));
     setEmailError("");
 
     const { data } = await supabase

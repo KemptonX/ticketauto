@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { supabase } from "@/src/lib/supabase";
 import { formatCurrency } from "@/src/lib/currency";
+import { loadTemplate, interpolate } from "@/src/lib/email-template";
 import { SidebarLogo, NavIcon, SidebarFooter } from "@/app/components/nav-icons";
 
 const navItems = [
@@ -154,19 +155,32 @@ export default function ClientsClient() {
   }
 
   function openSingleEmail(client: Client) {
+    const tmpl = loadTemplate();
+    const lastSale = client.sales[0];
+    const customerName = client.email.split("@")[0];
+    const vars = {
+      customer_name: customerName,
+      event_name: lastSale?.event_name ?? "",
+      event_date: lastSale?.event_date ?? "",
+      venue: "",
+      section: "",
+      seats: "",
+      quantity: lastSale?.qty_sold ?? "",
+    };
     void loadAccountsAndOpenModal(
       [client.email],
-      `Thank you for your purchase`,
-      `Hi,\n\nThank you so much for your recent ticket purchase. We really appreciate your support.\n\nIf you have any questions about your tickets or need any help, please don't hesitate to get in touch.\n\nThanks`,
+      interpolate(tmpl.subject, vars),
+      interpolate(tmpl.body, vars),
     );
   }
 
   function openBulkEmail() {
     const targets = filteredClients.map((c) => c.email);
+    const tmpl = loadTemplate();
     void loadAccountsAndOpenModal(
       targets,
-      ``,
-      `Hi,\n\n`,
+      tmpl.subject,
+      tmpl.body,
     );
   }
 
