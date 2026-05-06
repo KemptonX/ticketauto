@@ -41,15 +41,14 @@ type Client = {
 
 type ConnectedAccount = { id: string; email: string; provider: string };
 
-const THIRTY_DAYS = 30 * 24 * 60 * 60 * 1000;
-
 export default function ClientsClient() {
   const [sales, setSales] = useState<SaleRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [filterType, setFilterType] = useState<"all" | "repeat" | "recent">("all");
+  const [filterType, setFilterType] = useState<"all" | "sent" | "notsent">("all");
   const [selectedEmail, setSelectedEmail] = useState<string | null>(null);
   const [message, setMessage] = useState("");
+  const [sentClientEmails, setSentClientEmails] = useState<Record<string, true>>({});
 
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [emailTargets, setEmailTargets] = useState<string[]>([]);
@@ -64,6 +63,26 @@ export default function ClientsClient() {
   useEffect(() => {
     void loadSales();
   }, []);
+
+  useEffect(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem("sent_client_emails") || "[]") as string[];
+      const rec: Record<string, true> = {};
+      for (const email of stored) rec[email] = true;
+      setSentClientEmails(rec);
+    } catch { /* ignore */ }
+  }, []);
+
+  function markEmailsSent(emails: string[]) {
+    setSentClientEmails((prev) => {
+      const next = { ...prev };
+      for (const e of emails) next[e.toLowerCase()] = true;
+      try {
+        localStorage.setItem("sent_client_emails", JSON.stringify(Object.keys(next)));
+      } catch { /* ignore */ }
+      return next;
+    });
+  }
 
   async function loadSales() {
     setLoading(true);
@@ -111,29 +130,26 @@ export default function ClientsClient() {
   }, [sales]);
 
   const filteredClients = useMemo(() => {
-    const recentCutoff = new Date(Date.now() - THIRTY_DAYS).toISOString();
     return clients.filter((c) => {
       const matchesSearch =
         !search.trim() ||
         c.email.toLowerCase().includes(search.toLowerCase()) ||
         c.sales.some((s) => s.event_name?.toLowerCase().includes(search.toLowerCase()));
 
+      const hasSent = !!sentClientEmails[c.email.toLowerCase()];
       const matchesFilter =
         filterType === "all" ||
-        (filterType === "repeat" && c.purchaseCount > 1) ||
-        (filterType === "recent" && !!c.lastPurchaseAt && c.lastPurchaseAt > recentCutoff);
+        (filterType === "sent" && hasSent) ||
+        (filterType === "notsent" && !hasSent);
 
       return matchesSearch && matchesFilter;
     });
-  }, [clients, search, filterType]);
+  }, [clients, search, filterType, sentClientEmails]);
 
   const selectedClient = selectedEmail ? clients.find((c) => c.email === selectedEmail) ?? null : null;
 
-  const repeatCount = clients.filter((c) => c.purchaseCount > 1).length;
-  const recentCount = useMemo(() => {
-    const cut = new Date(Date.now() - THIRTY_DAYS).toISOString();
-    return clients.filter((c) => c.lastPurchaseAt && c.lastPurchaseAt > cut).length;
-  }, [clients]);
+  const sentCount = useMemo(() => clients.filter((c) => !!sentClientEmails[c.email.toLowerCase()]).length, [clients, sentClientEmails]);
+  const notSentCount = clients.length - sentCount;
   async function loadAccountsAndOpenModal(targets: string[], subject: string, body: string) {
     setEmailTargets(targets);
     setEmailSubject(subject);
@@ -221,6 +237,9 @@ export default function ClientsClient() {
       setEmailProgress({ sent: sent + errors.length, total: emailTargets.length });
     }
 
+    const successTargets = emailTargets.filter((t) => !errors.some((e) => e.startsWith(t)));
+    if (successTargets.length > 0) markEmailsSent(successTargets);
+
     setSendingEmail(false);
 
     if (errors.length > 0) {
@@ -286,8 +305,8 @@ export default function ClientsClient() {
           </div>
           <div className="hero-meta">
             <div><span className="hero-meta-label">Total clients</span><strong>{clients.length}</strong></div>
-            <div><span className="hero-meta-label">Repeat buyers</span><strong style={{ color: "#22c55e" }}>{repeatCount}</strong></div>
-            <div><span className="hero-meta-label">Active (30 days)</span><strong style={{ color: "#a78bfa" }}>{recentCount}</strong></div>
+            <div><span className="hero-meta-label">Emailed</span><strong style={{ color: "#22c55e" }}>{sentCount}</strong></div>
+            <div><span className="hero-meta-label">Not emailed</span><strong style={{ color: "#f59e0b" }}>{notSentCount}</strong></div>
           </div>
         </section>
 
@@ -299,14 +318,14 @@ export default function ClientsClient() {
             <span className="kpi-trend">unique buyer emails</span>
           </article>
           <article className="kpi-card">
-            <p className="kpi-label">Repeat buyers</p>
-            <strong className="kpi-value" style={{ color: "#22c55e" }}>{repeatCount}</strong>
-            <span className="kpi-trend">purchased more than once</span>
+            <p className="kpi-label">Emailed</p>
+            <strong className="kpi-value" style={{ color: "#22c55e" }}>{sentCount}</strong>
+            <span className="kpi-trend">initial email sent</span>
           </article>
           <article className="kpi-card">
-            <p className="kpi-label">Active (30 days)</p>
-            <strong className="kpi-value" style={{ color: "#a78bfa" }}>{recentCount}</strong>
-            <span className="kpi-trend">bought in the last month</span>
+            <p className="kpi-label">Not emailed</p>
+            <strong className="kpi-value" style={{ color: "#f59e0b" }}>{notSentCount}</strong>
+            <span className="kpi-trend">yet to contact</span>
           </article>
         </section>
 
@@ -314,16 +333,15 @@ export default function ClientsClient() {
         <section className="command-card">
           <div className="command-header">
             <div className="view-toggle">
-              {(["all", "repeat", "recent"] as const).map((f) => (
-                <button
-                  key={f}
-                  type="button"
-                  className={`toggle-btn${filterType === f ? " toggle-btn-active" : ""}`}
-                  onClick={() => setFilterType(f)}
-                >
-                  {f === "all" ? `All (${clients.length})` : f === "repeat" ? `Repeat (${repeatCount})` : `Recent (${recentCount})`}
-                </button>
-              ))}
+              <button type="button" className={`toggle-btn${filterType === "all" ? " toggle-btn-active" : ""}`} onClick={() => setFilterType("all")}>
+                All ({clients.length})
+              </button>
+              <button type="button" className={`toggle-btn${filterType === "sent" ? " toggle-btn-active" : ""}`} onClick={() => setFilterType("sent")}>
+                Sent ({sentCount})
+              </button>
+              <button type="button" className={`toggle-btn${filterType === "notsent" ? " toggle-btn-active" : ""}`} onClick={() => setFilterType("notsent")}>
+                Not Sent ({notSentCount})
+              </button>
             </div>
             <button type="button" className="ghost-button" onClick={() => { setSearch(""); setFilterType("all"); }}>
               Reset
@@ -380,7 +398,7 @@ export default function ClientsClient() {
                 <tbody>
                   {filteredClients.map((client) => {
                     const isRepeat = client.purchaseCount > 1;
-                    const isRecent = !!client.lastPurchaseAt && client.lastPurchaseAt > new Date(Date.now() - THIRTY_DAYS).toISOString();
+                    const hasBeenEmailed = !!sentClientEmails[client.email.toLowerCase()];
                     const isSelected = selectedEmail === client.email;
                     return (
                       <tr
@@ -391,8 +409,8 @@ export default function ClientsClient() {
                         <td>
                           <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
                             <span style={{ fontWeight: 500, fontSize: "13px" }}>{client.email}</span>
-                            {isRepeat && <span className="status-badge badge-sold" style={{ fontSize: "10px", padding: "1px 6px" }}>Repeat</span>}
-                            {isRecent && <span className="status-badge badge-listed" style={{ fontSize: "10px", padding: "1px 6px" }}>Recent</span>}
+                            {hasBeenEmailed && <span className="status-badge badge-sold" style={{ fontSize: "10px", padding: "1px 6px" }}>✓ Emailed</span>}
+                            {isRepeat && <span className="status-badge badge-unlisted" style={{ fontSize: "10px", padding: "1px 6px" }}>Repeat</span>}
                           </div>
                           <div style={{ fontSize: "11px", color: "var(--muted)", marginTop: "2px" }}>
                             {client.sales.slice(0, 2).map((s) => s.event_name).filter(Boolean).join(" · ") || "No event name"}
@@ -415,11 +433,11 @@ export default function ClientsClient() {
                         <td style={{ textAlign: "right" }}>
                           <button
                             type="button"
-                            className="secondary-button"
+                            className={hasBeenEmailed ? "ghost-button" : "secondary-button"}
                             style={{ fontSize: "12px", padding: "4px 10px" }}
                             onClick={(e) => { e.stopPropagation(); openSingleEmail(client); }}
                           >
-                            Send Email
+                            {hasBeenEmailed ? "✓ Send Again" : "Send Email"}
                           </button>
                         </td>
                       </tr>
@@ -474,7 +492,7 @@ export default function ClientsClient() {
                 style={{ width: "100%" }}
                 onClick={() => openSingleEmail(selectedClient)}
               >
-                Send Email
+                {sentClientEmails[selectedClient.email.toLowerCase()] ? "✓ Send Again" : "Send Email"}
               </button>
             </div>
 
