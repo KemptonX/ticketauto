@@ -27,6 +27,7 @@ const navItems = [
   { label: "Costs", href: "/costs", active: false },
   { label: "Calculator", href: "/viagogo-calculator", active: true },
   { label: "Scans", href: "/scans", active: false },
+  { label: "Clients", href: "/clients", active: false },
 ];
 
 function r2(n: number) {

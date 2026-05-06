@@ -99,6 +99,17 @@ export function IconScans(p: IconProps) {
   );
 }
 
+export function IconClients(p: IconProps) {
+  return (
+    <Icon {...p}>
+      <circle cx="9" cy="7" r="3" />
+      <path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2" />
+      <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+      <path d="M21 21v-2a4 4 0 0 0-3-3.87" />
+    </Icon>
+  );
+}
+
 export function IconInventory(p: IconProps) {
   return (
     <Icon {...p}>
@@ -150,6 +161,7 @@ const ICON_MAP: Record<string, (p: IconProps) => React.JSX.Element> = {
   "/costs": IconCosts,
   "/viagogo-calculator": IconCalculator,
   "/scans": IconScans,
+  "/clients": IconClients,
   "/inventory": IconInventory,
   "/archived-orders": IconArchive,
   "/archived-sales": IconArchive,
