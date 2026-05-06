@@ -717,7 +717,22 @@ function getProxyScore(email: string): number {
 
 function ProxyBadge({ email }: { email: string }) {
   const score = getProxyScore(email);
-  if (score === 0) return null;
+  if (score === 0) {
+    return (
+      <span style={{
+        fontSize: "10px",
+        padding: "1px 6px",
+        background: "#22c55e22",
+        color: "#22c55e",
+        border: "1px solid #22c55e55",
+        borderRadius: "4px",
+        fontWeight: 600,
+        whiteSpace: "nowrap",
+      }}>
+        ✓ Real email
+      </span>
+    );
+  }
   const isViagogoKnown = email.toLowerCase().includes("viagogo");
   const color = score >= 90 ? "#ef4444" : score >= 70 ? "#f59e0b" : "#94a3b8";
   const label = isViagogoKnown ? "Viagogo email" : `~${score}% proxy`;
