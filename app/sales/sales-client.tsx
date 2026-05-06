@@ -113,6 +113,10 @@ export default function SalesClient() {
   const [addSaleSearch, setAddSaleSearch] = useState("");
   const [addSaleForm, setAddSaleForm] = useState<AddSaleForm>({ qty_sold: "1", payout_total: "", buyer_email: "", sold_at: "" });
   const [savingNewSale, setSavingNewSale] = useState(false);
+  const [showEmailModal, setShowEmailModal] = useState(false);
+  const [emailSubject, setEmailSubject] = useState("");
+  const [emailBody, setEmailBody] = useState("");
+  const [sendingEmail, setSendingEmail] = useState(false);
 
   useEffect(() => {
     async function init() {
@@ -511,6 +515,46 @@ export default function SalesClient() {
     closeAddSale();
     await loadSales(true);
     setMessage("Sale added");
+  }
+
+  function openEmailModal() {
+    if (!selectedSale) return;
+    const seatLabel = formatSeatLabel(selectedSale.row, selectedSale.seat_from, selectedSale.seat_to);
+    setEmailSubject(`Your tickets – ${selectedSale.event_name || "Event"}`);
+    setEmailBody(
+      `Hi,\n\nHere are your ticket details for the upcoming event:\n\nEvent: ${selectedSale.event_name || "—"}\nVenue: ${selectedSale.venue || "—"}\nDate: ${selectedSale.event_date || "—"}\nSection: ${selectedSale.section || "—"}\n${seatLabel}\nQuantity: ${selectedSale.qty_sold ?? "—"}\n\nIf you have any questions, please don't hesitate to get in touch.\n\nThanks`,
+    );
+    setShowEmailModal(true);
+  }
+
+  function closeEmailModal() {
+    setShowEmailModal(false);
+    setEmailSubject("");
+    setEmailBody("");
+  }
+
+  async function sendBuyerEmail() {
+    if (!selectedSale) return;
+    setSendingEmail(true);
+    setMessage("");
+    try {
+      const response = await fetch("/api/send-buyer-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ saleId: selectedSale.id, subject: emailSubject, body: emailBody }),
+      });
+      const result = await response.json();
+      if (!response.ok) {
+        setMessage(result.error || "Failed to send email");
+        return;
+      }
+      closeEmailModal();
+      setMessage(`Email sent to ${selectedSale.buyer_email}`);
+    } catch {
+      setMessage("Failed to send email");
+    } finally {
+      setSendingEmail(false);
+    }
   }
 
   function toggleGroup(key: string) {
@@ -1067,6 +1111,15 @@ export default function SalesClient() {
             </div>
 
             <div className="drawer-actions">
+              {selectedSale.buyer_email ? (
+                <button
+                  className="secondary-button"
+                  type="button"
+                  onClick={openEmailModal}
+                >
+                  Send Email
+                </button>
+              ) : null}
               <button
                 className="secondary-button"
                 type="button"
@@ -1205,6 +1258,73 @@ export default function SalesClient() {
           </div>
       </aside>
       ) : null}
+
+      {showEmailModal && selectedSale?.buyer_email && createPortal(
+        <div className="add-sale-overlay" onClick={closeEmailModal}>
+          <div className="add-sale-sheet" onClick={(e) => e.stopPropagation()}>
+            <div className="drawer-header">
+              <div>
+                <p className="eyebrow">Buyer email</p>
+                <h4>Send Email</h4>
+              </div>
+              <button className="drawer-close" type="button" onClick={closeEmailModal}>✕</button>
+            </div>
+
+            <div className="add-sale-body">
+              <div className="add-sale-section">
+                <div className="drawer-grid">
+                  <label style={{ gridColumn: "1 / -1" }}>
+                    <span>From</span>
+                    <div className="field" style={{ color: "var(--text-muted, #888)" }}>
+                      {selectedSale.account_email || "—"}
+                    </div>
+                  </label>
+                  <label style={{ gridColumn: "1 / -1" }}>
+                    <span>To</span>
+                    <div className="field" style={{ color: "var(--text-muted, #888)" }}>
+                      {selectedSale.buyer_email}
+                    </div>
+                  </label>
+                  <label style={{ gridColumn: "1 / -1" }}>
+                    <span>Subject</span>
+                    <input
+                      className="field"
+                      type="text"
+                      value={emailSubject}
+                      onChange={(e) => setEmailSubject(e.target.value)}
+                      placeholder="Email subject..."
+                    />
+                  </label>
+                  <label style={{ gridColumn: "1 / -1" }}>
+                    <span>Message</span>
+                    <textarea
+                      className="field"
+                      rows={10}
+                      value={emailBody}
+                      onChange={(e) => setEmailBody(e.target.value)}
+                      placeholder="Email body..."
+                      style={{ resize: "vertical", fontFamily: "inherit" }}
+                    />
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            <div className="drawer-actions">
+              <button className="secondary-button" type="button" onClick={closeEmailModal}>Cancel</button>
+              <button
+                className="primary-button"
+                type="button"
+                disabled={sendingEmail || !emailSubject.trim() || !emailBody.trim()}
+                onClick={() => void sendBuyerEmail()}
+              >
+                {sendingEmail ? "Sending..." : "Send Email"}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body,
+      )}
 
       {showAddSale && createPortal(
         <div className="add-sale-overlay" onClick={closeAddSale}>

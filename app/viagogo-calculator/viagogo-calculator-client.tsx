@@ -1,10 +1,23 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { SidebarLogo, NavIcon, SidebarFooter } from "@/app/components/nav-icons";
 
 type UkField = "display" | "listing" | "payout";
+
+const CURRENCIES = [
+  { code: "EUR", label: "EUR — Euro", symbol: "€" },
+  { code: "USD", label: "USD — US Dollar", symbol: "$" },
+  { code: "AUD", label: "AUD — Australian Dollar", symbol: "A$" },
+  { code: "CAD", label: "CAD — Canadian Dollar", symbol: "C$" },
+  { code: "MXN", label: "MXN — Mexican Peso", symbol: "MX$" },
+  { code: "SEK", label: "SEK — Swedish Krona", symbol: "kr" },
+  { code: "NOK", label: "NOK — Norwegian Krone", symbol: "kr" },
+  { code: "DKK", label: "DKK — Danish Krone", symbol: "kr" },
+  { code: "PLN", label: "PLN — Polish Zloty", symbol: "zł" },
+  { code: "CHF", label: "CHF — Swiss Franc", symbol: "Fr" },
+];
 
 const navItems = [
   { label: "Dashboard", href: "/", active: false },
@@ -45,6 +58,44 @@ export default function ViagogoCalculatorClient() {
   const [ukDisplay, setUkDisplay] = useState("");
   const [ukListing, setUkListing] = useState("");
   const [ukPayout, setUkPayout] = useState("");
+
+  // Currency converter state
+  const [fxAmount, setFxAmount] = useState("");
+  const [fxCurrency, setFxCurrency] = useState("EUR");
+  const [fxRates, setFxRates] = useState<Record<string, number>>({});
+  const [fxRateOverride, setFxRateOverride] = useState("");
+  const [fxRatesLoading, setFxRatesLoading] = useState(false);
+  const [fxRatesError, setFxRatesError] = useState("");
+
+  useEffect(() => {
+    setFxRatesLoading(true);
+    fetch("https://api.frankfurter.app/latest?from=GBP")
+      .then((r) => r.json())
+      .then((data: { rates?: Record<string, number> }) => {
+        if (data.rates) {
+          setFxRates(data.rates);
+        } else {
+          setFxRatesError("Could not load rates");
+        }
+      })
+      .catch(() => setFxRatesError("Could not load rates"))
+      .finally(() => setFxRatesLoading(false));
+  }, []);
+
+  // When currency changes, clear the manual override so it auto-refills
+  function handleFxCurrencyChange(code: string) {
+    setFxCurrency(code);
+    setFxRateOverride("");
+  }
+
+  const liveRate = fxRates[fxCurrency] ?? null;
+  const displayRate = fxRateOverride !== "" ? parseFloat(fxRateOverride) : (liveRate ?? NaN);
+  const fxAmountNum = parseFloat(fxAmount);
+  const gbpEquivalent = !isNaN(fxAmountNum) && !isNaN(displayRate) && displayRate > 0
+    ? r2(fxAmountNum / displayRate)
+    : null;
+
+  const currencyMeta = CURRENCIES.find((c) => c.code === fxCurrency) ?? CURRENCIES[0];
 
   async function handleLogout() {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -199,6 +250,122 @@ export default function ViagogoCalculatorClient() {
               </div>
             </div>
           </div>
+        </section>
+
+        {/* Currency converter */}
+        <section className="command-card" style={{ borderRadius: "16px" }}>
+          <div className="command-header" style={{ marginBottom: "20px" }}>
+            <div>
+              <p className="eyebrow" style={{ margin: 0 }}>Currency</p>
+              <h4 style={{ marginTop: "4px" }}>Convert to GBP</h4>
+            </div>
+            {fxRatesLoading && (
+              <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>Loading rates…</span>
+            )}
+            {fxRatesError && (
+              <span style={{ fontSize: "12px", color: "#f87171" }}>{fxRatesError}</span>
+            )}
+            {!fxRatesLoading && !fxRatesError && liveRate && (
+              <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>
+                Live rate · 1 GBP = {liveRate.toFixed(4)} {fxCurrency}
+              </span>
+            )}
+          </div>
+
+          <div className="calc-grid">
+            {/* Amount paid */}
+            <div className="calc-field">
+              <p className="kpi-label">Amount paid</p>
+              <p className="calc-hint">Cost in foreign currency</p>
+              <div className="calc-input-wrap">
+                <span className="calc-prefix">{currencyMeta.symbol}</span>
+                <input
+                  className="field calc-input"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  placeholder="0.00"
+                  value={fxAmount}
+                  onChange={(e) => setFxAmount(e.target.value)}
+                />
+              </div>
+            </div>
+
+            {/* Currency + rate */}
+            <div className="calc-field">
+              <p className="kpi-label">Currency</p>
+              <p className="calc-hint">Select foreign currency</p>
+              <select
+                className="field"
+                style={{ height: "46px", paddingLeft: "12px" }}
+                value={fxCurrency}
+                onChange={(e) => handleFxCurrencyChange(e.target.value)}
+              >
+                {CURRENCIES.map((c) => (
+                  <option key={c.code} value={c.code}>{c.label}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Exchange rate (editable) */}
+            <div className="calc-field">
+              <p className="kpi-label">Exchange rate</p>
+              <p className="calc-hint">GBP per {fxCurrency} · adjust for provider fees</p>
+              <div className="calc-input-wrap">
+                <span className="calc-prefix" style={{ fontSize: "11px", minWidth: "28px" }}>÷</span>
+                <input
+                  className="field calc-input"
+                  type="number"
+                  step="0.0001"
+                  min="0"
+                  placeholder={liveRate ? liveRate.toFixed(4) : "—"}
+                  value={fxRateOverride}
+                  onChange={(e) => setFxRateOverride(e.target.value)}
+                />
+              </div>
+              {fxRateOverride !== "" && liveRate && (
+                <button
+                  type="button"
+                  className="ghost-button"
+                  style={{ marginTop: "6px", fontSize: "11px", padding: "3px 8px" }}
+                  onClick={() => setFxRateOverride("")}
+                >
+                  Reset to live rate
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Result */}
+          {gbpEquivalent !== null && (
+            <div style={{
+              marginTop: "20px",
+              padding: "16px 20px",
+              borderRadius: "12px",
+              background: "rgba(255,255,255,0.03)",
+              border: "1px solid var(--border)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: "16px",
+            }}>
+              <div>
+                <p style={{ margin: 0, fontSize: "12px", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.1em" }}>
+                  GBP equivalent
+                </p>
+                <p style={{ margin: "4px 0 0", fontSize: "28px", fontWeight: 700, letterSpacing: "-0.04em", color: "var(--text-primary)" }}>
+                  £{gbpEquivalent.toFixed(2)}
+                </p>
+              </div>
+              <div style={{ textAlign: "right", fontSize: "12px", color: "var(--text-muted)", lineHeight: 1.6 }}>
+                <div>{currencyMeta.symbol}{parseFloat(fxAmount || "0").toFixed(2)} {fxCurrency}</div>
+                <div>÷ {(!isNaN(displayRate) ? displayRate : liveRate ?? 0).toFixed(4)}</div>
+                {fxRateOverride !== "" && (
+                  <div style={{ color: "#f59e0b", fontSize: "11px" }}>⚠ Using manual rate</div>
+                )}
+              </div>
+            </div>
+          )}
         </section>
       </main>
     </div>
