@@ -966,12 +966,12 @@ export default function SalesClient() {
                                 <span className="truncate-text" title={sale.account_email || ""}>
                                   {sale.account_email || "No account"}
                                 </span>
-                                <span className="truncate-text" title={sale.buyer_email || ""} style={{ display: "flex", alignItems: "center", gap: "0.35rem", flexWrap: "wrap" }}>
-                                  <span>{sale.buyer_email || "—"}</span>
+                                <div style={{ display: "flex", flexDirection: "column", gap: "2px", minWidth: 0 }}>
+                                  <span className="truncate-text" title={sale.buyer_email || ""}>{sale.buyer_email || "—"}</span>
                                   {sale.buyer_email && thankYouSentIds.has(sale.id) && (
-                                    <span className="status-badge badge-sold" style={{ fontSize: "10px", padding: "1px 6px", whiteSpace: "nowrap" }}>✓ Sent</span>
+                                    <span style={{ fontSize: "10px", color: "#22c55e", fontWeight: 600, letterSpacing: "0.02em" }}>✓ Email sent</span>
                                   )}
-                                </span>
+                                </div>
                                 <strong className="inventory-cost-value">
                                   {formatCurrency(sale.payout_total ?? sale.sale_total)}
                                 </strong>
