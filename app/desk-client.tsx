@@ -46,20 +46,18 @@ export default function DeskClient() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [sales, setSales] = useState<Sale[]>([]);
   const [loading, setLoading] = useState(true);
-  const [goal, setGoal] = useState<number>(() => {
-    if (typeof window === "undefined") return 5000;
-    return Number(localStorage.getItem("monthly_profit_goal") ?? 5000);
-  });
+  const [goal, setGoal] = useState<number>(5000);
   const [editingGoal, setEditingGoal] = useState(false);
   const [goalInput, setGoalInput] = useState("");
-  const [yearlyGoal, setYearlyGoal] = useState<number>(() => {
-    if (typeof window === "undefined") return 50000;
-    return Number(localStorage.getItem("yearly_profit_goal") ?? 50000);
-  });
+  const [yearlyGoal, setYearlyGoal] = useState<number>(50000);
   const [editingYearlyGoal, setEditingYearlyGoal] = useState(false);
   const [yearlyGoalInput, setYearlyGoalInput] = useState("");
 
   useEffect(() => {
+    const storedGoal = localStorage.getItem("monthly_profit_goal");
+    if (storedGoal) setGoal(Number(storedGoal));
+    const storedYearly = localStorage.getItem("yearly_profit_goal");
+    if (storedYearly) setYearlyGoal(Number(storedYearly));
     void autoArchivePastEvents().then(() => loadData());
   }, []);
 

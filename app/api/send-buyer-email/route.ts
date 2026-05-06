@@ -15,19 +15,20 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { saleId, subject, body } = (await request.json()) as {
+    const { saleId, accountId, subject, body } = (await request.json()) as {
       saleId: number;
+      accountId: string;
       subject: string;
       body: string;
     };
 
-    if (!saleId || !subject?.trim() || !body?.trim()) {
-      return NextResponse.json({ error: "saleId, subject, and body are required" }, { status: 400 });
+    if (!saleId || !accountId || !subject?.trim() || !body?.trim()) {
+      return NextResponse.json({ error: "saleId, accountId, subject, and body are required" }, { status: 400 });
     }
 
     const { data: sale, error: saleError } = await supabase
       .from("sales")
-      .select("id, buyer_email, account_email")
+      .select("id, buyer_email")
       .eq("id", saleId)
       .single();
 
@@ -42,15 +43,12 @@ export async function POST(request: Request) {
     const { data: account, error: accountError } = await supabase
       .from("gmail_accounts")
       .select("id, email, access_token, refresh_token, token_expiry, provider")
-      .eq("email", sale.account_email)
+      .eq("id", accountId)
       .eq("is_active", true)
       .maybeSingle();
 
     if (accountError || !account) {
-      return NextResponse.json(
-        { error: `No active inbox connected for ${sale.account_email}` },
-        { status: 400 },
-      );
+      return NextResponse.json({ error: "Selected inbox not found or inactive" }, { status: 400 });
     }
 
     await sendEmailViaAccount({

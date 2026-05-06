@@ -117,6 +117,9 @@ export default function SalesClient() {
   const [emailSubject, setEmailSubject] = useState("");
   const [emailBody, setEmailBody] = useState("");
   const [sendingEmail, setSendingEmail] = useState(false);
+  const [emailError, setEmailError] = useState("");
+  const [connectedAccounts, setConnectedAccounts] = useState<{ id: string; email: string; provider: string }[]>([]);
+  const [emailFromAccountId, setEmailFromAccountId] = useState<string>("");
 
   useEffect(() => {
     async function init() {
@@ -517,13 +520,25 @@ export default function SalesClient() {
     setMessage("Sale added");
   }
 
-  function openEmailModal() {
+  async function openEmailModal() {
     if (!selectedSale) return;
     const seatLabel = formatSeatLabel(selectedSale.row, selectedSale.seat_from, selectedSale.seat_to);
     setEmailSubject(`Your tickets – ${selectedSale.event_name || "Event"}`);
     setEmailBody(
       `Hi,\n\nHere are your ticket details for the upcoming event:\n\nEvent: ${selectedSale.event_name || "—"}\nVenue: ${selectedSale.venue || "—"}\nDate: ${selectedSale.event_date || "—"}\nSection: ${selectedSale.section || "—"}\n${seatLabel}\nQuantity: ${selectedSale.qty_sold ?? "—"}\n\nIf you have any questions, please don't hesitate to get in touch.\n\nThanks`,
     );
+    setEmailError("");
+
+    const { data } = await supabase
+      .from("gmail_accounts")
+      .select("id, email, provider")
+      .eq("is_active", true)
+      .order("is_primary", { ascending: false })
+      .order("created_at", { ascending: true });
+
+    const accounts = (data as { id: string; email: string; provider: string }[]) || [];
+    setConnectedAccounts(accounts);
+    setEmailFromAccountId(accounts[0]?.id ?? "");
     setShowEmailModal(true);
   }
 
@@ -531,27 +546,29 @@ export default function SalesClient() {
     setShowEmailModal(false);
     setEmailSubject("");
     setEmailBody("");
+    setEmailError("");
+    setEmailFromAccountId("");
   }
 
   async function sendBuyerEmail() {
     if (!selectedSale) return;
     setSendingEmail(true);
-    setMessage("");
+    setEmailError("");
     try {
       const response = await fetch("/api/send-buyer-email", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ saleId: selectedSale.id, subject: emailSubject, body: emailBody }),
+        body: JSON.stringify({ saleId: selectedSale.id, accountId: emailFromAccountId, subject: emailSubject, body: emailBody }),
       });
       const result = await response.json();
       if (!response.ok) {
-        setMessage(result.error || "Failed to send email");
+        setEmailError(result.error || "Failed to send email");
         return;
       }
       closeEmailModal();
       setMessage(`Email sent to ${selectedSale.buyer_email}`);
-    } catch {
-      setMessage("Failed to send email");
+    } catch (err) {
+      setEmailError(err instanceof Error ? err.message : "Failed to send email");
     } finally {
       setSendingEmail(false);
     }
@@ -1115,7 +1132,7 @@ export default function SalesClient() {
                 <button
                   className="secondary-button"
                   type="button"
-                  onClick={openEmailModal}
+                  onClick={() => void openEmailModal()}
                 >
                   Send Email
                 </button>
@@ -1275,9 +1292,20 @@ export default function SalesClient() {
                 <div className="drawer-grid">
                   <label style={{ gridColumn: "1 / -1" }}>
                     <span>From</span>
-                    <div className="field" style={{ color: "var(--text-muted, #888)" }}>
-                      {selectedSale.account_email || "—"}
-                    </div>
+                    <select
+                      className="field"
+                      value={emailFromAccountId}
+                      onChange={(e) => setEmailFromAccountId(e.target.value)}
+                    >
+                      {connectedAccounts.length === 0 && (
+                        <option value="">No connected inboxes</option>
+                      )}
+                      {connectedAccounts.map((a) => (
+                        <option key={a.id} value={a.id}>
+                          {a.email} ({a.provider === "outlook" ? "Outlook" : "Gmail"})
+                        </option>
+                      ))}
+                    </select>
                   </label>
                   <label style={{ gridColumn: "1 / -1" }}>
                     <span>To</span>
@@ -1310,12 +1338,18 @@ export default function SalesClient() {
               </div>
             </div>
 
+            {emailError && (
+              <div style={{ padding: "0 1.5rem 1rem", color: "var(--color-danger, #e53e3e)", fontSize: "0.85rem" }}>
+                {emailError}
+              </div>
+            )}
+
             <div className="drawer-actions">
               <button className="secondary-button" type="button" onClick={closeEmailModal}>Cancel</button>
               <button
                 className="primary-button"
                 type="button"
-                disabled={sendingEmail || !emailSubject.trim() || !emailBody.trim()}
+                disabled={sendingEmail || !emailFromAccountId || !emailSubject.trim() || !emailBody.trim()}
                 onClick={() => void sendBuyerEmail()}
               >
                 {sendingEmail ? "Sending..." : "Send Email"}

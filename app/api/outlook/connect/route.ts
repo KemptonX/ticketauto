@@ -12,6 +12,7 @@ const MS_SCOPES = [
   "https://graph.microsoft.com/User.Read",
   "https://graph.microsoft.com/Mail.Read",
   "https://graph.microsoft.com/Mail.ReadWrite",
+  "https://graph.microsoft.com/Mail.Send",
 ].join(" ");
 
 export async function GET(request: Request) {
