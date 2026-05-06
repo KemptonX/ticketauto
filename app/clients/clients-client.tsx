@@ -175,9 +175,8 @@ export default function ClientsClient() {
       let matchesEvent = true;
       if (eventFilter !== "all") {
         const today = new Date(); today.setHours(0, 0, 0, 0);
-        const d = parseEventDate(c.sales[0]?.event_date ?? null);
-        if (eventFilter === "past") matchesEvent = !!d && d < today;
-        if (eventFilter === "future") matchesEvent = !!d && d >= today;
+        if (eventFilter === "past") matchesEvent = c.sales.some((s) => { const d = parseEventDate(s.event_date); return !!d && d < today; });
+        if (eventFilter === "future") matchesEvent = c.sales.some((s) => { const d = parseEventDate(s.event_date); return !!d && d >= today; });
       }
 
       return matchesSearch && matchesContact && matchesEmailType && matchesEvent;
