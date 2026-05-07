@@ -147,6 +147,7 @@ export async function syncOutlookInbox({
     };
 
     if (existingOrder) {
+      if (existingOrder.listing_status === "Ignored") continue;
       const { error } = await supabase
         .from("orders")
         .update({

@@ -160,7 +160,7 @@ export default function OrdersClient() {
   const [newAccountInput, setNewAccountInput] = useState("");
   const [newTicket, setNewTicket] = useState<NewTicketForm>(defaultNewTicket);
 
-  const [showArchived, setShowArchived] = useState(false);
+  const [viewMode, setViewMode] = useState<"active" | "archived" | "ignored">("active");
   const [sortBy, setSortBy] = useState<"event-date" | "added-newest" | "added-oldest">("event-date");
 
   const [search, setSearch] = useState("");
@@ -179,7 +179,7 @@ export default function OrdersClient() {
     setSoldFilter("All");
   }
 
-  async function loadOrders(showRefreshing = false, archived = showArchived) {
+  async function loadOrders(showRefreshing = false, mode = viewMode) {
     if (showRefreshing) {
       setRefreshing(true);
     } else {
@@ -187,9 +187,13 @@ export default function OrdersClient() {
     }
 
     const query = supabase.from("orders").select("*").order("created_at", { ascending: false });
-    const { data, error } = await (archived
-      ? query.eq("listing_status", "Archived")
-      : query.or("listing_status.is.null,listing_status.neq.Archived"));
+    const { data, error } = await (
+      mode === "archived"
+        ? query.eq("listing_status", "Archived")
+        : mode === "ignored"
+          ? query.eq("listing_status", "Ignored")
+          : query.or("listing_status.is.null,listing_status.not.in.(Archived,Ignored)")
+    );
 
     // Fetch matched sales to get actual qty_sold per order
     const { data: salesData } = await supabase
@@ -286,21 +290,22 @@ export default function OrdersClient() {
 
   useEffect(() => {
     async function init() {
-      if (!showArchived) {
+      if (viewMode === "active") {
         await autoArchivePastEvents();
       }
-      loadOrders(false, showArchived);
+      loadOrders(false, viewMode);
       void loadAccounts();
       void loadSyncLog();
     }
     void init();
-  }, [showArchived]);
+  }, [viewMode]);
 
   async function autoArchivePastEvents() {
     const { data } = await supabase
       .from("orders")
       .select("id, event_date, listing_status")
-      .neq("listing_status", "Archived");
+      .neq("listing_status", "Archived")
+      .neq("listing_status", "Ignored");
 
     if (!data) return;
 
@@ -482,6 +487,17 @@ export default function OrdersClient() {
     setOrders((current) => current.filter((o) => o.id !== id));
     setSelectedOrderId(null);
     setMessage("Ticket archived");
+  }
+
+  async function ignoreOrder(id: number) {
+    const { error } = await supabase
+      .from("orders")
+      .update({ listing_status: "Ignored" })
+      .eq("id", id);
+    if (error) { setMessage(error.message); return; }
+    setOrders((current) => current.filter((o) => o.id !== id));
+    setSelectedOrderId(null);
+    setMessage("Ticket ignored — scanner will skip this booking ref");
   }
 
   async function restoreOrder(id: number) {
@@ -860,7 +876,7 @@ export default function OrdersClient() {
             <button className="secondary-button" onClick={() => loadOrders(true)} disabled={refreshing} type="button">
               {refreshing ? "Refreshing..." : "Refresh"}
             </button>
-            {!showArchived && (
+            {viewMode === "active" && (
               <>
                 <button className="secondary-button" onClick={exportOrdersCSV} type="button">
                   Export CSV
@@ -888,17 +904,24 @@ export default function OrdersClient() {
             <div className="view-toggle">
               <button
                 type="button"
-                className={showArchived ? "toggle-btn" : "toggle-btn toggle-btn-active"}
-                onClick={() => { setShowArchived(false); clearSelection(); }}
+                className={`toggle-btn${viewMode === "active" ? " toggle-btn-active" : ""}`}
+                onClick={() => { setViewMode("active"); clearSelection(); }}
               >
                 Active
               </button>
               <button
                 type="button"
-                className={showArchived ? "toggle-btn toggle-btn-active" : "toggle-btn"}
-                onClick={() => { setShowArchived(true); clearSelection(); setSelectedOrderId(null); setShowAddForm(false); }}
+                className={`toggle-btn${viewMode === "archived" ? " toggle-btn-active" : ""}`}
+                onClick={() => { setViewMode("archived"); clearSelection(); setSelectedOrderId(null); setShowAddForm(false); }}
               >
                 Archived
+              </button>
+              <button
+                type="button"
+                className={`toggle-btn${viewMode === "ignored" ? " toggle-btn-active" : ""}`}
+                onClick={() => { setViewMode("ignored"); clearSelection(); setSelectedOrderId(null); setShowAddForm(false); }}
+              >
+                Ignored
               </button>
             </div>
             <div className="view-toggle">
@@ -1000,13 +1023,13 @@ export default function OrdersClient() {
         <section className="table-card inventory-board">
           <div className="table-card-header inventory-board-header">
             <div>
-              <p className="section-tag">{showArchived ? "Archive" : "Tickets"}</p>
-              <h4>{showArchived ? "Archived tickets" : "Tickets by event"}</h4>
+              <p className="section-tag">{viewMode === "archived" ? "Archive" : viewMode === "ignored" ? "Ignored" : "Tickets"}</p>
+              <h4>{viewMode === "archived" ? "Archived tickets" : viewMode === "ignored" ? "Ignored tickets" : "Tickets by event"}</h4>
             </div>
             <span className="table-count">{groupedOrders.length} events · {filteredOrders.length} tickets</span>
           </div>
 
-          {!showArchived && selectedIds.size > 0 ? (
+          {viewMode === "active" && selectedIds.size > 0 ? (
             <div className="bulk-action-bar">
               <span className="bulk-count">{selectedIds.size} selected</span>
               <div className="bulk-actions">
@@ -1048,8 +1071,8 @@ export default function OrdersClient() {
           ) : groupedOrders.length === 0 ? (
             <div className="state-card">
               <div className="state-orb state-orb-muted" />
-              <h5>{showArchived ? "No archived tickets" : "No tickets match these filters"}</h5>
-              <p>{showArchived ? "Archive a ticket to store it here." : "Reset the filters or add a new ticket."}</p>
+              <h5>{viewMode === "archived" ? "No archived tickets" : viewMode === "ignored" ? "No ignored tickets" : "No tickets match these filters"}</h5>
+              <p>{viewMode === "archived" ? "Archive a ticket to store it here." : viewMode === "ignored" ? "Ignored tickets will appear here." : "Reset the filters or add a new ticket."}</p>
             </div>
           ) : (
             <div className="inventory-group-list">
@@ -1159,7 +1182,7 @@ export default function OrdersClient() {
                         <table className="premium-table">
                           <thead>
                             <tr>
-                              {!showArchived && <th className="col-check" />}
+                              {viewMode === "active" && <th className="col-check" />}
                               <th>Ref</th>
                               <th>Seats</th>
                               <th>Account</th>
@@ -1168,7 +1191,7 @@ export default function OrdersClient() {
                               <th>Sold For</th>
                               <th>Profit</th>
                               <th>ROI</th>
-                              <th>{showArchived ? "Actions" : "Status"}</th>
+                              <th>{viewMode !== "active" ? "Actions" : "Status"}</th>
                               <th>Added</th>
                             </tr>
                           </thead>
@@ -1187,7 +1210,7 @@ export default function OrdersClient() {
                                   className={`${active ? "row-active" : ""}${selectedIds.has(order.id) ? " row-selected" : ""}`}
                                   onClick={() => setSelectedOrderId(order.id)}
                                 >
-                                  {!showArchived && (
+                                  {viewMode === "active" && (
                                     <td className="col-check" onClick={(e) => { e.stopPropagation(); toggleSelect(order.id); }}>
                                       <input
                                         type="checkbox"
@@ -1230,7 +1253,7 @@ export default function OrdersClient() {
                                     {roi == null ? "—" : `${roi.toFixed(1)}%`}
                                   </td>
                                   <td onClick={(e) => e.stopPropagation()}>
-                                    {showArchived ? (
+                                    {viewMode !== "active" ? (
                                       <button className="secondary-button" type="button" onClick={() => void restoreOrder(order.id)}>
                                         Restore
                                       </button>
@@ -1704,7 +1727,7 @@ export default function OrdersClient() {
               >
                 Delete
               </button>
-              {showArchived ? (
+              {viewMode !== "active" ? (
                 <button
                   className="secondary-button"
                   type="button"
@@ -1713,13 +1736,22 @@ export default function OrdersClient() {
                   Restore
                 </button>
               ) : (
-                <button
-                  className="secondary-button"
-                  type="button"
-                  onClick={() => void archiveOrder(selectedOrder.id)}
-                >
-                  Archive
-                </button>
+                <>
+                  <button
+                    className="secondary-button"
+                    type="button"
+                    onClick={() => void ignoreOrder(selectedOrder.id)}
+                  >
+                    Ignore
+                  </button>
+                  <button
+                    className="secondary-button"
+                    type="button"
+                    onClick={() => void archiveOrder(selectedOrder.id)}
+                  >
+                    Archive
+                  </button>
+                </>
               )}
               <button
                 className="primary-button"

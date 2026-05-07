@@ -218,6 +218,10 @@ export async function syncGmailInbox({
     const pastEvent = isEventInPast(resolvedDate);
 
     if (existingOrder) {
+      if (existingOrder.listing_status === "Ignored") {
+        await markMessageProcessed(accessToken, message.id, labelId);
+        continue;
+      }
       const { error } = await supabase
         .from("orders")
         .update({
