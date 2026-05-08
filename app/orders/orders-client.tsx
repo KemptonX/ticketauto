@@ -711,6 +711,32 @@ export default function OrdersClient() {
     setMessage(`${ids.length} ticket${ids.length !== 1 ? "s" : ""} archived`);
   }
 
+  async function bulkIgnore() {
+    const ids = [...selectedIds];
+    if (ids.length === 0) return;
+    const { error } = await supabase
+      .from("orders")
+      .update({ listing_status: "Ignored" })
+      .in("id", ids);
+    if (error) { setMessage(error.message); return; }
+    setOrders((current) => current.filter((o) => !selectedIds.has(o.id)));
+    clearSelection();
+    setMessage(`${ids.length} ticket${ids.length !== 1 ? "s" : ""} ignored`);
+  }
+
+  async function bulkRestore() {
+    const ids = [...selectedIds];
+    if (ids.length === 0) return;
+    const { error } = await supabase
+      .from("orders")
+      .update({ listing_status: "Unlisted" })
+      .in("id", ids);
+    if (error) { setMessage(error.message); return; }
+    setOrders((current) => current.filter((o) => !selectedIds.has(o.id)));
+    clearSelection();
+    setMessage(`${ids.length} ticket${ids.length !== 1 ? "s" : ""} restored`);
+  }
+
   async function bulkSetStatus(status: string) {
     const ids = [...selectedIds];
     if (ids.length === 0) return;
@@ -1029,29 +1055,41 @@ export default function OrdersClient() {
             <span className="table-count">{groupedOrders.length} events · {filteredOrders.length} tickets</span>
           </div>
 
-          {viewMode === "active" && selectedIds.size > 0 ? (
+          {viewMode !== "ignored" && selectedIds.size > 0 ? (
             <div className="bulk-action-bar">
               <span className="bulk-count">{selectedIds.size} selected</span>
               <div className="bulk-actions">
-                <div className="bulk-status-group">
-                  <select
-                    className="field field-compact"
-                    value={bulkStatus}
-                    onChange={(e) => setBulkStatus(e.target.value)}
-                  >
-                    {quickStatusOptions.map((s) => (
-                      <option key={s} value={s}>{s}</option>
-                    ))}
-                  </select>
-                  <button className="secondary-button" type="button" onClick={() => void bulkSetStatus(bulkStatus)}>
-                    Set status
-                  </button>
-                </div>
+                {viewMode === "active" && (
+                  <div className="bulk-status-group">
+                    <select
+                      className="field field-compact"
+                      value={bulkStatus}
+                      onChange={(e) => setBulkStatus(e.target.value)}
+                    >
+                      {quickStatusOptions.map((s) => (
+                        <option key={s} value={s}>{s}</option>
+                      ))}
+                    </select>
+                    <button className="secondary-button" type="button" onClick={() => void bulkSetStatus(bulkStatus)}>
+                      Set status
+                    </button>
+                  </div>
+                )}
                 <button className="secondary-button" type="button" onClick={selectAll}>
                   Select all ({filteredOrders.length})
                 </button>
-                <button className="secondary-button" type="button" onClick={() => void bulkArchive()}>
-                  Archive selected
+                {viewMode === "archived" && (
+                  <button className="secondary-button" type="button" onClick={() => void bulkRestore()}>
+                    Restore selected
+                  </button>
+                )}
+                {viewMode === "active" && (
+                  <button className="secondary-button" type="button" onClick={() => void bulkArchive()}>
+                    Archive selected
+                  </button>
+                )}
+                <button className="secondary-button" type="button" onClick={() => void bulkIgnore()}>
+                  Ignore selected
                 </button>
                 <button className="danger-button" type="button" onClick={() => void bulkDelete()}>
                   Delete selected
@@ -1182,7 +1220,7 @@ export default function OrdersClient() {
                         <table className="premium-table">
                           <thead>
                             <tr>
-                              {viewMode === "active" && <th className="col-check" />}
+                              {viewMode !== "ignored" && <th className="col-check" />}
                               <th>Ref</th>
                               <th>Seats</th>
                               <th>Account</th>
@@ -1210,7 +1248,7 @@ export default function OrdersClient() {
                                   className={`${active ? "row-active" : ""}${selectedIds.has(order.id) ? " row-selected" : ""}`}
                                   onClick={() => setSelectedOrderId(order.id)}
                                 >
-                                  {viewMode === "active" && (
+                                  {viewMode !== "ignored" && (
                                     <td className="col-check" onClick={(e) => { e.stopPropagation(); toggleSelect(order.id); }}>
                                       <input
                                         type="checkbox"
@@ -1253,7 +1291,16 @@ export default function OrdersClient() {
                                     {roi == null ? "—" : `${roi.toFixed(1)}%`}
                                   </td>
                                   <td onClick={(e) => e.stopPropagation()}>
-                                    {viewMode !== "active" ? (
+                                    {viewMode === "archived" ? (
+                                      <div style={{ display: "flex", gap: "4px" }}>
+                                        <button className="secondary-button" type="button" onClick={() => void restoreOrder(order.id)}>
+                                          Restore
+                                        </button>
+                                        <button className="secondary-button" type="button" onClick={() => void ignoreOrder(order.id)}>
+                                          Ignore
+                                        </button>
+                                      </div>
+                                    ) : viewMode === "ignored" ? (
                                       <button className="secondary-button" type="button" onClick={() => void restoreOrder(order.id)}>
                                         Restore
                                       </button>
@@ -1727,7 +1774,7 @@ export default function OrdersClient() {
               >
                 Delete
               </button>
-              {viewMode !== "active" ? (
+              {viewMode === "ignored" ? (
                 <button
                   className="secondary-button"
                   type="button"
@@ -1735,6 +1782,23 @@ export default function OrdersClient() {
                 >
                   Restore
                 </button>
+              ) : viewMode === "archived" ? (
+                <>
+                  <button
+                    className="secondary-button"
+                    type="button"
+                    onClick={() => void restoreOrder(selectedOrder.id)}
+                  >
+                    Restore
+                  </button>
+                  <button
+                    className="secondary-button"
+                    type="button"
+                    onClick={() => void ignoreOrder(selectedOrder.id)}
+                  >
+                    Ignore
+                  </button>
+                </>
               ) : (
                 <>
                   <button
