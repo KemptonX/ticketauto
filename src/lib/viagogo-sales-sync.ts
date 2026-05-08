@@ -1,6 +1,6 @@
 ﻿import type { SupabaseClient } from "@supabase/supabase-js";
 
-const GMAIL_QUERY = 'is:unread from:orders.viagogo.com ("Please transfer the tickets for sale" OR "Please send your tickets") newer_than:120d';
+const GMAIL_QUERY = 'is:unread from:orders.viagogo.com ("Please transfer the tickets for sale" OR "Please send your tickets" OR "You sold your ticket for") newer_than:120d';
 const PROCESSED_LABEL = "My Sales";
 
 type GmailAccount = {
@@ -165,11 +165,18 @@ export async function syncViagogoSalesInbox({
     const sourceMessageId = getHeader(headers, "Message-ID") || message.id;
 
     const lowerSubject = subject.toLowerCase();
-    if (!lowerSubject.includes("please transfer the tickets for sale") && !lowerSubject.includes("please send your tickets")) {
+    const isSoldConfirmation = lowerSubject.includes("you sold your ticket for");
+    if (
+      !lowerSubject.includes("please transfer the tickets for sale") &&
+      !lowerSubject.includes("please send your tickets") &&
+      !isSoldConfirmation
+    ) {
       continue;
     }
 
-    const parsed = parseSale({ headers, subject, text: combined });
+    const parsed = isSoldConfirmation
+      ? parseSoldConfirmation({ headers, subject, text: combined })
+      : parseSale({ headers, subject, text: combined });
     if (!parsed.externalSaleId) {
       continue;
     }
@@ -354,9 +361,11 @@ export async function syncViagogoSalesOutlookInbox({
 
     const subject = msg.subject || "";
     const lowerSubject = subject.toLowerCase();
+    const isSoldConfirmation = lowerSubject.includes("you sold your ticket for");
     if (
       !lowerSubject.includes("please transfer the tickets for sale") &&
-      !lowerSubject.includes("please send your tickets")
+      !lowerSubject.includes("please send your tickets") &&
+      !isSoldConfirmation
     ) {
       continue;
     }
@@ -367,12 +376,14 @@ export async function syncViagogoSalesOutlookInbox({
     const combined = cleanText(`${subject}\n${bodyText}`);
     const sourceMessageId = msg.id;
 
-    // parseSale uses headers only for the "Date" header → soldAt
+    // parseSale/parseSoldConfirmation use headers only for the "Date" header → soldAt
     const fakeHeaders: GmailHeader[] = [
       { name: "Date", value: msg.receivedDateTime || "" },
     ];
 
-    const parsed = parseSale({ headers: fakeHeaders, subject, text: combined });
+    const parsed = isSoldConfirmation
+      ? parseSoldConfirmation({ headers: fakeHeaders, subject, text: combined })
+      : parseSale({ headers: fakeHeaders, subject, text: combined });
     if (!parsed.externalSaleId) continue;
 
     const existingSale = await findExistingSale(supabase, {
@@ -790,6 +801,60 @@ function extractSectionNumber(value?: string | null) {
 
   const match = value.match(/(\d{1,4})/);
   return match?.[1] || null;
+}
+
+function parseViagogoSaleDate(text: string): string {
+  // "Friday, May 08, 2026 | 19:30" → "2026-05-08"
+  const match = text.match(/\w+day,\s+(\w+\s+\d{1,2},\s+\d{4})\s*\|/i);
+  if (match) {
+    const d = new Date(match[1]);
+    if (!Number.isNaN(d.getTime())) return d.toISOString().slice(0, 10);
+  }
+  return "";
+}
+
+function parseSoldConfirmation({
+  headers,
+  subject,
+  text,
+}: {
+  headers: GmailHeader[];
+  subject: string;
+  text: string;
+}): ParsedSale {
+  const externalSaleId =
+    subject.match(/Order#\s*(\d+)/i)?.[1] ||
+    text.match(/OrderID\s*#?\s*(\d+)/i)?.[1] ||
+    "";
+  const eventName =
+    subject.match(/You sold your ticket for (.+?)\s*-\s*Order#/i)?.[1]?.trim() || "";
+  const qtySold = parseInteger(text, [/(\d+)\s*Ticket\(s\)/i]);
+  const saleTotal = parseMoney(text, [/Subtotal\s+[£$€Â\s]*([\d,]+\.?\d*)/i]);
+  const payoutTotal = parseMoney(text, [/Payment\s+Total\s+[£$€Â\s]*([\d,]+\.?\d*)/i]);
+  const pricePerTicket =
+    qtySold && saleTotal ? Math.round((saleTotal / qtySold) * 100) / 100 : null;
+  const eventDate = parseViagogoSaleDate(text);
+  const venue =
+    text.match(/\|\s*\d{1,2}:\d{2}[^\n]*\n+([^\n]+?)\n+OrderID/i)?.[1]?.trim() || "";
+  const section = text.match(/Section:\s*([^\n|]+)/i)?.[1]?.trim() || "";
+
+  return {
+    externalSaleId,
+    subject,
+    eventName,
+    venue,
+    eventDate,
+    soldAt: normalizeTimestamp(getHeader(headers, "Date")) || new Date().toISOString(),
+    buyerEmail: "",
+    qtySold,
+    pricePerTicket,
+    payoutTotal,
+    saleTotal,
+    section,
+    row: "",
+    seatFrom: "",
+    seatTo: "",
+  };
 }
 
 function parseSale({
