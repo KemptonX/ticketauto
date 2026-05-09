@@ -435,20 +435,61 @@ export default function DeskClient() {
           );
         })()}
 
-        {/* Revenue this month */}
-        <section className="goal-card">
-          <div className="goal-card-top">
-            <div>
-              <p className="section-tag">{new Date().toLocaleString("en-GB", { month: "long" })} revenue</p>
-              <div className="goal-card-figures">
-                <span className="goal-card-profit value-up">{formatCurrency(metrics.monthlyRevenue)}</span>
+        {/* Yearly profit goal */}
+        {(() => {
+          const profit = metrics.yearlyProfit;
+          const projected = metrics.yearlyProjected;
+          const pct = yearlyGoal > 0 ? Math.min((profit / yearlyGoal) * 100, 100) : 0;
+          const over = profit > yearlyGoal;
+          const fyLabel = `Apr ${metrics.fyStart.getFullYear()} – Mar ${metrics.fyEnd.getFullYear()}`;
+          return (
+            <section className="goal-card">
+              <div className="goal-card-top">
+                <div>
+                  <p className="section-tag">Yearly goal · {fyLabel}</p>
+                  <div className="goal-card-figures">
+                    <span className={`goal-card-profit${over ? " value-up" : ""}`}>{formatCurrency(profit)}</span>
+                    <span className="goal-card-divider">/</span>
+                    <span className="goal-card-target">{formatCurrency(yearlyGoal)}</span>
+                  </div>
+                </div>
+                {editingYearlyGoal ? (
+                  <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                    <input
+                      className="field"
+                      type="number"
+                      min="0"
+                      step="1000"
+                      placeholder={String(yearlyGoal)}
+                      value={yearlyGoalInput}
+                      onChange={e => setYearlyGoalInput(e.target.value)}
+                      onKeyDown={e => { if (e.key === "Enter") saveYearlyGoal(); if (e.key === "Escape") setEditingYearlyGoal(false); }}
+                      autoFocus
+                      style={{ width: "140px" }}
+                    />
+                    <button type="button" className="primary-button" onClick={saveYearlyGoal}>Save</button>
+                    <button type="button" className="ghost-button" onClick={() => setEditingYearlyGoal(false)}>Cancel</button>
+                  </div>
+                ) : (
+                  <button type="button" className="ghost-button" onClick={() => { setYearlyGoalInput(String(yearlyGoal)); setEditingYearlyGoal(true); }}>
+                    Edit goal
+                  </button>
+                )}
               </div>
-            </div>
-            <div style={{ textAlign: "right" }}>
-              <span className="goal-card-target" style={{ fontSize: "0.85rem" }}>Profit: {formatCurrency(metrics.monthlyProfit)}</span>
-            </div>
-          </div>
-        </section>
+              <div className="goal-progress-track">
+                <div
+                  className={`goal-progress-fill${over ? " goal-progress-over" : ""}`}
+                  style={{ width: `${Math.max(pct, 1)}%` }}
+                />
+              </div>
+              <div className="goal-progress-footer">
+                <span>{pct.toFixed(1)}% of target</span>
+                <span className="goal-projected">Projected: {formatCurrency(projected)}</span>
+                <span>{over ? `${formatCurrency(profit - yearlyGoal)} over target` : `${formatCurrency(yearlyGoal - profit)} to go`}</span>
+              </div>
+            </section>
+          );
+        })()}
 
         <section className="kpi-grid">
           <article className={`kpi-card${metrics.monthlyProfit >= 0 ? " analytics-kpi-profit" : " analytics-kpi-risk"}`}>
