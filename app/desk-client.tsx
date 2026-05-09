@@ -136,7 +136,7 @@ export default function DeskClient() {
       supabase
         .from("orders")
         .select("id, event_name, venue, event_date, account_email, section, listing_status, total_cost, sold_total, qty_bought")
-        .or("listing_status.is.null,listing_status.not.in.(Archived,Ignored,Personal)"),
+        .or("listing_status.is.null,listing_status.not.in.(Ignored,Personal)"),
       supabase
         .from("sales")
         .select("id, event_name, venue, event_date, account_email, qty_sold, sale_total, payout_total, inventory_order_id, sold_at")

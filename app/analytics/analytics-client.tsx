@@ -182,7 +182,7 @@ export default function AnalyticsClient() {
     }
 
     const [ordersResult, salesResult] = await Promise.all([
-      supabase.from("orders").select("*").or("listing_status.is.null,listing_status.not.in.(Archived,Ignored,Personal)").order("created_at", { ascending: true }),
+      supabase.from("orders").select("*").or("listing_status.is.null,listing_status.not.in.(Ignored,Personal)").order("created_at", { ascending: true }),
       supabase.from("sales").select("inventory_order_id, sold_at").not("inventory_order_id", "is", null),
     ]);
 
