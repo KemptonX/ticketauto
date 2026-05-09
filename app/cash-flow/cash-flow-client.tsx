@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/src/lib/supabase";
 import { formatCurrency } from "@/src/lib/currency";
 import { SidebarLogo, NavIcon, SidebarFooter } from "@/app/components/nav-icons";
@@ -102,10 +102,23 @@ export default function CashFlowClient() {
   const [refreshing, setRefreshing] = useState(false);
   const [message, setMessage] = useState("");
   const [selectedTY, setSelectedTY] = useState<number>(currentTY);
+  const [selectedMonthIdx, setSelectedMonthIdx] = useState<number | null>(() => {
+    const slots = txMonths(currentTY());
+    const now = new Date();
+    const idx = slots.findIndex(s => s.year === now.getFullYear() && s.month === now.getMonth());
+    return idx >= 0 ? idx : 0;
+  });
 
   useEffect(() => {
     void loadData();
   }, []);
+
+  useEffect(() => {
+    const slots = txMonths(selectedTY);
+    const now = new Date();
+    const idx = slots.findIndex(s => s.year === now.getFullYear() && s.month === now.getMonth());
+    setSelectedMonthIdx(idx >= 0 ? idx : 0);
+  }, [selectedTY]);
 
   async function handleLogout() {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -351,18 +364,19 @@ export default function CashFlowClient() {
               <p className="section-tag">Month by month</p>
               <h4>{txLabel(selectedTY)} breakdown</h4>
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 14, fontSize: 12, color: "var(--text-muted)" }}>
-                <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                  <span style={{ width: 8, height: 8, borderRadius: 2, background: "#9ef5c6", display: "inline-block" }} />
-                  Received
-                </span>
-                <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                  <span style={{ width: 8, height: 8, borderRadius: 2, background: "#4fc3ff", display: "inline-block" }} />
-                  Projected
-                </span>
-              </div>
-              <span className="table-count">April to March</span>
+            <div style={{ display: "flex", alignItems: "center", gap: 14, fontSize: 12, color: "var(--text-muted)" }}>
+              <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#9ef5c6", display: "inline-block" }} />
+                Received
+              </span>
+              <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#fde68a", display: "inline-block" }} />
+                Mixed
+              </span>
+              <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#4fc3ff", display: "inline-block" }} />
+                Projected
+              </span>
             </div>
           </div>
 
@@ -372,11 +386,12 @@ export default function CashFlowClient() {
               <h5>Loading</h5>
             </div>
           ) : (
-            <div style={{ marginTop: 8 }}>
-              {monthRows.map(row => (
-                <MonthRowItem key={`${row.year}-${row.month}`} row={row} />
-              ))}
-            </div>
+            <MonthBreakdown
+              monthRows={monthRows}
+              selectedMonthIdx={selectedMonthIdx}
+              onMonthClick={idx => setSelectedMonthIdx(prev => (prev === idx ? null : idx))}
+              tyEvents={tyEvents}
+            />
           )}
         </section>
 
@@ -455,41 +470,169 @@ export default function CashFlowClient() {
   );
 }
 
-// ── Month row ─────────────────────────────────────────────────────────────────
+// ── Month breakdown (tab row + detail panel) ─────────────────────────────────
 
-function MonthRowItem({ row }: { row: MonthRow }) {
-  const hasCash = row.totalCash > 0;
-  const isEmpty = row.eventCount === 0;
+function MonthBreakdown({
+  monthRows,
+  selectedMonthIdx,
+  onMonthClick,
+  tyEvents,
+}: {
+  monthRows: MonthRow[];
+  selectedMonthIdx: number | null;
+  onMonthClick: (idx: number) => void;
+  tyEvents: CashEvent[];
+}) {
+  const row = selectedMonthIdx !== null ? monthRows[selectedMonthIdx] : null;
+
+  const panelEvents = useMemo(() => {
+    if (!row) return [];
+    return tyEvents.filter(
+      ev => ev.dateValue.getFullYear() === row.year && ev.dateValue.getMonth() === row.month,
+    );
+  }, [row, tyEvents]);
+
+  const isOpen = selectedMonthIdx !== null;
+
+  // track previous idx so detail panel content stays rendered during close animation
+  const prevIdxRef = useRef(selectedMonthIdx);
+  if (isOpen) prevIdxRef.current = selectedMonthIdx;
+  const displayRow = isOpen ? row : (prevIdxRef.current !== null ? monthRows[prevIdxRef.current] : null);
+  const displayEvents = isOpen ? panelEvents : (prevIdxRef.current !== null
+    ? tyEvents.filter(ev => {
+        const r = monthRows[prevIdxRef.current!];
+        return ev.dateValue.getFullYear() === r.year && ev.dateValue.getMonth() === r.month;
+      })
+    : []);
+
+  return (
+    <div style={{ paddingTop: 6 }}>
+      {/* ── Tab row ── */}
+      <div
+        className="cf-month-tabs"
+        style={{
+          display: "flex",
+          gap: 2,
+          overflowX: "auto",
+          paddingBottom: 4,
+          paddingTop: 2,
+        }}
+      >
+        {monthRows.map((r, idx) => {
+          const isSelected = selectedMonthIdx === idx;
+          const dc = monthDotColor(r);
+          const dg = monthDotGlow(r);
+
+          return (
+            <button
+              key={`tab-${idx}`}
+              type="button"
+              onClick={() => onMonthClick(idx)}
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                gap: 5,
+                padding: "8px 10px 8px",
+                borderRadius: 10,
+                cursor: "pointer",
+                minWidth: 64,
+                flexShrink: 0,
+                border: isSelected && r.isCurrentMonth
+                  ? "1px solid rgba(79,195,255,0.35)"
+                  : isSelected
+                  ? "1px solid rgba(255,255,255,0.12)"
+                  : "1px solid transparent",
+                background: isSelected && r.isCurrentMonth
+                  ? "rgba(79,195,255,0.1)"
+                  : isSelected
+                  ? "rgba(255,255,255,0.07)"
+                  : r.isCurrentMonth
+                  ? "rgba(79,195,255,0.035)"
+                  : "transparent",
+                transition: "background 150ms ease, border-color 150ms ease",
+              }}
+            >
+              {/* Badge slot — same height for every button */}
+              <span style={{ height: 14, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                {r.isCurrentMonth && (
+                  <span style={{
+                    fontSize: 8,
+                    fontWeight: 800,
+                    letterSpacing: "0.08em",
+                    textTransform: "uppercase",
+                    color: "#4fc3ff",
+                    background: "rgba(79,195,255,0.15)",
+                    border: "1px solid rgba(79,195,255,0.3)",
+                    padding: "1px 5px",
+                    borderRadius: 999,
+                    whiteSpace: "nowrap",
+                  }}>
+                    Now
+                  </span>
+                )}
+              </span>
+
+              {/* Month abbreviation */}
+              <span style={{
+                fontSize: 12,
+                fontWeight: isSelected ? 600 : 400,
+                letterSpacing: "-0.01em",
+                color: isSelected
+                  ? "var(--text-primary)"
+                  : r.isCurrentMonth
+                  ? "#7dd4ff"
+                  : "var(--text-muted)",
+              }}>
+                {shortMonth(r.month)}
+              </span>
+
+              {/* Coloured dot indicator */}
+              <span style={{
+                width: 6,
+                height: 6,
+                borderRadius: "50%",
+                background: dc,
+                boxShadow: dg,
+                flexShrink: 0,
+              }} />
+            </button>
+          );
+        })}
+      </div>
+
+      {/* ── Detail panel (animated) ── */}
+      <div
+        style={{
+          overflow: "hidden",
+          maxHeight: isOpen ? 1400 : 0,
+          transition: "max-height 380ms cubic-bezier(0.4, 0, 0.2, 1)",
+        }}
+      >
+        <div
+          style={{
+            opacity: isOpen ? 1 : 0,
+            transform: isOpen ? "translateY(0)" : "translateY(-6px)",
+            transition: isOpen
+              ? "opacity 240ms ease 60ms, transform 240ms ease 60ms"
+              : "opacity 180ms ease, transform 180ms ease",
+          }}
+        >
+          {displayRow && (
+            <MonthDetailPanel row={displayRow} events={displayEvents} />
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Month detail panel ────────────────────────────────────────────────────────
+
+function MonthDetailPanel({ row, events }: { row: MonthRow; events: CashEvent[] }) {
+  const { label: statusLabel, cls: statusClass } = monthStatus(row);
   const hasBoth = row.receivedCash > 0 && row.projectedCash > 0;
-
-  let statusLabel: string;
-  let statusClass: string;
-
-  if (isEmpty) {
-    statusLabel = "No events";
-    statusClass = "status-unlisted";
-  } else if (row.isPastMonth) {
-    statusLabel = hasCash ? "Received" : "No sales";
-    statusClass = hasCash ? "status-sold" : "status-unlisted";
-  } else if (row.isFutureMonth) {
-    statusLabel = hasCash ? "Projected" : "No sales yet";
-    statusClass = hasCash ? "status-listed" : "status-unlisted";
-  } else {
-    // Current month — could be entirely received, projected, or a mix
-    if (hasBoth) {
-      statusLabel = "Mixed";
-      statusClass = "status-partial";
-    } else if (row.receivedCash > 0) {
-      statusLabel = "Received";
-      statusClass = "status-sold";
-    } else if (row.projectedCash > 0) {
-      statusLabel = "Projected";
-      statusClass = "status-listed";
-    } else {
-      statusLabel = "No sales yet";
-      statusClass = "status-unlisted";
-    }
-  }
+  const hasCash = row.totalCash > 0;
 
   const amountColor = !hasCash
     ? "var(--text-muted)"
@@ -502,116 +645,214 @@ function MonthRowItem({ row }: { row: MonthRow }) {
     : "#9ef5c6";
 
   return (
-    <div
-      style={{
+    <div style={{
+      margin: "10px 0 6px",
+      borderRadius: 16,
+      border: "1px solid var(--border)",
+      background: "rgba(255,255,255,0.014)",
+      overflow: "hidden",
+    }}>
+      {/* Header */}
+      <div style={{
+        padding: "20px 24px",
+        borderBottom: "1px solid rgba(35,35,42,0.5)",
         display: "flex",
-        alignItems: "center",
-        gap: 16,
-        padding: "18px 20px",
-        transition: "background 150ms ease",
-        ...(row.isCurrentMonth
-          ? {
-              background: "rgba(79,195,255,0.04)",
-              borderTop: "1px solid rgba(79,195,255,0.1)",
-              borderBottom: "1px solid rgba(79,195,255,0.1)",
-              margin: "4px 0",
-            }
-          : {
-              borderBottom: "1px solid rgba(35,35,42,0.35)",
-            }),
-      }}
-    >
-      {/* Left: month name + event count */}
-      <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 4 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-          <strong
-            style={{
-              fontSize: 15,
-              fontWeight: 600,
+        alignItems: "flex-start",
+        justifyContent: "space-between",
+        gap: 20,
+        flexWrap: "wrap",
+      }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <h4 style={{
+              margin: 0,
+              fontSize: 22,
+              fontWeight: 700,
+              letterSpacing: "-0.04em",
               color: "var(--text-primary)",
-              letterSpacing: "-0.02em",
-            }}
-          >
-            {row.monthLabel}
-          </strong>
-          <span style={{ fontSize: 13, color: "var(--text-muted)", fontWeight: 400 }}>
-            {row.year}
-          </span>
-          {row.isCurrentMonth && (
+            }}>
+              {row.monthLabel} {row.year}
+            </h4>
             <span
-              style={{
-                fontSize: 10,
-                fontWeight: 700,
-                letterSpacing: "0.1em",
-                textTransform: "uppercase",
-                color: "#4fc3ff",
-                background: "rgba(79,195,255,0.12)",
-                padding: "2px 8px",
-                borderRadius: 999,
-                border: "1px solid rgba(79,195,255,0.2)",
-              }}
+              className={`status-badge status-static ${statusClass}`}
+              style={{ fontSize: 11, padding: "4px 11px" }}
             >
-              Current
+              {statusLabel}
             </span>
+          </div>
+
+          <span style={{ fontSize: 13, color: "var(--text-muted)" }}>
+            {row.eventCount === 0
+              ? "No events this month"
+              : row.eventCount === 1
+              ? "1 event"
+              : `${row.eventCount} events`}
+            {row.soldCount > 0 && row.soldCount < row.eventCount
+              ? ` · ${row.soldCount} with sales`
+              : ""}
+          </span>
+
+          {hasBoth && (
+            <div style={{ display: "flex", gap: 20, marginTop: 2 }}>
+              <span style={{ fontSize: 13, color: "#9ef5c6" }}>
+                {formatCurrency(row.receivedCash)} received
+              </span>
+              <span style={{ fontSize: 13, color: "#4fc3ff" }}>
+                {formatCurrency(row.projectedCash)} projected
+              </span>
+            </div>
           )}
         </div>
-        <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
-          {isEmpty
-            ? "No events this month"
-            : row.eventCount === 1
-            ? "1 event"
-            : `${row.eventCount} events`}
-          {!isEmpty && row.soldCount > 0 && row.soldCount < row.eventCount
-            ? ` · ${row.soldCount} with sales`
-            : ""}
-        </span>
-      </div>
 
-      {/* Centre: breakdown for mixed months */}
-      {hasBoth && (
-        <div
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "flex-end",
-            gap: 2,
-            minWidth: 160,
-          }}
-        >
-          <span style={{ fontSize: 12, color: "#9ef5c6" }}>
-            {formatCurrency(row.receivedCash)} received
-          </span>
-          <span style={{ fontSize: 12, color: "#4fc3ff" }}>
-            {formatCurrency(row.projectedCash)} projected
-          </span>
-        </div>
-      )}
-
-      {/* Right: total amount */}
-      <div style={{ minWidth: 130, textAlign: "right" }}>
-        <strong
-          style={{
-            fontSize: 19,
-            fontWeight: 700,
-            letterSpacing: "-0.04em",
-            color: amountColor,
-          }}
-        >
+        <strong style={{
+          fontSize: 32,
+          fontWeight: 700,
+          letterSpacing: "-0.055em",
+          color: amountColor,
+          flexShrink: 0,
+        }}>
           {hasCash ? formatCurrency(row.totalCash) : "—"}
         </strong>
       </div>
 
-      {/* Far right: status badge */}
-      <div style={{ minWidth: 108, textAlign: "right" }}>
-        <span
-          className={`status-badge status-static ${statusClass}`}
-          style={{ fontSize: 11, padding: "5px 12px" }}
-        >
-          {statusLabel}
-        </span>
-      </div>
+      {/* Event list */}
+      {events.length === 0 ? (
+        <div style={{
+          padding: "32px 24px",
+          textAlign: "center",
+          color: "var(--text-muted)",
+          fontSize: 14,
+        }}>
+          No events in {row.monthLabel} {row.year}
+        </div>
+      ) : (
+        <div>
+          {/* Column header */}
+          <div style={{
+            display: "grid",
+            gridTemplateColumns: "52px 1fr 64px 100px",
+            gap: 12,
+            padding: "10px 24px",
+            borderBottom: "1px solid rgba(35,35,42,0.4)",
+          }}>
+            {["Date", "Event", "Tickets", "Cash"].map(h => (
+              <span key={h} style={{
+                fontSize: 11,
+                fontWeight: 600,
+                letterSpacing: "0.1em",
+                textTransform: "uppercase",
+                color: "var(--text-muted)",
+                textAlign: h === "Tickets" || h === "Cash" ? "right" : "left",
+              }}>
+                {h}
+              </span>
+            ))}
+          </div>
+
+          {events.map((ev, idx) => (
+            <div
+              key={ev.key}
+              style={{
+                display: "grid",
+                gridTemplateColumns: "52px 1fr 64px 100px",
+                gap: 12,
+                alignItems: "center",
+                padding: "13px 24px",
+                borderBottom: idx < events.length - 1 ? "1px solid rgba(35,35,42,0.28)" : "none",
+                transition: "background 150ms ease",
+              }}
+              onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.background = "rgba(255,255,255,0.025)"; }}
+              onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = "transparent"; }}
+            >
+              {/* Date */}
+              <span style={{ fontSize: 12, color: "var(--text-muted)", letterSpacing: "0.01em" }}>
+                {formatShortDate(ev.dateValue)}
+              </span>
+
+              {/* Event name + venue */}
+              <div style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}>
+                <strong style={{
+                  fontSize: 14,
+                  fontWeight: 600,
+                  color: "var(--text-primary)",
+                  letterSpacing: "-0.015em",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}>
+                  {ev.eventName}
+                </strong>
+                {ev.venue && (
+                  <span style={{ fontSize: 12, color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {ev.venue}
+                  </span>
+                )}
+              </div>
+
+              {/* Tickets sold */}
+              <span style={{
+                fontSize: 13,
+                color: ev.soldQty > 0 ? "var(--text-secondary)" : "var(--text-muted)",
+                textAlign: "right",
+              }}>
+                {ev.soldQty > 0 ? `${ev.soldQty}/${ev.totalQty}` : `0/${ev.totalQty}`}
+              </span>
+
+              {/* Cash */}
+              <strong style={{
+                fontSize: 14,
+                fontWeight: 700,
+                letterSpacing: "-0.03em",
+                textAlign: "right",
+                color: ev.cashIn > 0
+                  ? (ev.isPast ? "#9ef5c6" : "#4fc3ff")
+                  : "var(--text-muted)",
+              }}>
+                {ev.cashIn > 0 ? formatCurrency(ev.cashIn) : "—"}
+              </strong>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
+}
+
+// ── Helpers for month tabs ────────────────────────────────────────────────────
+
+function shortMonth(month: number): string {
+  return new Intl.DateTimeFormat("en-GB", { month: "short" }).format(new Date(2024, month, 1));
+}
+
+function formatShortDate(date: Date): string {
+  return new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short" }).format(date);
+}
+
+function monthDotColor(row: MonthRow): string {
+  if (row.eventCount === 0) return "rgba(255,255,255,0.12)";
+  if (row.receivedCash > 0 && row.projectedCash > 0) return "#fde68a";
+  if (row.receivedCash > 0) return "#9ef5c6";
+  if (row.projectedCash > 0) return "#4fc3ff";
+  return "rgba(255,255,255,0.2)";
+}
+
+function monthDotGlow(row: MonthRow): string {
+  if (row.receivedCash > 0 && row.projectedCash > 0) return "0 0 5px rgba(253,230,138,0.6)";
+  if (row.receivedCash > 0) return "0 0 5px rgba(158,245,198,0.6)";
+  if (row.projectedCash > 0) return "0 0 5px rgba(79,195,255,0.6)";
+  return "none";
+}
+
+function monthStatus(row: MonthRow): { label: string; cls: string } {
+  const hasCash = row.totalCash > 0;
+  const hasBoth = row.receivedCash > 0 && row.projectedCash > 0;
+  if (row.eventCount === 0) return { label: "No events", cls: "status-unlisted" };
+  if (row.isPastMonth) return hasCash ? { label: "Received", cls: "status-sold" } : { label: "No sales", cls: "status-unlisted" };
+  if (row.isFutureMonth) return hasCash ? { label: "Projected", cls: "status-listed" } : { label: "No sales yet", cls: "status-unlisted" };
+  if (hasBoth) return { label: "Mixed", cls: "status-partial" };
+  if (row.receivedCash > 0) return { label: "Received", cls: "status-sold" };
+  if (row.projectedCash > 0) return { label: "Projected", cls: "status-listed" };
+  return { label: "No sales yet", cls: "status-unlisted" };
 }
 
 // ── Utilities ─────────────────────────────────────────────────────────────────

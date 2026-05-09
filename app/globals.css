@@ -835,6 +835,14 @@ select {
   flex-wrap: wrap;
 }
 
+.cf-month-tabs {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.cf-month-tabs::-webkit-scrollbar {
+  display: none;
+}
+
 .event-winners-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
