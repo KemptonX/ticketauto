@@ -570,8 +570,14 @@ export default function CashFlowClient() {
 function CashFlowChart({ data }: { data: ChartBucket[] }) {
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
 
-  const W = 760, H = 300;
-  const PAD_L = 64, PAD_R = 16, PAD_T = 20, PAD_B = 8;
+  const rotate = data.length > 9;
+
+  const W = 760;
+  const PAD_L = 76;
+  const PAD_R = 24;
+  const PAD_T = 28;
+  const PAD_B = rotate ? 60 : 32;
+  const H = 400 + PAD_B;
   const chartW = W - PAD_L - PAD_R;
   const chartH = H - PAD_T - PAD_B;
 
@@ -583,7 +589,7 @@ function CashFlowChart({ data }: { data: ChartBucket[] }) {
   const zeroY = toY(0);
 
   const slotW = chartW / data.length;
-  const barW = Math.max(6, Math.min(48, slotW * 0.6));
+  const barW = Math.max(10, Math.min(56, slotW * 0.64));
 
   return (
     <div className="analytics-chart-wrap">
@@ -592,35 +598,62 @@ function CashFlowChart({ data }: { data: ChartBucket[] }) {
         className="analytics-line-chart"
         role="img"
         aria-label="Cash flow by period"
-        style={{ overflow: "visible" }}
+        style={{ display: "block", width: "100%", overflow: "visible" }}
       >
         <defs>
-          {data.map((_, i) => (
-            <clipPath key={i} id={`cf-clip-${i}`}>
-              <rect
-                x={PAD_L + slotW * i + slotW / 2 - barW / 2}
-                y={data[i].received + data[i].upcoming > 0 ? toY(data[i].received + data[i].upcoming) : zeroY}
-                width={barW}
-                height={Math.max(zeroY - (data[i].received + data[i].upcoming > 0 ? toY(data[i].received + data[i].upcoming) : zeroY), 2)}
-                rx={4}
-              />
-            </clipPath>
-          ))}
+          {data.map((point, i) => {
+            const total = point.received + point.upcoming;
+            if (total <= 0) return null;
+            const cx = PAD_L + slotW * i + slotW / 2;
+            return (
+              <clipPath key={i} id={`cf-clip-${i}`}>
+                <rect
+                  x={cx - barW / 2}
+                  y={toY(total)}
+                  width={barW}
+                  height={Math.max(zeroY - toY(total), 2)}
+                  rx={5}
+                />
+              </clipPath>
+            );
+          })}
         </defs>
 
-        {gridLines.map(v => (
-          <g key={v}>
-            <line
-              x1={PAD_L} x2={W - PAD_R}
-              y1={toY(v)} y2={toY(v)}
-              stroke="rgba(255,255,255,0.07)" strokeWidth="1"
-            />
-            <text x={PAD_L - 8} y={toY(v) + 4} textAnchor="end" fontSize="11" fill="rgba(255,255,255,0.4)">
-              {formatCompactCurrency(v)}
-            </text>
-          </g>
-        ))}
+        {/* Y-axis left border */}
+        <line
+          x1={PAD_L} x2={PAD_L}
+          y1={PAD_T} y2={zeroY}
+          stroke="rgba(255,255,255,0.08)"
+          strokeWidth="1"
+        />
 
+        {/* Gridlines + Y-axis labels */}
+        {gridLines.map(v => {
+          const y = toY(v);
+          const isZero = v === 0;
+          return (
+            <g key={v}>
+              <line
+                x1={PAD_L} x2={W - PAD_R}
+                y1={y} y2={y}
+                stroke={isZero ? "rgba(255,255,255,0.18)" : "rgba(255,255,255,0.05)"}
+                strokeWidth={isZero ? 1 : 1}
+                strokeDasharray={isZero ? undefined : "4 5"}
+              />
+              <text
+                x={PAD_L - 10}
+                y={y + 4}
+                textAnchor="end"
+                fontSize="11"
+                fill={isZero ? "rgba(255,255,255,0.3)" : "rgba(255,255,255,0.35)"}
+              >
+                {formatCompactCurrency(v)}
+              </text>
+            </g>
+          );
+        })}
+
+        {/* Bars */}
         {data.map((point, i) => {
           const cx = PAD_L + slotW * i + slotW / 2;
           const total = point.received + point.upcoming;
@@ -628,74 +661,112 @@ function CashFlowChart({ data }: { data: ChartBucket[] }) {
           if (total <= 0) return null;
 
           const totalTopY = toY(total);
+          // When received=0, receivedTopY = zeroY so blue fills the full bar via clipPath
           const receivedTopY = point.received > 0 ? toY(point.received) : zeroY;
+          const barH = zeroY - totalTopY;
 
-          const tooltipW = 130;
+          // Tooltip dimensions depend on how many rows of info we show
+          const hasBoth = point.received > 0 && point.upcoming > 0;
+          const tooltipW = 186;
+          const tooltipH = hasBoth ? 72 : 48;
           const rawTipX = cx - tooltipW / 2;
           const tipX = Math.max(PAD_L, Math.min(W - PAD_R - tooltipW, rawTipX));
-          const tipY = totalTopY - 36;
+          const tipY = Math.max(PAD_T + 4, totalTopY - tooltipH - 12);
 
           return (
             <g
-              key={point.label}
+              key={`bar-${i}`}
               onMouseEnter={() => setHoveredIdx(i)}
               onMouseLeave={() => setHoveredIdx(null)}
               style={{ cursor: "default" }}
             >
+              {/* Wide invisible hit target so thin bars are easy to hover */}
+              <rect
+                x={cx - Math.max(barW, 20) / 2}
+                y={totalTopY}
+                width={Math.max(barW, 20)}
+                height={barH}
+                fill="transparent"
+              />
+
+              {/* Stacked coloured sections clipped to rounded bar shape */}
               <g clipPath={`url(#cf-clip-${i})`}>
-                {/* Received (green) — bottom section */}
+                {/* Received — green, lower portion */}
                 {point.received > 0 && (
                   <rect
                     x={cx - barW / 2} y={receivedTopY}
                     width={barW} height={Math.max(zeroY - receivedTopY, 0)}
                     fill="#67F0A5"
-                    opacity={isHovered ? 1 : 0.8}
+                    opacity={isHovered ? 0.97 : 0.8}
                   />
                 )}
-                {/* Upcoming (blue) — top section */}
+                {/* Upcoming — blue, upper portion (or full bar if no received) */}
                 {point.upcoming > 0 && (
                   <rect
                     x={cx - barW / 2} y={totalTopY}
                     width={barW} height={Math.max(receivedTopY - totalTopY, 0)}
                     fill="#4FC3FF"
-                    opacity={isHovered ? 1 : 0.8}
-                  />
-                )}
-                {/* Solid-color bar when only one type */}
-                {point.received > 0 && point.upcoming === 0 && (
-                  <rect
-                    x={cx - barW / 2} y={totalTopY}
-                    width={barW} height={Math.max(zeroY - totalTopY, 0)}
-                    fill="#67F0A5"
-                    opacity={isHovered ? 1 : 0.8}
-                  />
-                )}
-                {point.upcoming > 0 && point.received === 0 && (
-                  <rect
-                    x={cx - barW / 2} y={totalTopY}
-                    width={barW} height={Math.max(zeroY - totalTopY, 0)}
-                    fill="#4FC3FF"
-                    opacity={isHovered ? 1 : 0.8}
+                    opacity={isHovered ? 0.88 : 0.65}
                   />
                 )}
               </g>
 
+              {/* Value label above bar when tall enough and not hovered */}
+              {barH > 30 && !isHovered && (
+                <text
+                  x={cx}
+                  y={totalTopY - 7}
+                  textAnchor="middle"
+                  fontSize="11"
+                  fill="rgba(255,255,255,0.5)"
+                  fontWeight="600"
+                >
+                  {formatCompactCurrency(total)}
+                </text>
+              )}
+
+              {/* Hover tooltip */}
               {isHovered && (
                 <g>
                   <rect
                     x={tipX} y={tipY}
-                    width={tooltipW} height={point.received > 0 && point.upcoming > 0 ? 46 : 28}
-                    rx={5}
-                    fill="rgba(12,12,20,0.96)"
-                    stroke="rgba(255,255,255,0.12)"
+                    width={tooltipW} height={tooltipH}
+                    rx={8}
+                    fill="rgba(10,10,20,0.97)"
+                    stroke="rgba(255,255,255,0.1)"
                     strokeWidth="1"
                   />
-                  <text x={tipX + tooltipW / 2} y={tipY + 18} textAnchor="middle" fontSize="12" fill="white" fontWeight="700">
+                  {/* Period label */}
+                  <text x={tipX + 14} y={tipY + 18} fontSize="11" fill="rgba(255,255,255,0.5)">
+                    {point.label}
+                  </text>
+                  {/* Total */}
+                  <text x={tipX + tooltipW - 14} y={tipY + 18} textAnchor="end" fontSize="13" fill="white" fontWeight="700">
                     {formatCurrency(total)}
                   </text>
-                  {point.received > 0 && point.upcoming > 0 && (
-                    <text x={tipX + tooltipW / 2} y={tipY + 36} textAnchor="middle" fontSize="10" fill="rgba(255,255,255,0.55)">
-                      {formatCurrency(point.received)} rcvd · {formatCurrency(point.upcoming)} upcoming
+                  {/* Breakdown rows */}
+                  {hasBoth ? (
+                    <>
+                      <text x={tipX + 14} y={tipY + 38} fontSize="11" fill="#67F0A5">
+                        ● Received
+                      </text>
+                      <text x={tipX + tooltipW - 14} y={tipY + 38} textAnchor="end" fontSize="11" fill="#67F0A5" fontWeight="600">
+                        {formatCurrency(point.received)}
+                      </text>
+                      <text x={tipX + 14} y={tipY + 56} fontSize="11" fill="#4FC3FF">
+                        ● Projected
+                      </text>
+                      <text x={tipX + tooltipW - 14} y={tipY + 56} textAnchor="end" fontSize="11" fill="#4FC3FF" fontWeight="600">
+                        {formatCurrency(point.upcoming)}
+                      </text>
+                    </>
+                  ) : point.received > 0 ? (
+                    <text x={tipX + 14} y={tipY + 34} fontSize="11" fill="#67F0A5">
+                      ● Received
+                    </text>
+                  ) : (
+                    <text x={tipX + 14} y={tipY + 34} fontSize="11" fill="#4FC3FF">
+                      ● Projected
                     </text>
                   )}
                 </g>
@@ -703,18 +774,45 @@ function CashFlowChart({ data }: { data: ChartBucket[] }) {
             </g>
           );
         })}
-      </svg>
 
-      <div style={{ display: "flex", paddingLeft: PAD_L, paddingRight: PAD_R, marginTop: 6 }}>
-        {data.map(point => (
-          <span
-            key={point.label}
-            style={{ flex: 1, textAlign: "center", fontSize: 11, color: "rgba(255,255,255,0.45)", whiteSpace: "nowrap", overflow: "hidden" }}
-          >
-            {point.label}
-          </span>
-        ))}
-      </div>
+        {/* X-axis labels — inside SVG so they align precisely with bars */}
+        {data.map((point, i) => {
+          const cx = PAD_L + slotW * i + slotW / 2;
+          const labelY = zeroY + 14;
+
+          if (rotate) {
+            return (
+              <text
+                key={`lbl-${i}`}
+                transform={`translate(${cx}, ${labelY}) rotate(-42)`}
+                textAnchor="end"
+                dominantBaseline="middle"
+                fontSize="11"
+                fill="rgba(255,255,255,0.42)"
+              >
+                {point.label}
+              </text>
+            );
+          }
+
+          // Non-rotated: skip labels that would crowd each other
+          const skipEvery = Math.ceil(data.length / 10);
+          if (i % skipEvery !== 0 && i !== data.length - 1) return null;
+
+          return (
+            <text
+              key={`lbl-${i}`}
+              x={cx}
+              y={labelY + 6}
+              textAnchor="middle"
+              fontSize="11"
+              fill="rgba(255,255,255,0.42)"
+            >
+              {point.label}
+            </text>
+          );
+        })}
+      </svg>
     </div>
   );
 }
