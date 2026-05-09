@@ -203,6 +203,15 @@ export default function DeskClient() {
     // Profit from orders: use sold_total (any order with sold_total > 0 was sold)
     // Group by event_date so monthly/yearly goals reflect when the event was, not when it sold
 
+    const monthlyRevenue = orders
+      .filter((o) => {
+        if ((o.sold_total ?? 0) <= 0) return false;
+        const d = parseDate(o.event_date);
+        if (!d) return false;
+        return d >= monthStart && d < nextMonth;
+      })
+      .reduce((sum, o) => sum + (o.sold_total ?? 0), 0);
+
     const monthlyProfit = orders
       .filter((o) => {
         if ((o.sold_total ?? 0) <= 0) return false;
@@ -275,7 +284,7 @@ export default function DeskClient() {
 
     const soldCount = orders.filter((o) => o.listing_status === "Sold").length;
 
-    return { capitalIn, closedProfit, availableCount, soldCount, monthlyProfit, openCount, bestEvent, bestProfit, thisMonthCount, thisMonthSold, thisMonthPayout, yearlyProfit, fyStart, fyEnd, monthlyProjected, yearlyProjected };
+    return { capitalIn, closedProfit, availableCount, soldCount, monthlyRevenue, monthlyProfit, openCount, bestEvent, bestProfit, thisMonthCount, thisMonthSold, thisMonthPayout, yearlyProfit, fyStart, fyEnd, monthlyProjected, yearlyProjected };
   }, [orders]);
 
   const eventPnL = useMemo(() => {
@@ -426,61 +435,20 @@ export default function DeskClient() {
           );
         })()}
 
-        {/* Yearly profit goal */}
-        {(() => {
-          const profit = metrics.yearlyProfit;
-          const projected = metrics.yearlyProjected;
-          const pct = yearlyGoal > 0 ? Math.min((profit / yearlyGoal) * 100, 100) : 0;
-          const over = profit > yearlyGoal;
-          const fyLabel = `Apr ${metrics.fyStart.getFullYear()} – Mar ${metrics.fyEnd.getFullYear()}`;
-          return (
-            <section className="goal-card">
-              <div className="goal-card-top">
-                <div>
-                  <p className="section-tag">Yearly goal · {fyLabel}</p>
-                  <div className="goal-card-figures">
-                    <span className={`goal-card-profit${over ? " value-up" : ""}`}>{formatCurrency(profit)}</span>
-                    <span className="goal-card-divider">/</span>
-                    <span className="goal-card-target">{formatCurrency(yearlyGoal)}</span>
-                  </div>
-                </div>
-                {editingYearlyGoal ? (
-                  <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-                    <input
-                      className="field"
-                      type="number"
-                      min="0"
-                      step="1000"
-                      placeholder={String(yearlyGoal)}
-                      value={yearlyGoalInput}
-                      onChange={e => setYearlyGoalInput(e.target.value)}
-                      onKeyDown={e => { if (e.key === "Enter") saveYearlyGoal(); if (e.key === "Escape") setEditingYearlyGoal(false); }}
-                      autoFocus
-                      style={{ width: "140px" }}
-                    />
-                    <button type="button" className="primary-button" onClick={saveYearlyGoal}>Save</button>
-                    <button type="button" className="ghost-button" onClick={() => setEditingYearlyGoal(false)}>Cancel</button>
-                  </div>
-                ) : (
-                  <button type="button" className="ghost-button" onClick={() => { setYearlyGoalInput(String(yearlyGoal)); setEditingYearlyGoal(true); }}>
-                    Edit goal
-                  </button>
-                )}
+        {/* Revenue this month */}
+        <section className="goal-card">
+          <div className="goal-card-top">
+            <div>
+              <p className="section-tag">{new Date().toLocaleString("en-GB", { month: "long" })} revenue</p>
+              <div className="goal-card-figures">
+                <span className="goal-card-profit value-up">{formatCurrency(metrics.monthlyRevenue)}</span>
               </div>
-              <div className="goal-progress-track">
-                <div
-                  className={`goal-progress-fill${over ? " goal-progress-over" : ""}`}
-                  style={{ width: `${Math.max(pct, 1)}%` }}
-                />
-              </div>
-              <div className="goal-progress-footer">
-                <span>{pct.toFixed(1)}% of target</span>
-                <span className="goal-projected">Projected: {formatCurrency(projected)}</span>
-                <span>{over ? `${formatCurrency(profit - yearlyGoal)} over target` : `${formatCurrency(yearlyGoal - profit)} to go`}</span>
-              </div>
-            </section>
-          );
-        })()}
+            </div>
+            <div style={{ textAlign: "right" }}>
+              <span className="goal-card-target" style={{ fontSize: "0.85rem" }}>Profit: {formatCurrency(metrics.monthlyProfit)}</span>
+            </div>
+          </div>
+        </section>
 
         <section className="kpi-grid">
           <article className={`kpi-card${metrics.monthlyProfit >= 0 ? " analytics-kpi-profit" : " analytics-kpi-risk"}`}>
