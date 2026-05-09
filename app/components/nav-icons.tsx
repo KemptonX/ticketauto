@@ -130,6 +130,16 @@ export function IconArchive(p: IconProps) {
   );
 }
 
+export function IconCashFlow(p: IconProps) {
+  return (
+    <Icon {...p}>
+      <polyline points="2 18 7 11 12 15 17 7 22 10" />
+      <polyline points="17 7 22 7 22 12" />
+      <line x1="2" y1="22" x2="22" y2="22" />
+    </Icon>
+  );
+}
+
 // ─── Sidebar footer icons ─────────────────────────────────────────────────────
 
 export function IconSettings() {
@@ -158,6 +168,7 @@ const ICON_MAP: Record<string, (p: IconProps) => React.JSX.Element> = {
   "/orders": IconTickets,
   "/sales": IconSales,
   "/analytics": IconAnalytics,
+  "/cash-flow": IconCashFlow,
   "/costs": IconCosts,
   "/viagogo-calculator": IconCalculator,
   "/scans": IconScans,

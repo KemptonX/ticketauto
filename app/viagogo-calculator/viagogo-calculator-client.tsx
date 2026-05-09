@@ -24,6 +24,7 @@ const navItems = [
   { label: "Tickets", href: "/orders", active: false },
   { label: "Sales", href: "/sales", active: false },
   { label: "Analytics", href: "/analytics", active: false },
+  { label: "Cash Flow", href: "/cash-flow", active: false },
   { label: "Costs", href: "/costs", active: false },
   { label: "Calculator", href: "/viagogo-calculator", active: true },
   { label: "Scans", href: "/scans", active: false },
