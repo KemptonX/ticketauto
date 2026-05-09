@@ -492,11 +492,11 @@ export default function DeskClient() {
         })()}
 
         <section className="kpi-grid">
-          <article className={`kpi-card${metrics.monthlyProfit >= 0 ? " analytics-kpi-profit" : " analytics-kpi-risk"}`}>
+          <article className={`kpi-card${metrics.monthlyRevenue >= 0 ? " analytics-kpi-profit" : " analytics-kpi-risk"}`}>
             <span className="kpi-accent" />
-            <p>Profit this month</p>
-            <strong>{formatCurrency(metrics.monthlyProfit)}</strong>
-            <span>from sales in {new Date().toLocaleString("en-GB", { month: "long" })}</span>
+            <p>Revenue this month</p>
+            <strong>{formatCurrency(metrics.monthlyRevenue)}</strong>
+            <span>gross income in {new Date().toLocaleString("en-GB", { month: "long" })}</span>
           </article>
           <article className="kpi-card">
             <span className="kpi-accent" />
