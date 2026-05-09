@@ -160,7 +160,7 @@ export default function OrdersClient() {
   const [newAccountInput, setNewAccountInput] = useState("");
   const [newTicket, setNewTicket] = useState<NewTicketForm>(defaultNewTicket);
 
-  const [viewMode, setViewMode] = useState<"active" | "archived" | "ignored">("active");
+  const [viewMode, setViewMode] = useState<"active" | "archived" | "ignored" | "personal">("active");
   const [sortBy, setSortBy] = useState<"event-date" | "added-newest" | "added-oldest">("event-date");
 
   const [search, setSearch] = useState("");
@@ -192,7 +192,9 @@ export default function OrdersClient() {
         ? query.eq("listing_status", "Archived")
         : mode === "ignored"
           ? query.eq("listing_status", "Ignored")
-          : query.or("listing_status.is.null,listing_status.not.in.(Archived,Ignored)")
+          : mode === "personal"
+            ? query.eq("listing_status", "Personal")
+            : query.or("listing_status.is.null,listing_status.not.in.(Archived,Ignored,Personal)")
     );
 
     // Fetch matched sales to get actual qty_sold per order
@@ -305,7 +307,8 @@ export default function OrdersClient() {
       .from("orders")
       .select("id, event_date, listing_status")
       .neq("listing_status", "Archived")
-      .neq("listing_status", "Ignored");
+      .neq("listing_status", "Ignored")
+      .neq("listing_status", "Personal");
 
     if (!data) return;
 
@@ -711,6 +714,30 @@ export default function OrdersClient() {
     setMessage(`${ids.length} ticket${ids.length !== 1 ? "s" : ""} archived`);
   }
 
+  async function markPersonal(id: number) {
+    const { error } = await supabase
+      .from("orders")
+      .update({ listing_status: "Personal" })
+      .eq("id", id);
+    if (error) { setMessage(error.message); return; }
+    setOrders((current) => current.filter((o) => o.id !== id));
+    setSelectedOrderId(null);
+    setMessage("Ticket marked personal — excluded from all business stats");
+  }
+
+  async function bulkMarkPersonal() {
+    const ids = [...selectedIds];
+    if (ids.length === 0) return;
+    const { error } = await supabase
+      .from("orders")
+      .update({ listing_status: "Personal" })
+      .in("id", ids);
+    if (error) { setMessage(error.message); return; }
+    setOrders((current) => current.filter((o) => !selectedIds.has(o.id)));
+    clearSelection();
+    setMessage(`${ids.length} ticket${ids.length !== 1 ? "s" : ""} marked personal`);
+  }
+
   async function bulkIgnore() {
     const ids = [...selectedIds];
     if (ids.length === 0) return;
@@ -902,7 +929,7 @@ export default function OrdersClient() {
             <button className="secondary-button" onClick={() => loadOrders(true)} disabled={refreshing} type="button">
               {refreshing ? "Refreshing..." : "Refresh"}
             </button>
-            {viewMode === "active" && (
+            {(viewMode === "active" || viewMode === "personal") && (
               <>
                 <button className="secondary-button" onClick={exportOrdersCSV} type="button">
                   Export CSV
@@ -948,6 +975,13 @@ export default function OrdersClient() {
                 onClick={() => { setViewMode("ignored"); clearSelection(); setSelectedOrderId(null); setShowAddForm(false); }}
               >
                 Ignored
+              </button>
+              <button
+                type="button"
+                className={`toggle-btn${viewMode === "personal" ? " toggle-btn-active" : ""}`}
+                onClick={() => { setViewMode("personal"); clearSelection(); setSelectedOrderId(null); setShowAddForm(false); }}
+              >
+                Personal
               </button>
             </div>
             <div className="view-toggle">
@@ -1049,8 +1083,8 @@ export default function OrdersClient() {
         <section className="table-card inventory-board">
           <div className="table-card-header inventory-board-header">
             <div>
-              <p className="section-tag">{viewMode === "archived" ? "Archive" : viewMode === "ignored" ? "Ignored" : "Tickets"}</p>
-              <h4>{viewMode === "archived" ? "Archived tickets" : viewMode === "ignored" ? "Ignored tickets" : "Tickets by event"}</h4>
+              <p className="section-tag">{viewMode === "archived" ? "Archive" : viewMode === "ignored" ? "Ignored" : viewMode === "personal" ? "Personal" : "Tickets"}</p>
+              <h4>{viewMode === "archived" ? "Archived tickets" : viewMode === "ignored" ? "Ignored tickets" : viewMode === "personal" ? "Personal tickets" : "Tickets by event"}</h4>
             </div>
             <span className="table-count">{groupedOrders.length} events · {filteredOrders.length} tickets</span>
           </div>
@@ -1078,7 +1112,7 @@ export default function OrdersClient() {
                 <button className="secondary-button" type="button" onClick={selectAll}>
                   Select all ({filteredOrders.length})
                 </button>
-                {viewMode === "archived" && (
+                {(viewMode === "archived" || viewMode === "personal") && (
                   <button className="secondary-button" type="button" onClick={() => void bulkRestore()}>
                     Restore selected
                   </button>
@@ -1088,9 +1122,16 @@ export default function OrdersClient() {
                     Archive selected
                   </button>
                 )}
-                <button className="secondary-button" type="button" onClick={() => void bulkIgnore()}>
-                  Ignore selected
-                </button>
+                {viewMode === "active" && (
+                  <button className="secondary-button" type="button" onClick={() => void bulkMarkPersonal()}>
+                    Mark personal
+                  </button>
+                )}
+                {viewMode !== "personal" && (
+                  <button className="secondary-button" type="button" onClick={() => void bulkIgnore()}>
+                    Ignore selected
+                  </button>
+                )}
                 <button className="danger-button" type="button" onClick={() => void bulkDelete()}>
                   Delete selected
                 </button>
@@ -1109,8 +1150,8 @@ export default function OrdersClient() {
           ) : groupedOrders.length === 0 ? (
             <div className="state-card">
               <div className="state-orb state-orb-muted" />
-              <h5>{viewMode === "archived" ? "No archived tickets" : viewMode === "ignored" ? "No ignored tickets" : "No tickets match these filters"}</h5>
-              <p>{viewMode === "archived" ? "Archive a ticket to store it here." : viewMode === "ignored" ? "Ignored tickets will appear here." : "Reset the filters or add a new ticket."}</p>
+              <h5>{viewMode === "archived" ? "No archived tickets" : viewMode === "ignored" ? "No ignored tickets" : viewMode === "personal" ? "No personal tickets" : "No tickets match these filters"}</h5>
+              <p>{viewMode === "archived" ? "Archive a ticket to store it here." : viewMode === "ignored" ? "Ignored tickets will appear here." : viewMode === "personal" ? "Mark a ticket as personal to store it here." : "Reset the filters or add a new ticket."}</p>
             </div>
           ) : (
             <div className="inventory-group-list">
@@ -1229,7 +1270,7 @@ export default function OrdersClient() {
                               <th>Sold For</th>
                               <th>Profit</th>
                               <th>ROI</th>
-                              <th>{viewMode !== "active" ? "Actions" : "Status"}</th>
+                              <th>{viewMode === "active" ? "Status" : "Actions"}</th>
                               <th>Added</th>
                             </tr>
                           </thead>
@@ -1300,7 +1341,7 @@ export default function OrdersClient() {
                                           Ignore
                                         </button>
                                       </div>
-                                    ) : viewMode === "ignored" ? (
+                                    ) : viewMode === "ignored" || viewMode === "personal" ? (
                                       <button className="secondary-button" type="button" onClick={() => void restoreOrder(order.id)}>
                                         Restore
                                       </button>
@@ -1774,7 +1815,7 @@ export default function OrdersClient() {
               >
                 Delete
               </button>
-              {viewMode === "ignored" ? (
+              {viewMode === "ignored" || viewMode === "personal" ? (
                 <button
                   className="secondary-button"
                   type="button"
@@ -1801,6 +1842,13 @@ export default function OrdersClient() {
                 </>
               ) : (
                 <>
+                  <button
+                    className="secondary-button"
+                    type="button"
+                    onClick={() => void markPersonal(selectedOrder.id)}
+                  >
+                    Personal
+                  </button>
                   <button
                     className="secondary-button"
                     type="button"
@@ -1998,6 +2046,8 @@ function getStatusTone(status: string | null) {
       return "status-sold";
     case "Problem / Missing":
       return "status-problem";
+    case "Personal":
+      return "status-personal";
     default:
       return "status-unlisted";
   }

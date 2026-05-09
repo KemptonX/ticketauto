@@ -1475,6 +1475,13 @@ select {
   box-shadow: 0 0 18px rgba(245, 158, 11, 0.14);
 }
 
+.status-personal {
+  background: rgba(139, 92, 246, 0.18);
+  border-color: rgba(139, 92, 246, 0.42);
+  color: #c4b5fd;
+  box-shadow: 0 0 18px rgba(139, 92, 246, 0.14);
+}
+
 .status-problem {
   background: rgba(255, 82, 82, 0.18);
   border-color: rgba(255, 82, 82, 0.42);

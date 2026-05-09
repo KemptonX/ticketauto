@@ -66,7 +66,9 @@ export default function DeskClient() {
     const { data } = await supabase
       .from("orders")
       .select("id, event_date, listing_status")
-      .neq("listing_status", "Archived");
+      .neq("listing_status", "Archived")
+      .neq("listing_status", "Personal")
+      .neq("listing_status", "Ignored");
 
     if (!data) return;
 
@@ -133,7 +135,8 @@ export default function DeskClient() {
     const [ordersResult, salesResult] = await Promise.all([
       supabase
         .from("orders")
-        .select("id, event_name, venue, event_date, account_email, section, listing_status, total_cost, sold_total, qty_bought"),
+        .select("id, event_name, venue, event_date, account_email, section, listing_status, total_cost, sold_total, qty_bought")
+        .or("listing_status.is.null,listing_status.not.in.(Archived,Ignored,Personal)"),
       supabase
         .from("sales")
         .select("id, event_name, venue, event_date, account_email, qty_sold, sale_total, payout_total, inventory_order_id, sold_at")
