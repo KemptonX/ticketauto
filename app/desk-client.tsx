@@ -263,8 +263,13 @@ export default function DeskClient() {
     });
     const thisMonthCount = thisMonthOrders.length;
     const thisMonthSold = thisMonthOrders.filter((o) => o.listing_status === "Sold").length;
-    const thisMonthPayout = thisMonthOrders
-      .filter((o) => o.listing_status === "Sold")
+    const thisMonthPayout = orders
+      .filter((o) => {
+        if (o.listing_status !== "Sold" && (o.sold_total ?? 0) <= 0) return false;
+        const d = parseDate(o.event_date);
+        if (!d) return false;
+        return d >= monthStart && d < nextMonth;
+      })
       .reduce((sum, o) => sum + (o.sold_total ?? 0), 0);
     // Include archived so sold tickets that have been auto-archived are counted
     const thisMonthAllOrders = orders.filter((o) => {
