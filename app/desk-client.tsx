@@ -266,6 +266,10 @@ export default function DeskClient() {
     const thisMonthPayout = thisMonthOrders
       .filter((o) => o.listing_status === "Sold")
       .reduce((sum, o) => sum + (o.sold_total ?? 0), 0);
+    const thisMonthTickets = thisMonthOrders.reduce((sum, o) => sum + (o.qty_bought ?? 1), 0);
+    const thisMonthTicketsSold = thisMonthOrders
+      .filter((o) => o.listing_status === "Sold")
+      .reduce((sum, o) => sum + (o.qty_bought ?? 1), 0);
 
     // Open positions: actively listed
     const openCount = orders.filter((o) => o.listing_status === "Listed").length;
@@ -284,7 +288,7 @@ export default function DeskClient() {
 
     const soldCount = orders.filter((o) => o.listing_status === "Sold").length;
 
-    return { capitalIn, closedProfit, availableCount, soldCount, monthlyRevenue, monthlyProfit, openCount, bestEvent, bestProfit, thisMonthCount, thisMonthSold, thisMonthPayout, yearlyProfit, fyStart, fyEnd, monthlyProjected, yearlyProjected };
+    return { capitalIn, closedProfit, availableCount, soldCount, monthlyRevenue, monthlyProfit, openCount, bestEvent, bestProfit, thisMonthCount, thisMonthSold, thisMonthPayout, thisMonthTickets, thisMonthTicketsSold, yearlyProfit, fyStart, fyEnd, monthlyProjected, yearlyProjected };
   }, [orders]);
 
   const eventPnL = useMemo(() => {
@@ -500,9 +504,9 @@ export default function DeskClient() {
           </article>
           <article className="kpi-card">
             <span className="kpi-accent" />
-            <p>Events this month</p>
-            <strong>{metrics.thisMonthCount}</strong>
-            <span>{metrics.thisMonthSold} sold · {metrics.thisMonthCount - metrics.thisMonthSold} remaining</span>
+            <p>Tickets this month</p>
+            <strong>{metrics.thisMonthTickets}</strong>
+            <span>{metrics.thisMonthTicketsSold} tickets sold · {metrics.thisMonthTickets - metrics.thisMonthTicketsSold} still to sell</span>
           </article>
           <article className="kpi-card">
             <span className="kpi-accent" />
