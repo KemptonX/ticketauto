@@ -212,6 +212,15 @@ export default function DeskClient() {
       })
       .reduce((sum, o) => sum + (o.sold_total ?? 0), 0);
 
+    const monthlyCost = orders
+      .filter((o) => {
+        if ((o.sold_total ?? 0) <= 0) return false;
+        const d = parseDate(o.event_date);
+        if (!d) return false;
+        return d >= monthStart && d < nextMonth;
+      })
+      .reduce((sum, o) => sum + (o.total_cost ?? 0), 0);
+
     const monthlyProfit = orders
       .filter((o) => {
         if ((o.sold_total ?? 0) <= 0) return false;
@@ -220,6 +229,8 @@ export default function DeskClient() {
         return d >= monthStart && d < nextMonth;
       })
       .reduce((sum, o) => sum + ((o.sold_total ?? 0) - (o.total_cost ?? 0)), 0);
+
+    const monthlyROI = monthlyCost > 0 ? (monthlyProfit / monthlyCost) * 100 : null;
 
     // Yearly profit (April to April FY)
     const yearlyProfit = orders
@@ -302,7 +313,7 @@ export default function DeskClient() {
 
     const soldCount = orders.filter((o) => o.listing_status === "Sold").length;
 
-    return { capitalIn, closedProfit, availableCount, soldCount, monthlyRevenue, monthlyProfit, openCount, bestEvent, bestProfit, thisMonthCount, thisMonthSold, thisMonthPayout, thisMonthTickets, thisMonthTicketsSold, thisMonthTicketsRemaining, yearlyProfit, fyStart, fyEnd, monthlyProjected, yearlyProjected };
+    return { capitalIn, closedProfit, availableCount, soldCount, monthlyRevenue, monthlyProfit, monthlyROI, openCount, bestEvent, bestProfit, thisMonthCount, thisMonthSold, thisMonthPayout, thisMonthTickets, thisMonthTicketsSold, thisMonthTicketsRemaining, yearlyProfit, fyStart, fyEnd, monthlyProjected, yearlyProjected };
   }, [orders]);
 
   const eventPnL = useMemo(() => {
@@ -516,11 +527,11 @@ export default function DeskClient() {
             <strong>{formatCurrency(metrics.monthlyRevenue)}</strong>
             <span>gross income in {new Date().toLocaleString("en-GB", { month: "long" })}</span>
           </article>
-          <article className="kpi-card">
+          <article className={`kpi-card${metrics.monthlyROI != null && metrics.monthlyROI >= 0 ? " analytics-kpi-profit" : ""}`}>
             <span className="kpi-accent" />
-            <p>Tickets this month</p>
-            <strong>{metrics.thisMonthTickets}</strong>
-            <span>{metrics.thisMonthTicketsSold} tickets sold · {metrics.thisMonthTicketsRemaining} still to sell</span>
+            <p>ROI this month</p>
+            <strong>{metrics.monthlyROI != null ? `${metrics.monthlyROI.toFixed(1)}%` : "—"}</strong>
+            <span>return on sold {new Date().toLocaleString("en-GB", { month: "long" })} tickets</span>
           </article>
           <article className="kpi-card">
             <span className="kpi-accent" />
@@ -530,9 +541,9 @@ export default function DeskClient() {
           </article>
           <article className="kpi-card">
             <span className="kpi-accent" />
-            <p>Projected payout</p>
-            <strong>{formatCurrency(metrics.thisMonthPayout)}</strong>
-            <span>from sold {new Date().toLocaleString("en-GB", { month: "long" })} events</span>
+            <p>Tickets this month</p>
+            <strong>{metrics.thisMonthTickets}</strong>
+            <span>{metrics.thisMonthTicketsSold} tickets sold · {metrics.thisMonthTicketsRemaining} still to sell</span>
           </article>
         </section>
 
