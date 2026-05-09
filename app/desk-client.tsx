@@ -266,9 +266,18 @@ export default function DeskClient() {
     const thisMonthPayout = thisMonthOrders
       .filter((o) => o.listing_status === "Sold")
       .reduce((sum, o) => sum + (o.sold_total ?? 0), 0);
-    const thisMonthTickets = thisMonthOrders.reduce((sum, o) => sum + (o.qty_bought ?? 1), 0);
-    const thisMonthTicketsSold = thisMonthOrders
-      .filter((o) => o.listing_status === "Sold")
+    // Include archived so sold tickets that have been auto-archived are counted
+    const thisMonthAllOrders = orders.filter((o) => {
+      const d = parseDate(o.event_date);
+      if (!d) return false;
+      return d >= monthStart && d < nextMonth;
+    });
+    const thisMonthTickets = thisMonthAllOrders.reduce((sum, o) => sum + (o.qty_bought ?? 1), 0);
+    const thisMonthTicketsSold = thisMonthAllOrders
+      .filter((o) => o.listing_status === "Sold" || (o.sold_total ?? 0) > 0)
+      .reduce((sum, o) => sum + (o.qty_bought ?? 1), 0);
+    const thisMonthTicketsRemaining = thisMonthAllOrders
+      .filter((o) => o.listing_status !== "Sold" && o.listing_status !== "Archived" && (o.sold_total ?? 0) <= 0)
       .reduce((sum, o) => sum + (o.qty_bought ?? 1), 0);
 
     // Open positions: actively listed
@@ -288,7 +297,7 @@ export default function DeskClient() {
 
     const soldCount = orders.filter((o) => o.listing_status === "Sold").length;
 
-    return { capitalIn, closedProfit, availableCount, soldCount, monthlyRevenue, monthlyProfit, openCount, bestEvent, bestProfit, thisMonthCount, thisMonthSold, thisMonthPayout, thisMonthTickets, thisMonthTicketsSold, yearlyProfit, fyStart, fyEnd, monthlyProjected, yearlyProjected };
+    return { capitalIn, closedProfit, availableCount, soldCount, monthlyRevenue, monthlyProfit, openCount, bestEvent, bestProfit, thisMonthCount, thisMonthSold, thisMonthPayout, thisMonthTickets, thisMonthTicketsSold, thisMonthTicketsRemaining, yearlyProfit, fyStart, fyEnd, monthlyProjected, yearlyProjected };
   }, [orders]);
 
   const eventPnL = useMemo(() => {
@@ -506,7 +515,7 @@ export default function DeskClient() {
             <span className="kpi-accent" />
             <p>Tickets this month</p>
             <strong>{metrics.thisMonthTickets}</strong>
-            <span>{metrics.thisMonthTicketsSold} tickets sold · {metrics.thisMonthTickets - metrics.thisMonthTicketsSold} still to sell</span>
+            <span>{metrics.thisMonthTicketsSold} tickets sold · {metrics.thisMonthTicketsRemaining} still to sell</span>
           </article>
           <article className="kpi-card">
             <span className="kpi-accent" />
