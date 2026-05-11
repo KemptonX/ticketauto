@@ -364,20 +364,7 @@ export default function CashFlowClient() {
               <p className="section-tag">Month by month</p>
               <h4>{txLabel(selectedTY)} breakdown</h4>
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 14, fontSize: 12, color: "var(--text-muted)" }}>
-              <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#9ef5c6", display: "inline-block" }} />
-                Received
-              </span>
-              <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#fde68a", display: "inline-block" }} />
-                Mixed
-              </span>
-              <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#4fc3ff", display: "inline-block" }} />
-                Projected
-              </span>
-            </div>
+            <span className="table-count">April → March</span>
           </div>
 
           {loading ? (
@@ -506,22 +493,17 @@ function MonthBreakdown({
     : []);
 
   return (
-    <div style={{ paddingTop: 6 }}>
-      {/* ── Tab row ── */}
-      <div
-        className="cf-month-tabs"
-        style={{
-          display: "flex",
-          gap: 2,
-          overflowX: "auto",
-          paddingBottom: 4,
-          paddingTop: 2,
-        }}
-      >
+    <div style={{ paddingTop: 8 }}>
+      {/* ── Tab row — CSS grid guarantees 12 equal columns edge-to-edge ── */}
+      <div style={{
+        display: "grid",
+        gridTemplateColumns: "repeat(12, 1fr)",
+        width: "100%",
+      }}>
         {monthRows.map((r, idx) => {
           const isSelected = selectedMonthIdx === idx;
-          const dc = monthDotColor(r);
-          const dg = monthDotGlow(r);
+          const bc = monthBarColor(r);
+          const bg = monthBarGlow(r);
 
           return (
             <button
@@ -529,41 +511,34 @@ function MonthBreakdown({
               type="button"
               onClick={() => onMonthClick(idx)}
               style={{
+                width: "100%",
                 display: "flex",
                 flexDirection: "column",
                 alignItems: "center",
-                gap: 5,
-                padding: "8px 10px 8px",
-                borderRadius: 10,
+                justifyContent: "flex-end",
+                gap: 8,
+                padding: "18px 2px 14px",
+                borderRadius: 8,
                 cursor: "pointer",
-                minWidth: 64,
-                flexShrink: 0,
-                border: isSelected && r.isCurrentMonth
-                  ? "1px solid rgba(79,195,255,0.35)"
-                  : isSelected
-                  ? "1px solid rgba(255,255,255,0.12)"
-                  : "1px solid transparent",
-                background: isSelected && r.isCurrentMonth
-                  ? "rgba(79,195,255,0.1)"
-                  : isSelected
-                  ? "rgba(255,255,255,0.07)"
-                  : r.isCurrentMonth
-                  ? "rgba(79,195,255,0.035)"
+                border: "none",
+                background: isSelected
+                  ? "rgba(255,255,255,0.1)"
                   : "transparent",
-                transition: "background 150ms ease, border-color 150ms ease",
+                transition: "background 150ms ease",
+                boxSizing: "border-box",
               }}
             >
-              {/* Badge slot — same height for every button */}
-              <span style={{ height: 14, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              {/* Now badge slot — fixed height keeps all tabs identical */}
+              <span style={{ height: 18, display: "flex", alignItems: "center", justifyContent: "center" }}>
                 {r.isCurrentMonth && (
                   <span style={{
-                    fontSize: 8,
-                    fontWeight: 800,
+                    fontSize: 9,
+                    fontWeight: 700,
                     letterSpacing: "0.08em",
                     textTransform: "uppercase",
                     color: "#4fc3ff",
-                    background: "rgba(79,195,255,0.15)",
-                    border: "1px solid rgba(79,195,255,0.3)",
+                    background: "rgba(79,195,255,0.18)",
+                    border: "1px solid rgba(79,195,255,0.35)",
                     padding: "1px 5px",
                     borderRadius: 999,
                     whiteSpace: "nowrap",
@@ -573,32 +548,69 @@ function MonthBreakdown({
                 )}
               </span>
 
-              {/* Month abbreviation */}
+              {/* Month name */}
               <span style={{
-                fontSize: 12,
-                fontWeight: isSelected ? 600 : 400,
-                letterSpacing: "-0.01em",
+                fontSize: 13,
+                fontWeight: isSelected ? 700 : 400,
+                letterSpacing: isSelected ? "-0.02em" : "0",
                 color: isSelected
-                  ? "var(--text-primary)"
+                  ? "#ffffff"
                   : r.isCurrentMonth
-                  ? "#7dd4ff"
-                  : "var(--text-muted)",
+                  ? "rgba(255,255,255,0.55)"
+                  : "rgba(255,255,255,0.28)",
               }}>
                 {shortMonth(r.month)}
               </span>
 
-              {/* Coloured dot indicator */}
+              {/* Coloured underline bar */}
               <span style={{
-                width: 6,
-                height: 6,
-                borderRadius: "50%",
-                background: dc,
-                boxShadow: dg,
+                width: "50%",
+                height: 3,
+                borderRadius: 999,
+                background: bc,
+                opacity: isSelected ? 1 : 0.22,
+                boxShadow: isSelected ? bg : "none",
+                transition: "opacity 150ms ease, box-shadow 150ms ease",
                 flexShrink: 0,
               }} />
             </button>
           );
         })}
+      </div>
+
+      {/* Legend — left-aligned, directly below the tab row */}
+      <div style={{
+        display: "flex",
+        gap: 20,
+        paddingTop: 14,
+        paddingLeft: 4,
+        paddingBottom: 10,
+      }}>
+        {[
+          { color: "#9ef5c6", label: "Received" },
+          { color: "#fde68a", label: "Mixed" },
+          { color: "#4fc3ff", label: "Projected" },
+          { color: "rgba(255,255,255,0.2)", label: "No sales" },
+        ].map(({ color, label }) => (
+          <span key={label} style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 7,
+            fontSize: 11,
+            color: "var(--text-muted)",
+            letterSpacing: "0.04em",
+          }}>
+            <span style={{
+              width: 20,
+              height: 3,
+              borderRadius: 999,
+              background: color,
+              display: "inline-block",
+              flexShrink: 0,
+            }} />
+            {label}
+          </span>
+        ))}
       </div>
 
       {/* ── Detail panel (animated) ── */}
@@ -652,67 +664,69 @@ function MonthDetailPanel({ row, events }: { row: MonthRow; events: CashEvent[] 
       background: "rgba(255,255,255,0.014)",
       overflow: "hidden",
     }}>
-      {/* Header */}
+      {/* Header — everything left-aligned, total stacked directly below heading */}
       <div style={{
-        padding: "20px 24px",
+        padding: "20px 24px 20px",
         borderBottom: "1px solid rgba(35,35,42,0.5)",
-        display: "flex",
-        alignItems: "flex-start",
-        justifyContent: "space-between",
-        gap: 20,
-        flexWrap: "wrap",
+        width: "100%",
+        boxSizing: "border-box",
       }}>
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-            <h4 style={{
-              margin: 0,
-              fontSize: 22,
-              fontWeight: 700,
-              letterSpacing: "-0.04em",
-              color: "var(--text-primary)",
-            }}>
-              {row.monthLabel} {row.year}
-            </h4>
-            <span
-              className={`status-badge status-static ${statusClass}`}
-              style={{ fontSize: 11, padding: "4px 11px" }}
-            >
-              {statusLabel}
-            </span>
-          </div>
-
-          <span style={{ fontSize: 13, color: "var(--text-muted)" }}>
-            {row.eventCount === 0
-              ? "No events this month"
-              : row.eventCount === 1
-              ? "1 event"
-              : `${row.eventCount} events`}
-            {row.soldCount > 0 && row.soldCount < row.eventCount
-              ? ` · ${row.soldCount} with sales`
-              : ""}
+        {/* Row 1: month name + badge */}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 6 }}>
+          <h4 style={{
+            margin: 0,
+            fontSize: 20,
+            fontWeight: 700,
+            letterSpacing: "-0.04em",
+            color: "var(--text-primary)",
+          }}>
+            {row.monthLabel} {row.year}
+          </h4>
+          <span
+            className={`status-badge status-static ${statusClass}`}
+            style={{ fontSize: 11, padding: "4px 11px" }}
+          >
+            {statusLabel}
           </span>
-
-          {hasBoth && (
-            <div style={{ display: "flex", gap: 20, marginTop: 2 }}>
-              <span style={{ fontSize: 13, color: "#9ef5c6" }}>
-                {formatCurrency(row.receivedCash)} received
-              </span>
-              <span style={{ fontSize: 13, color: "#4fc3ff" }}>
-                {formatCurrency(row.projectedCash)} projected
-              </span>
-            </div>
-          )}
         </div>
 
-        <strong style={{
-          fontSize: 32,
-          fontWeight: 700,
-          letterSpacing: "-0.055em",
-          color: amountColor,
-          flexShrink: 0,
-        }}>
-          {hasCash ? formatCurrency(row.totalCash) : "—"}
-        </strong>
+        {/* Row 2: total — block element, explicitly left-anchored */}
+        <div style={{ marginBottom: 6 }}>
+          <span style={{
+            display: "block",
+            fontSize: 30,
+            fontWeight: 700,
+            letterSpacing: "-0.055em",
+            color: amountColor,
+            lineHeight: 1.1,
+          }}>
+            {hasCash ? formatCurrency(row.totalCash) : "—"}
+          </span>
+        </div>
+
+        {/* Row 3: event count */}
+        <div style={{ color: "var(--text-muted)", fontSize: 13 }}>
+          {row.eventCount === 0
+            ? "No events this month"
+            : row.eventCount === 1
+            ? "1 event"
+            : `${row.eventCount} events`}
+          {row.soldCount > 0 && row.soldCount < row.eventCount
+            ? ` · ${row.soldCount} with sales`
+            : ""}
+        </div>
+
+        {/* Row 4: received / projected split (only when mixed) */}
+        {hasBoth && (
+          <div style={{ display: "flex", gap: 20, marginTop: 6 }}>
+            <span style={{ fontSize: 13, color: "#9ef5c6" }}>
+              {formatCurrency(row.receivedCash)} received
+            </span>
+            <span style={{ fontSize: 13, color: "#4fc3ff" }}>
+              {formatCurrency(row.projectedCash)} projected
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Event list */}
@@ -730,19 +744,19 @@ function MonthDetailPanel({ row, events }: { row: MonthRow; events: CashEvent[] 
           {/* Column header */}
           <div style={{
             display: "grid",
-            gridTemplateColumns: "52px 1fr 64px 100px",
-            gap: 12,
+            gridTemplateColumns: "56px minmax(0,1fr) 72px 110px",
+            gap: 8,
             padding: "10px 24px",
             borderBottom: "1px solid rgba(35,35,42,0.4)",
           }}>
-            {["Date", "Event", "Tickets", "Cash"].map(h => (
+            {["Date", "Event", "Tickets", "Cash in"].map(h => (
               <span key={h} style={{
                 fontSize: 11,
                 fontWeight: 600,
                 letterSpacing: "0.1em",
                 textTransform: "uppercase",
                 color: "var(--text-muted)",
-                textAlign: h === "Tickets" || h === "Cash" ? "right" : "left",
+                textAlign: h === "Tickets" || h === "Cash in" ? "right" : "left",
               }}>
                 {h}
               </span>
@@ -754,10 +768,10 @@ function MonthDetailPanel({ row, events }: { row: MonthRow; events: CashEvent[] 
               key={ev.key}
               style={{
                 display: "grid",
-                gridTemplateColumns: "52px 1fr 64px 100px",
-                gap: 12,
+                gridTemplateColumns: "56px minmax(0,1fr) 72px 110px",
+                gap: 8,
                 alignItems: "center",
-                padding: "13px 24px",
+                padding: "12px 24px",
                 borderBottom: idx < events.length - 1 ? "1px solid rgba(35,35,42,0.28)" : "none",
                 transition: "background 150ms ease",
               }}
@@ -772,7 +786,7 @@ function MonthDetailPanel({ row, events }: { row: MonthRow; events: CashEvent[] 
               {/* Event name + venue */}
               <div style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}>
                 <strong style={{
-                  fontSize: 14,
+                  fontSize: 13,
                   fontWeight: 600,
                   color: "var(--text-primary)",
                   letterSpacing: "-0.015em",
@@ -783,7 +797,7 @@ function MonthDetailPanel({ row, events }: { row: MonthRow; events: CashEvent[] 
                   {ev.eventName}
                 </strong>
                 {ev.venue && (
-                  <span style={{ fontSize: 12, color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  <span style={{ fontSize: 11, color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                     {ev.venue}
                   </span>
                 )}
@@ -791,25 +805,37 @@ function MonthDetailPanel({ row, events }: { row: MonthRow; events: CashEvent[] 
 
               {/* Tickets sold */}
               <span style={{
-                fontSize: 13,
+                fontSize: 12,
                 color: ev.soldQty > 0 ? "var(--text-secondary)" : "var(--text-muted)",
                 textAlign: "right",
               }}>
-                {ev.soldQty > 0 ? `${ev.soldQty}/${ev.totalQty}` : `0/${ev.totalQty}`}
+                {ev.soldQty > 0 ? `${ev.soldQty} / ${ev.totalQty}` : (
+                  <span style={{ opacity: 0.45 }}>0 / {ev.totalQty}</span>
+                )}
               </span>
 
               {/* Cash */}
-              <strong style={{
-                fontSize: 14,
-                fontWeight: 700,
-                letterSpacing: "-0.03em",
-                textAlign: "right",
-                color: ev.cashIn > 0
-                  ? (ev.isPast ? "#9ef5c6" : "#4fc3ff")
-                  : "var(--text-muted)",
-              }}>
-                {ev.cashIn > 0 ? formatCurrency(ev.cashIn) : "—"}
-              </strong>
+              <div style={{ textAlign: "right" }}>
+                {ev.cashIn > 0 ? (
+                  <strong style={{
+                    fontSize: 13,
+                    fontWeight: 700,
+                    letterSpacing: "-0.03em",
+                    color: ev.isPast ? "#9ef5c6" : "#4fc3ff",
+                  }}>
+                    {formatCurrency(ev.cashIn)}
+                  </strong>
+                ) : (
+                  <span style={{
+                    fontSize: 12,
+                    color: "var(--text-muted)",
+                    fontStyle: "italic",
+                    opacity: 0.7,
+                  }}>
+                    No sales yet
+                  </span>
+                )}
+              </div>
             </div>
           ))}
         </div>
@@ -828,7 +854,7 @@ function formatShortDate(date: Date): string {
   return new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short" }).format(date);
 }
 
-function monthDotColor(row: MonthRow): string {
+function monthBarColor(row: MonthRow): string {
   if (row.eventCount === 0) return "rgba(255,255,255,0.12)";
   if (row.receivedCash > 0 && row.projectedCash > 0) return "#fde68a";
   if (row.receivedCash > 0) return "#9ef5c6";
@@ -836,7 +862,7 @@ function monthDotColor(row: MonthRow): string {
   return "rgba(255,255,255,0.2)";
 }
 
-function monthDotGlow(row: MonthRow): string {
+function monthBarGlow(row: MonthRow): string {
   if (row.receivedCash > 0 && row.projectedCash > 0) return "0 0 5px rgba(253,230,138,0.6)";
   if (row.receivedCash > 0) return "0 0 5px rgba(158,245,198,0.6)";
   if (row.projectedCash > 0) return "0 0 5px rgba(79,195,255,0.6)";

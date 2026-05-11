@@ -1001,6 +1001,9 @@ export default function SalesClient() {
                                     <span className="inline-match-label">Best match</span>
                                     <strong>{topSuggestion.order.booking_ref || topSuggestion.order.event_name || "Ticket"}</strong>
                                     <span>{topSuggestion.order.section || "—"} · {formatSeatLabel(topSuggestion.order.row, topSuggestion.order.seat_from, topSuggestion.order.seat_to)} · {topSuggestion.score}%</span>
+                                    {topSuggestion.order.event_date && (
+                                      <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{formatEventDate(topSuggestion.order.event_date)}</span>
+                                    )}
                                   </div>
                                   <button
                                     type="button"
@@ -1235,6 +1238,9 @@ export default function SalesClient() {
                       <span>
                         {order.section || "Section —"} • {formatSeatLabel(order.row, order.seat_from, order.seat_to)}
                       </span>
+                      {order.event_date && (
+                        <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{formatEventDate(order.event_date)}</span>
+                      )}
                     </div>
                     <span className="truncate-text" title={order.account_email || ""}>
                       {order.account_email || "No account"}
@@ -1292,6 +1298,9 @@ export default function SalesClient() {
                       <div className="inventory-ticket-seat">
                         <strong>{order.booking_ref || order.event_name || "Ticket"}</strong>
                         <span>{order.event_name || "—"}</span>
+                        {order.event_date && (
+                          <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{formatEventDate(order.event_date)}</span>
+                        )}
                       </div>
                       <span className="truncate-text" title={order.account_email || ""}>
                         {order.account_email || "—"}
@@ -1603,13 +1612,12 @@ function getManualMatchScore(sale: Sale, order: MatchedOrder) {
   const rowScore = compareExact(order.row, sale.row);
   const seatScore = compareSeats(order.seat_from, order.seat_to, sale.seat_from, sale.seat_to);
 
-  if (eventScore === 0 || dateScore === 0) {
-    return 0;
-  }
+  if (eventScore === 0) return 0;
+  if (dateScore === 0) return 0; // both dates present but different — definitely wrong event
 
   const total =
     eventScore * 0.6 +
-    dateScore * 0.25 +
+    (dateScore ?? 0) * 0.25 + // null = one/both dates missing; no bonus, no penalty
     venueScore * 0.08 +
     sectionScore * 0.04 +
     rowScore * 0.02 +
@@ -1652,12 +1660,12 @@ function compareExact(left?: string | null, right?: string | null) {
   return normalizeCompareValue(left) === normalizeCompareValue(right) ? 1 : 0;
 }
 
-function compareEventDay(left?: string | null, right?: string | null) {
+function compareEventDay(left?: string | null, right?: string | null): number | null {
   const a = getDateKey(left);
   const b = getDateKey(right);
 
   if (!a || !b) {
-    return 0;
+    return null; // missing date — can't compare, don't disqualify
   }
 
   return a === b ? 1 : 0;
