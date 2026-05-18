@@ -634,8 +634,8 @@ export default function OrdersClient() {
 
       const matchesSold =
         soldFilter === "All" ||
-        (soldFilter === "Sold" && (order.sold_total ?? 0) > 0) ||
-        (soldFilter === "Unsold" && !(order.sold_total ?? 0));
+        (soldFilter === "Sold" && order.listing_status === "Sold") ||
+        (soldFilter === "Unsold" && order.listing_status !== "Sold");
 
       return (
         matchesSearch &&

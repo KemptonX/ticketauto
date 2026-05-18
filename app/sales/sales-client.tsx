@@ -376,23 +376,41 @@ export default function SalesClient() {
   }
 
   async function syncOrderFromSales(orderId: number) {
-    const { data, error } = await supabase
-      .from("sales")
-      .select("sale_total, payout_total")
-      .eq("inventory_order_id", orderId);
+    const [{ data, error }, { data: orderData }] = await Promise.all([
+      supabase
+        .from("sales")
+        .select("sale_total, payout_total, qty_sold")
+        .eq("inventory_order_id", orderId),
+      supabase
+        .from("orders")
+        .select("qty_bought")
+        .eq("id", orderId)
+        .single(),
+    ]);
 
     if (error) {
       throw new Error(error.message);
     }
 
-    const linkedSales = data || [];
-    const soldTotal = linkedSales.reduce((sum, sale) => sum + ((sale as { sale_total?: number | null; payout_total?: number | null }).payout_total ?? (sale as { sale_total?: number | null }).sale_total ?? 0), 0);
+    const linkedSales = (data || []) as { sale_total?: number | null; payout_total?: number | null; qty_sold?: number | null }[];
+    const soldTotal = linkedSales.reduce((sum, sale) => sum + (sale.payout_total ?? sale.sale_total ?? 0), 0);
+    const qtySold = linkedSales.reduce((sum, sale) => sum + (sale.qty_sold ?? 0), 0);
+    const qtyBought = (orderData as { qty_bought?: number | null } | null)?.qty_bought ?? 0;
+
+    let newStatus: string;
+    if (linkedSales.length === 0) {
+      newStatus = "Unlisted";
+    } else if (qtyBought > 0 && qtySold < qtyBought) {
+      newStatus = "Partially Sold";
+    } else {
+      newStatus = "Sold";
+    }
 
     const { error: updateError } = await supabase
       .from("orders")
       .update({
         sold_total: linkedSales.length > 0 ? soldTotal : null,
-        listing_status: linkedSales.length > 0 ? "Sold" : "Unlisted",
+        listing_status: newStatus,
       })
       .eq("id", orderId);
 
