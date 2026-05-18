@@ -7,6 +7,7 @@ import { supabase } from "@/src/lib/supabase";
 import { formatCurrency } from "@/src/lib/currency";
 import { loadTemplate, interpolate } from "@/src/lib/email-template";
 import { SidebarLogo, NavIcon, SidebarFooter } from "@/app/components/nav-icons";
+import ShareBannerModal from "./ShareBannerModal";
 
 type Sale = {
   id: number;
@@ -124,6 +125,7 @@ export default function SalesClient() {
   const [connectedAccounts, setConnectedAccounts] = useState<{ id: string; email: string; provider: string }[]>([]);
   const [emailFromAccountId, setEmailFromAccountId] = useState<string>("");
   const [thankYouSentIds, setThankYouSentIds] = useState<Record<number, true>>({});
+  const [shareSaleId, setShareSaleId] = useState<number | null>(null);
 
   useEffect(() => {
     try {
@@ -971,6 +973,7 @@ export default function SalesClient() {
                           <span>Buyer</span>
                           <span>Value</span>
                           <span>Match</span>
+                          <span></span>
                         </div>
                         {group.sales.map((sale) => {
                           const matchedOrder = getReferenceOrderForSale(sale, matchedOrders, allOrders);
@@ -1012,6 +1015,29 @@ export default function SalesClient() {
                                 <span className={`status-badge status-static ${sale.inventory_order_id != null ? "status-sold" : "status-problem"}`}>
                                   {sale.inventory_order_id != null ? "Matched" : "Unmatched"}
                                 </span>
+                                <button
+                                  type="button"
+                                  onClick={(e) => { e.stopPropagation(); setShareSaleId(sale.id); }}
+                                  title="Share this sale"
+                                  style={{
+                                    background: "rgba(155,92,255,0.12)",
+                                    border: "1px solid rgba(155,92,255,0.25)",
+                                    borderRadius: 8,
+                                    width: 32, height: 32,
+                                    display: "flex", alignItems: "center", justifyContent: "center",
+                                    cursor: "pointer",
+                                    transition: "all 150ms ease",
+                                    flexShrink: 0,
+                                  }}
+                                >
+                                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(155,92,255,0.9)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <circle cx="18" cy="5" r="3" />
+                                    <circle cx="6" cy="12" r="3" />
+                                    <circle cx="18" cy="19" r="3" />
+                                    <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
+                                    <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
+                                  </svg>
+                                </button>
                               </div>
                               {isUnmatched && topSuggestion && (
                                 <div className="inline-match-row">
@@ -1340,6 +1366,18 @@ export default function SalesClient() {
           </div>
       </aside>
       ) : null}
+
+      {shareSaleId != null && (() => {
+        const shareSale = sales.find(s => s.id === shareSaleId);
+        const shareOrder = shareSale ? getReferenceOrderForSale(shareSale, matchedOrders, allOrders) : null;
+        return shareSale ? (
+          <ShareBannerModal
+            sale={shareSale}
+            order={shareOrder}
+            onClose={() => setShareSaleId(null)}
+          />
+        ) : null;
+      })()}
 
       {showEmailModal && selectedSale?.buyer_email && createPortal(
         <div className="add-sale-overlay" onClick={closeEmailModal}>
