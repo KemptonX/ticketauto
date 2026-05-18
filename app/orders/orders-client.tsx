@@ -165,19 +165,25 @@ export default function OrdersClient() {
   const [sortBy, setSortBy] = useState<"event-date" | "added-newest" | "added-oldest">("event-date");
 
   const [search, setSearch] = useState("");
-  const [eventFilter, setEventFilter] = useState("All");
-  const [venueFilter, setVenueFilter] = useState("All");
-  const [statusFilter, setStatusFilter] = useState("All");
-  const [sourceFilter, setSourceFilter] = useState("All");
-  const [soldFilter, setSoldFilter] = useState("All");
+  const [eventFilters, setEventFilters] = useState<string[]>([]);
+  const [venueFilters, setVenueFilters] = useState<string[]>([]);
+  const [statusFilters, setStatusFilters] = useState<string[]>([]);
+  const [sourceFilters, setSourceFilters] = useState<string[]>([]);
+  const [soldFilters, setSoldFilters] = useState<string[]>([]);
+  const [showAllEvents, setShowAllEvents] = useState(false);
+  const [showAllVenues, setShowAllVenues] = useState(false);
+
+  function toggleChip(setter: React.Dispatch<React.SetStateAction<string[]>>, value: string) {
+    setter(prev => prev.includes(value) ? prev.filter(v => v !== value) : [...prev, value]);
+  }
 
   function resetFilters() {
     setSearch("");
-    setEventFilter("All");
-    setVenueFilter("All");
-    setStatusFilter("All");
-    setSourceFilter("All");
-    setSoldFilter("All");
+    setEventFilters([]);
+    setVenueFilters([]);
+    setStatusFilters([]);
+    setSourceFilters([]);
+    setSoldFilters([]);
   }
 
   async function loadOrders(showRefreshing = false, mode = viewMode) {
@@ -592,14 +598,14 @@ export default function OrdersClient() {
     const values = orders
       .map((order) => order.event_name)
       .filter((value): value is string => Boolean(value));
-    return ["All", ...new Set(values)];
+    return [...new Set(values)];
   }, [orders]);
 
   const venueOptions = useMemo(() => {
     const values = orders
       .map((order) => order.venue)
       .filter((value): value is string => Boolean(value));
-    return ["All", ...new Set(values)];
+    return [...new Set(values)];
   }, [orders]);
 
   const filteredOrders = useMemo(() => {
@@ -621,21 +627,21 @@ export default function OrdersClient() {
           );
 
       const matchesEvent =
-        eventFilter === "All" || order.event_name === eventFilter;
+        eventFilters.length === 0 || eventFilters.includes(order.event_name ?? "");
 
       const matchesVenue =
-        venueFilter === "All" || order.venue === venueFilter;
+        venueFilters.length === 0 || venueFilters.includes(order.venue ?? "");
 
       const matchesStatus =
-        statusFilter === "All" || order.listing_status === statusFilter;
+        statusFilters.length === 0 || statusFilters.includes(order.listing_status ?? "");
 
       const matchesSource =
-        sourceFilter === "All" || order.source_type === sourceFilter;
+        sourceFilters.length === 0 || sourceFilters.includes(order.source_type ?? "");
 
       const matchesSold =
-        soldFilter === "All" ||
-        (soldFilter === "Sold" && order.listing_status === "Sold") ||
-        (soldFilter === "Unsold" && order.listing_status !== "Sold");
+        soldFilters.length === 0 ||
+        (soldFilters.includes("Sold") && order.listing_status === "Sold") ||
+        (soldFilters.includes("Unsold") && order.listing_status !== "Sold");
 
       return (
         matchesSearch &&
@@ -649,11 +655,11 @@ export default function OrdersClient() {
   }, [
     orders,
     search,
-    eventFilter,
-    venueFilter,
-    statusFilter,
-    sourceFilter,
-    soldFilter,
+    eventFilters,
+    venueFilters,
+    statusFilters,
+    sourceFilters,
+    soldFilters,
   ]);
 
   const [expandedGroups, setExpandedGroups] = useState<string[]>([]);
@@ -995,8 +1001,9 @@ export default function OrdersClient() {
             </button>
           </div>
 
-          <div className="command-grid">
-            <label className="filter-field">
+          <div style={{ display: "flex", flexDirection: "column", gap: 14, marginTop: 18 }}>
+            {/* Search */}
+            <label className="filter-field" style={{ maxWidth: 460 }}>
               <span className="filter-label">Search</span>
               <input
                 className="field field-search"
@@ -1006,78 +1013,122 @@ export default function OrdersClient() {
               />
             </label>
 
-            <label className="filter-field">
-              <span className="filter-label">Event</span>
-              <select
-                className="field"
-                value={eventFilter}
-                onChange={(e) => setEventFilter(e.target.value)}
-              >
-                {eventOptions.map((option) => (
-                  <option key={option} value={option}>
+            {/* Status */}
+            <div className="filter-field">
+              <span className="filter-label">
+                Status{statusFilters.length > 0 && <span style={{ marginLeft: 6, color: "rgba(255,79,163,0.8)", fontWeight: 700 }}>· {statusFilters.length} selected</span>}
+              </span>
+              <div className="filter-chips">
+                {statusOptions.filter(o => o !== "All").map(option => (
+                  <button
+                    key={option}
+                    type="button"
+                    className={`filter-chip${statusFilters.includes(option) ? " filter-chip-on" : ""}`}
+                    onClick={() => toggleChip(setStatusFilters, option)}
+                  >
                     {option}
-                  </option>
+                  </button>
                 ))}
-              </select>
-            </label>
+              </div>
+            </div>
 
-            <label className="filter-field">
-              <span className="filter-label">Venue</span>
-              <select
-                className="field"
-                value={venueFilter}
-                onChange={(e) => setVenueFilter(e.target.value)}
-              >
-                {venueOptions.map((option) => (
-                  <option key={option} value={option}>
+            {/* Sold */}
+            <div className="filter-field">
+              <span className="filter-label">
+                Sold{soldFilters.length > 0 && <span style={{ marginLeft: 6, color: "rgba(255,79,163,0.8)", fontWeight: 700 }}>· {soldFilters.length} selected</span>}
+              </span>
+              <div className="filter-chips">
+                {["Sold", "Unsold"].map(option => (
+                  <button
+                    key={option}
+                    type="button"
+                    className={`filter-chip${soldFilters.includes(option) ? " filter-chip-on" : ""}`}
+                    onClick={() => toggleChip(setSoldFilters, option)}
+                  >
                     {option}
-                  </option>
+                  </button>
                 ))}
-              </select>
-            </label>
+              </div>
+            </div>
 
-            <label className="filter-field">
-              <span className="filter-label">Status</span>
-              <select
-                className="field"
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-              >
-                {statusOptions.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="filter-field">
-              <span className="filter-label">Source</span>
-              <select
-                className="field"
-                value={sourceFilter}
-                onChange={(e) => setSourceFilter(e.target.value)}
-              >
-                {sourceOptions.map((option) => (
-                  <option key={option} value={option}>
+            {/* Source */}
+            <div className="filter-field">
+              <span className="filter-label">
+                Source{sourceFilters.length > 0 && <span style={{ marginLeft: 6, color: "rgba(255,79,163,0.8)", fontWeight: 700 }}>· {sourceFilters.length} selected</span>}
+              </span>
+              <div className="filter-chips">
+                {sourceOptions.filter(o => o !== "All").map(option => (
+                  <button
+                    key={option}
+                    type="button"
+                    className={`filter-chip${sourceFilters.includes(option) ? " filter-chip-on" : ""}`}
+                    onClick={() => toggleChip(setSourceFilters, option)}
+                  >
                     {sourceLabels[option] ?? option}
-                  </option>
+                  </button>
                 ))}
-              </select>
-            </label>
+              </div>
+            </div>
 
-            <label className="filter-field">
-              <span className="filter-label">Sold</span>
-              <select
-                className="field"
-                value={soldFilter}
-                onChange={(e) => setSoldFilter(e.target.value)}
-              >
-                <option value="All">All sold states</option>
-                <option value="Sold">Sold</option>
-                <option value="Unsold">Unsold</option>
-              </select>
-            </label>
+            {/* Event */}
+            {eventOptions.length > 0 && (
+              <div className="filter-field">
+                <span className="filter-label">
+                  Event{eventFilters.length > 0 && <span style={{ marginLeft: 6, color: "rgba(255,79,163,0.8)", fontWeight: 700 }}>· {eventFilters.length} selected</span>}
+                </span>
+                <div className="filter-chips">
+                  {(showAllEvents ? eventOptions : eventOptions.slice(0, 8)).map(option => (
+                    <button
+                      key={option}
+                      type="button"
+                      className={`filter-chip${eventFilters.includes(option) ? " filter-chip-on" : ""}`}
+                      onClick={() => toggleChip(setEventFilters, option)}
+                    >
+                      {option}
+                    </button>
+                  ))}
+                  {eventOptions.length > 8 && (
+                    <button
+                      type="button"
+                      className="filter-chip filter-chip-expand"
+                      onClick={() => setShowAllEvents(v => !v)}
+                    >
+                      {showAllEvents ? "Show less" : `+${eventOptions.length - 8} more`}
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Venue */}
+            {venueOptions.length > 0 && (
+              <div className="filter-field">
+                <span className="filter-label">
+                  Venue{venueFilters.length > 0 && <span style={{ marginLeft: 6, color: "rgba(255,79,163,0.8)", fontWeight: 700 }}>· {venueFilters.length} selected</span>}
+                </span>
+                <div className="filter-chips">
+                  {(showAllVenues ? venueOptions : venueOptions.slice(0, 8)).map(option => (
+                    <button
+                      key={option}
+                      type="button"
+                      className={`filter-chip${venueFilters.includes(option) ? " filter-chip-on" : ""}`}
+                      onClick={() => toggleChip(setVenueFilters, option)}
+                    >
+                      {option}
+                    </button>
+                  ))}
+                  {venueOptions.length > 8 && (
+                    <button
+                      type="button"
+                      className="filter-chip filter-chip-expand"
+                      onClick={() => setShowAllVenues(v => !v)}
+                    >
+                      {showAllVenues ? "Show less" : `+${venueOptions.length - 8} more`}
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         </section>
 

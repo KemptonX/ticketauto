@@ -1593,7 +1593,7 @@ function getReferenceOrderForSale(
 
     score += compareText(order.event_name, sale.event_name) * 0.4;
     score += compareText(order.venue, sale.venue) * 0.15;
-    score += compareEventDay(order.event_date, sale.event_date) * 0.2;
+    score += (compareEventDay(order.event_date, sale.event_date) ?? 0) * 0.2;
     score += compareText(order.section, sale.section) * 0.1;
     score += compareExact(order.row, sale.row) * 0.05;
     score += compareSeats(order.seat_from, order.seat_to, sale.seat_from, sale.seat_to) * 0.1;

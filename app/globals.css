@@ -1606,8 +1606,55 @@ select {
   padding-left: 2px;
 }
 
+.filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
 
+.filter-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.38);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color 120ms ease, background 120ms ease, color 120ms ease;
+  line-height: 1.4;
+}
 
+.filter-chip:hover {
+  border-color: rgba(255, 255, 255, 0.16);
+  color: rgba(255, 255, 255, 0.68);
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.filter-chip-on {
+  border-color: rgba(255, 79, 163, 0.45);
+  background: rgba(255, 79, 163, 0.13);
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.filter-chip-on:hover {
+  border-color: rgba(255, 79, 163, 0.65);
+  background: rgba(255, 79, 163, 0.2);
+}
+
+.filter-chip-expand {
+  color: rgba(255, 255, 255, 0.28);
+  font-size: 11px;
+}
+
+.filter-chip-expand:hover {
+  color: rgba(255, 255, 255, 0.55);
+  background: rgba(255, 255, 255, 0.05);
+}
 
 
 .inventory-shell {
