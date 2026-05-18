@@ -1190,6 +1190,10 @@ export default function OrdersClient() {
                             <strong>{formatCurrency(group.totalCost)}</strong>
                           </div>
                           <div className="inventory-metric-chip">
+                            <span>CPT</span>
+                            <strong>{group.totalQty > 0 ? formatCurrency(group.totalCost / group.totalQty) : "—"}</strong>
+                          </div>
+                          <div className="inventory-metric-chip">
                             <span>Revenue</span>
                             <strong>{group.totalSold > 0 ? formatCurrency(group.totalSold) : "—"}</strong>
                           </div>
