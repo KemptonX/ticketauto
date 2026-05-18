@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/src/lib/supabase";
 import { formatCurrency } from "@/src/lib/currency";
 import { SidebarLogo, NavIcon, SidebarFooter } from "@/app/components/nav-icons";
@@ -170,12 +170,6 @@ export default function OrdersClient() {
   const [statusFilters, setStatusFilters] = useState<string[]>([]);
   const [sourceFilters, setSourceFilters] = useState<string[]>([]);
   const [soldFilters, setSoldFilters] = useState<string[]>([]);
-  const [showAllEvents, setShowAllEvents] = useState(false);
-  const [showAllVenues, setShowAllVenues] = useState(false);
-
-  function toggleChip(setter: React.Dispatch<React.SetStateAction<string[]>>, value: string) {
-    setter(prev => prev.includes(value) ? prev.filter(v => v !== value) : [...prev, value]);
-  }
 
   function resetFilters() {
     setSearch("");
@@ -1001,9 +995,8 @@ export default function OrdersClient() {
             </button>
           </div>
 
-          <div style={{ display: "flex", flexDirection: "column", gap: 14, marginTop: 18 }}>
-            {/* Search */}
-            <label className="filter-field" style={{ maxWidth: 460 }}>
+          <div className="command-grid">
+            <label className="filter-field">
               <span className="filter-label">Search</span>
               <input
                 className="field field-search"
@@ -1013,122 +1006,56 @@ export default function OrdersClient() {
               />
             </label>
 
-            {/* Status */}
             <div className="filter-field">
-              <span className="filter-label">
-                Status{statusFilters.length > 0 && <span style={{ marginLeft: 6, color: "rgba(255,79,163,0.8)", fontWeight: 700 }}>· {statusFilters.length} selected</span>}
-              </span>
-              <div className="filter-chips">
-                {statusOptions.filter(o => o !== "All").map(option => (
-                  <button
-                    key={option}
-                    type="button"
-                    className={`filter-chip${statusFilters.includes(option) ? " filter-chip-on" : ""}`}
-                    onClick={() => toggleChip(setStatusFilters, option)}
-                  >
-                    {option}
-                  </button>
-                ))}
-              </div>
+              <span className="filter-label">Event</span>
+              <MultiSelectField
+                options={eventOptions}
+                selected={eventFilters}
+                onChange={setEventFilters}
+                placeholder="All events"
+              />
             </div>
 
-            {/* Sold */}
             <div className="filter-field">
-              <span className="filter-label">
-                Sold{soldFilters.length > 0 && <span style={{ marginLeft: 6, color: "rgba(255,79,163,0.8)", fontWeight: 700 }}>· {soldFilters.length} selected</span>}
-              </span>
-              <div className="filter-chips">
-                {["Sold", "Unsold"].map(option => (
-                  <button
-                    key={option}
-                    type="button"
-                    className={`filter-chip${soldFilters.includes(option) ? " filter-chip-on" : ""}`}
-                    onClick={() => toggleChip(setSoldFilters, option)}
-                  >
-                    {option}
-                  </button>
-                ))}
-              </div>
+              <span className="filter-label">Venue</span>
+              <MultiSelectField
+                options={venueOptions}
+                selected={venueFilters}
+                onChange={setVenueFilters}
+                placeholder="All venues"
+              />
             </div>
 
-            {/* Source */}
             <div className="filter-field">
-              <span className="filter-label">
-                Source{sourceFilters.length > 0 && <span style={{ marginLeft: 6, color: "rgba(255,79,163,0.8)", fontWeight: 700 }}>· {sourceFilters.length} selected</span>}
-              </span>
-              <div className="filter-chips">
-                {sourceOptions.filter(o => o !== "All").map(option => (
-                  <button
-                    key={option}
-                    type="button"
-                    className={`filter-chip${sourceFilters.includes(option) ? " filter-chip-on" : ""}`}
-                    onClick={() => toggleChip(setSourceFilters, option)}
-                  >
-                    {sourceLabels[option] ?? option}
-                  </button>
-                ))}
-              </div>
+              <span className="filter-label">Status</span>
+              <MultiSelectField
+                options={statusOptions.filter(o => o !== "All")}
+                selected={statusFilters}
+                onChange={setStatusFilters}
+                placeholder="All statuses"
+              />
             </div>
 
-            {/* Event */}
-            {eventOptions.length > 0 && (
-              <div className="filter-field">
-                <span className="filter-label">
-                  Event{eventFilters.length > 0 && <span style={{ marginLeft: 6, color: "rgba(255,79,163,0.8)", fontWeight: 700 }}>· {eventFilters.length} selected</span>}
-                </span>
-                <div className="filter-chips">
-                  {(showAllEvents ? eventOptions : eventOptions.slice(0, 8)).map(option => (
-                    <button
-                      key={option}
-                      type="button"
-                      className={`filter-chip${eventFilters.includes(option) ? " filter-chip-on" : ""}`}
-                      onClick={() => toggleChip(setEventFilters, option)}
-                    >
-                      {option}
-                    </button>
-                  ))}
-                  {eventOptions.length > 8 && (
-                    <button
-                      type="button"
-                      className="filter-chip filter-chip-expand"
-                      onClick={() => setShowAllEvents(v => !v)}
-                    >
-                      {showAllEvents ? "Show less" : `+${eventOptions.length - 8} more`}
-                    </button>
-                  )}
-                </div>
-              </div>
-            )}
+            <div className="filter-field">
+              <span className="filter-label">Source</span>
+              <MultiSelectField
+                options={sourceOptions.filter(o => o !== "All")}
+                selected={sourceFilters}
+                onChange={setSourceFilters}
+                placeholder="All sources"
+                labelFn={(v) => sourceLabels[v] ?? v}
+              />
+            </div>
 
-            {/* Venue */}
-            {venueOptions.length > 0 && (
-              <div className="filter-field">
-                <span className="filter-label">
-                  Venue{venueFilters.length > 0 && <span style={{ marginLeft: 6, color: "rgba(255,79,163,0.8)", fontWeight: 700 }}>· {venueFilters.length} selected</span>}
-                </span>
-                <div className="filter-chips">
-                  {(showAllVenues ? venueOptions : venueOptions.slice(0, 8)).map(option => (
-                    <button
-                      key={option}
-                      type="button"
-                      className={`filter-chip${venueFilters.includes(option) ? " filter-chip-on" : ""}`}
-                      onClick={() => toggleChip(setVenueFilters, option)}
-                    >
-                      {option}
-                    </button>
-                  ))}
-                  {venueOptions.length > 8 && (
-                    <button
-                      type="button"
-                      className="filter-chip filter-chip-expand"
-                      onClick={() => setShowAllVenues(v => !v)}
-                    >
-                      {showAllVenues ? "Show less" : `+${venueOptions.length - 8} more`}
-                    </button>
-                  )}
-                </div>
-              </div>
-            )}
+            <div className="filter-field">
+              <span className="filter-label">Sold</span>
+              <MultiSelectField
+                options={["Sold", "Unsold"]}
+                selected={soldFilters}
+                onChange={setSoldFilters}
+                placeholder="All"
+              />
+            </div>
           </div>
         </section>
 
@@ -2068,6 +1995,120 @@ function toDateInputValue(value: string | null): string {
     return `${y}-${m}-${d}`;
   }
   return "";
+}
+
+function MultiSelectField({
+  options,
+  selected,
+  onChange,
+  placeholder,
+  labelFn,
+}: {
+  options: string[];
+  selected: string[];
+  onChange: (v: string[]) => void;
+  placeholder: string;
+  labelFn?: (v: string) => string;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function handler(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  function toggle(v: string) {
+    onChange(selected.includes(v) ? selected.filter(s => s !== v) : [...selected, v]);
+  }
+
+  const displayLabel = selected.length === 0
+    ? placeholder
+    : selected.length === 1
+      ? (labelFn ? labelFn(selected[0]) : selected[0])
+      : `${selected.length} selected`;
+
+  return (
+    <div ref={ref} style={{ position: "relative" }}>
+      <button
+        type="button"
+        className="field"
+        style={{
+          textAlign: "left",
+          cursor: "pointer",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          gap: 8,
+          borderColor: selected.length > 0 ? "rgba(255,79,163,0.4)" : undefined,
+        }}
+        onClick={() => setOpen(v => !v)}
+      >
+        <span style={{
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+          color: selected.length > 0 ? "rgba(255,255,255,0.9)" : "rgba(255,255,255,0.3)",
+          fontSize: 14,
+        }}>
+          {displayLabel}
+        </span>
+        <span style={{ fontSize: 9, opacity: 0.4, flexShrink: 0 }}>{open ? "▴" : "▾"}</span>
+      </button>
+      {open && (
+        <div style={{
+          position: "absolute",
+          top: "calc(100% + 4px)",
+          left: 0,
+          right: 0,
+          zIndex: 200,
+          background: "#16161e",
+          border: "1px solid rgba(255,255,255,0.1)",
+          borderRadius: 12,
+          padding: "6px 0",
+          boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
+          maxHeight: 240,
+          overflowY: "auto",
+          minWidth: "max-content",
+        }}>
+          {options.map(option => {
+            const isChecked = selected.includes(option);
+            return (
+              <label
+                key={option}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  padding: "8px 14px",
+                  cursor: "pointer",
+                  background: isChecked ? "rgba(255,79,163,0.07)" : "transparent",
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={isChecked}
+                  onChange={() => toggle(option)}
+                  style={{ accentColor: "rgb(255,79,163)", width: 14, height: 14, flexShrink: 0, cursor: "pointer" }}
+                />
+                <span style={{
+                  fontSize: 13,
+                  color: isChecked ? "rgba(255,255,255,0.92)" : "rgba(255,255,255,0.55)",
+                  whiteSpace: "nowrap",
+                }}>
+                  {labelFn ? labelFn(option) : option}
+                </span>
+              </label>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
 }
 
 
