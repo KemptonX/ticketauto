@@ -1244,7 +1244,6 @@ export default function OrdersClient() {
                             </a>
                             <span className="status-badge status-static status-unlisted">Unlisted {group.unlistedCount}</span>
                             <span className="status-badge status-static status-listed">Listed {group.listedCount}</span>
-                            {group.partiallySoldCount > 0 && <span className="status-badge status-static status-partial">Partial {group.partiallySoldCount}</span>}
                             <span className="status-badge status-static status-sold">Sold {group.soldCount}</span>
                           </div>
                         </div>
