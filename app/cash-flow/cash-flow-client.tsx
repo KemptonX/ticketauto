@@ -98,6 +98,7 @@ function txMonths(startYear: number): Array<{ year: number; month: number; month
 
 export default function CashFlowClient() {
   const [orders, setOrders] = useState<Order[]>([]);
+  const [soldQtyByOrderId, setSoldQtyByOrderId] = useState<Map<number, number>>(new Map());
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [message, setMessage] = useState("");
@@ -129,17 +130,31 @@ export default function CashFlowClient() {
     if (showRefreshing) setRefreshing(true);
     else setLoading(true);
 
-    const { data, error } = await supabase
-      .from("orders")
-      .select("id, event_name, venue, event_date, qty_bought, total_cost, sold_total, listing_status")
-      .or("listing_status.is.null,listing_status.not.in.(Ignored,Personal)")
-      .order("event_date", { ascending: true });
+    const [ordersResult, salesResult] = await Promise.all([
+      supabase
+        .from("orders")
+        .select("id, event_name, venue, event_date, qty_bought, total_cost, sold_total, listing_status")
+        .or("listing_status.is.null,listing_status.not.in.(Ignored,Personal)")
+        .order("event_date", { ascending: true }),
+      supabase
+        .from("sales")
+        .select("inventory_order_id, qty_sold")
+        .not("inventory_order_id", "is", null),
+    ]);
 
-    if (error) {
-      setMessage(error.message);
+    if (ordersResult.error) {
+      setMessage(ordersResult.error.message);
     } else {
-      setOrders((data as Order[]) || []);
+      setOrders((ordersResult.data as Order[]) || []);
       if (showRefreshing) setMessage("Refreshed");
+    }
+
+    if (!salesResult.error && salesResult.data) {
+      const qtyMap = new Map<number, number>();
+      for (const s of salesResult.data as { inventory_order_id: number; qty_sold: number | null }[]) {
+        qtyMap.set(s.inventory_order_id, (qtyMap.get(s.inventory_order_id) ?? 0) + (s.qty_sold ?? 0));
+      }
+      setSoldQtyByOrderId(qtyMap);
     }
     setLoading(false);
     setRefreshing(false);
@@ -178,18 +193,20 @@ export default function CashFlowClient() {
       }
 
       const ev = map.get(key)!;
-      ev.totalQty += o.qty_bought ?? 1;
+      const qty = o.qty_bought ?? 1;
+      ev.totalQty += qty;
       if ((o.sold_total ?? 0) > 0) {
         ev.cashIn += o.sold_total ?? 0;
         ev.costOut += o.total_cost ?? 0;
-        ev.soldQty += o.qty_bought ?? 1;
+        const qtySold = soldQtyByOrderId.get(o.id) ?? (o.listing_status === "Partially Sold" ? 0 : qty);
+        ev.soldQty += qtySold;
       }
     }
 
     return Array.from(map.values())
       .map(ev => ({ ...ev, profit: ev.cashIn - ev.costOut }))
       .sort((a, b) => a.dateValue.getTime() - b.dateValue.getTime());
-  }, [orders, today]);
+  }, [orders, today, soldQtyByOrderId]);
 
   const availableTYs = useMemo(() => {
     const set = new Set<number>([currentTY()]);
@@ -209,7 +226,11 @@ export default function CashFlowClient() {
     const totalCost = tyEvents.reduce((s, ev) => s + ev.costOut, 0);
     const totalCash = received + incoming;
     const roi = totalCost > 0 ? ((totalCash - totalCost) / totalCost) * 100 : null;
-    return { received, incoming, totalCash, roi };
+    const ticketsSold = tyEvents.reduce((s, ev) => s + ev.soldQty, 0);
+    const totalTickets = tyEvents.reduce((s, ev) => s + ev.totalQty, 0);
+    const ticketsLeft = totalTickets - ticketsSold;
+    const soldPct = totalTickets > 0 ? (ticketsSold / totalTickets) * 100 : 0;
+    return { received, incoming, totalCash, roi, ticketsSold, ticketsLeft, totalTickets, soldPct };
   }, [tyEvents]);
 
   const monthRows = useMemo((): MonthRow[] => {
@@ -319,6 +340,124 @@ export default function CashFlowClient() {
               <strong style={{ color: "#4fc3ff" }}>{formatCurrency(stats.incoming)}</strong>
             </div>
           </div>
+        </section>
+
+        {/* ── Ticket Tracker ──────────────────────────────────────────────── */}
+
+        <section style={{
+          background: "rgba(255,255,255,0.025)",
+          border: "1px solid var(--border)",
+          borderRadius: 20,
+          padding: "28px 32px",
+          marginBottom: 0,
+        }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24, flexWrap: "wrap", gap: 12 }}>
+            <div>
+              <p className="section-tag" style={{ marginBottom: 4 }}>Ticket Tracker</p>
+              <h3 style={{ margin: 0, fontSize: 20, fontWeight: 700, letterSpacing: "-0.04em" }}>
+                {txLabel(selectedTY)} — how many tickets have you sold?
+              </h3>
+            </div>
+            {stats.totalTickets > 0 && (
+              <span style={{
+                fontSize: 28,
+                fontWeight: 800,
+                letterSpacing: "-0.05em",
+                color: stats.soldPct >= 80 ? "#9ef5c6" : stats.soldPct >= 40 ? "#fde68a" : "#4fc3ff",
+              }}>
+                {stats.soldPct.toFixed(0)}% sold
+              </span>
+            )}
+          </div>
+
+          {/* Big stats row */}
+          <div style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            gap: 16,
+            marginBottom: 24,
+          }}>
+            {/* Tickets Sold */}
+            <div style={{
+              background: "rgba(158,245,198,0.07)",
+              border: "1px solid rgba(158,245,198,0.18)",
+              borderRadius: 16,
+              padding: "24px 28px",
+              display: "flex",
+              flexDirection: "column",
+              gap: 8,
+            }}>
+              <span style={{ fontSize: 12, fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase", color: "#9ef5c6", opacity: 0.8 }}>
+                Tickets Sold
+              </span>
+              <span style={{ fontSize: 56, fontWeight: 800, letterSpacing: "-0.05em", lineHeight: 1, color: "#9ef5c6" }}>
+                {stats.ticketsSold}
+              </span>
+              <span style={{ fontSize: 13, color: "var(--text-muted)" }}>
+                out of {stats.totalTickets} total tickets
+              </span>
+            </div>
+
+            {/* Tickets Left */}
+            <div style={{
+              background: "rgba(79,195,255,0.07)",
+              border: "1px solid rgba(79,195,255,0.18)",
+              borderRadius: 16,
+              padding: "24px 28px",
+              display: "flex",
+              flexDirection: "column",
+              gap: 8,
+            }}>
+              <span style={{ fontSize: 12, fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase", color: "#4fc3ff", opacity: 0.8 }}>
+                Tickets Left to Sell
+              </span>
+              <span style={{ fontSize: 56, fontWeight: 800, letterSpacing: "-0.05em", lineHeight: 1, color: "#4fc3ff" }}>
+                {stats.ticketsLeft}
+              </span>
+              <span style={{ fontSize: 13, color: "var(--text-muted)" }}>
+                {stats.ticketsLeft === 0 ? "all sold — great work!" : "still to go"}
+              </span>
+            </div>
+          </div>
+
+          {/* Progress bar */}
+          {stats.totalTickets > 0 && (
+            <div>
+              <div style={{
+                display: "flex",
+                justifyContent: "space-between",
+                marginBottom: 8,
+                fontSize: 12,
+                color: "var(--text-muted)",
+              }}>
+                <span>{stats.ticketsSold} sold</span>
+                <span>{stats.ticketsLeft} remaining</span>
+              </div>
+              <div style={{
+                height: 12,
+                borderRadius: 999,
+                background: "rgba(255,255,255,0.08)",
+                overflow: "hidden",
+              }}>
+                <div style={{
+                  height: "100%",
+                  width: `${Math.min(stats.soldPct, 100)}%`,
+                  borderRadius: 999,
+                  background: stats.soldPct >= 80
+                    ? "linear-gradient(90deg, #6be0a8, #9ef5c6)"
+                    : stats.soldPct >= 40
+                    ? "linear-gradient(90deg, #f59e0b, #fde68a)"
+                    : "linear-gradient(90deg, #38bdf8, #4fc3ff)",
+                  boxShadow: stats.soldPct >= 80
+                    ? "0 0 10px rgba(158,245,198,0.4)"
+                    : stats.soldPct >= 40
+                    ? "0 0 10px rgba(253,230,138,0.4)"
+                    : "0 0 10px rgba(79,195,255,0.4)",
+                  transition: "width 600ms ease",
+                }} />
+              </div>
+            </div>
+          )}
         </section>
 
         <section className="kpi-grid">
