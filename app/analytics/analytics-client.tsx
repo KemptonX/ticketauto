@@ -70,6 +70,7 @@ type DatePreset = "all" | "this-week" | "this-month" | "this-year" | "last-year"
 export default function AnalyticsClient() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [soldAtMap, setSoldAtMap] = useState<Record<number, string>>({});
+  const [soldQtyByOrderId, setSoldQtyByOrderId] = useState<Map<number, number>>(new Map());
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [message, setMessage] = useState("");
@@ -139,7 +140,7 @@ export default function AnalyticsClient() {
     const headers = ["Event", "Venue", "Event Date", "Account", "Section", "Row", "Seat From", "Seat To", "Qty", "Source", "Booking Ref", "Cost (£)", "Sold For (£)", "Profit (£)", "ROI (%)"];
 
     const rows = soldOrders.map((order) => {
-      const cost = order.total_cost ?? 0;
+      const cost = getProportionalCost(order.total_cost, order.qty_bought, soldQtyByOrderId.get(order.id) ?? (order.qty_bought ?? 0), order.listing_status);
       const soldFor = order.sold_total ?? 0;
       const profit = soldFor - cost;
       const roi = cost > 0 ? ((profit / cost) * 100).toFixed(1) : "";
@@ -184,7 +185,7 @@ export default function AnalyticsClient() {
 
     const [ordersResult, salesResult] = await Promise.all([
       supabase.from("orders").select("*").or("listing_status.is.null,listing_status.not.in.(Ignored,Personal)").order("created_at", { ascending: true }),
-      supabase.from("sales").select("inventory_order_id, sold_at").not("inventory_order_id", "is", null),
+      supabase.from("sales").select("inventory_order_id, sold_at, qty_sold").not("inventory_order_id", "is", null),
     ]);
 
     if (ordersResult.error) {
@@ -198,15 +199,20 @@ export default function AnalyticsClient() {
 
     if (!salesResult.error && salesResult.data) {
       const map: Record<number, string> = {};
-      for (const row of salesResult.data as { inventory_order_id: number; sold_at: string | null }[]) {
-        if (row.inventory_order_id && row.sold_at) {
-          const existing = map[row.inventory_order_id];
-          if (!existing || row.sold_at < existing) {
-            map[row.inventory_order_id] = row.sold_at;
+      const qtyMap = new Map<number, number>();
+      for (const row of salesResult.data as { inventory_order_id: number; sold_at: string | null; qty_sold: number | null }[]) {
+        if (row.inventory_order_id) {
+          if (row.sold_at) {
+            const existing = map[row.inventory_order_id];
+            if (!existing || row.sold_at < existing) {
+              map[row.inventory_order_id] = row.sold_at;
+            }
           }
+          qtyMap.set(row.inventory_order_id, (qtyMap.get(row.inventory_order_id) ?? 0) + (row.qty_sold ?? 0));
         }
       }
       setSoldAtMap(map);
+      setSoldQtyByOrderId(qtyMap);
     }
 
     setLoading(false);
@@ -262,9 +268,9 @@ export default function AnalyticsClient() {
   const analytics = useMemo(() => {
     const soldOrders = filteredOrders.filter((order) => isSold(order));
     const soldTickets = soldOrders.reduce((sum, order) => sum + getTicketQuantity(order), 0);
-    const totalProfit = soldOrders.reduce((sum, order) => sum + getProfit(order), 0);
+    const totalProfit = soldOrders.reduce((sum, order) => sum + getProfit(order, soldQtyByOrderId), 0);
     const totalSales = soldOrders.reduce((sum, order) => sum + (order.sold_total ?? 0), 0);
-    const totalCost = soldOrders.reduce((sum, order) => sum + (order.total_cost ?? 0), 0);
+    const totalCost = soldOrders.reduce((sum, order) => sum + getProportionalCost(order.total_cost, order.qty_bought, soldQtyByOrderId.get(order.id) ?? (order.qty_bought ?? 0), order.listing_status), 0);
     const roi = totalCost > 0 ? (totalProfit / totalCost) * 100 : 0;
 
     const avgTimeToSellDays = soldOrders
@@ -274,8 +280,8 @@ export default function AnalyticsClient() {
       ? avgTimeToSellDays.reduce((sum, value) => sum + value, 0) / avgTimeToSellDays.length
       : null;
 
-    const profitSeries = buildMonthlyProfitSeries(soldOrders, soldAtMap);
-    const eventRows = buildEventProfit(soldOrders);
+    const profitSeries = buildMonthlyProfitSeries(soldOrders, soldAtMap, soldQtyByOrderId);
+    const eventRows = buildEventProfit(soldOrders, soldQtyByOrderId);
 
     const metrics: MetricCard[] = [
       {
@@ -303,13 +309,13 @@ export default function AnalyticsClient() {
     ];
 
     return { metrics, profitSeries, eventRows };
-  }, [filteredOrders, soldAtMap]);
+  }, [filteredOrders, soldAtMap, soldQtyByOrderId]);
 
   const allTimeSummary = useMemo(() => {
     const soldOrders = orders.filter(isSold);
 
     // Closed view — only orders marked as Sold
-    const closedInvested = soldOrders.reduce((sum, o) => sum + (o.total_cost ?? 0), 0);
+    const closedInvested = soldOrders.reduce((sum, o) => sum + getProportionalCost(o.total_cost, o.qty_bought, soldQtyByOrderId.get(o.id) ?? (o.qty_bought ?? 0), o.listing_status), 0);
     const closedReturned = soldOrders.reduce((sum, o) => sum + (o.sold_total ?? 0), 0);
     const closedProfit = closedReturned - closedInvested;
     const closedRoi = closedInvested > 0 ? (closedProfit / closedInvested) * 100 : 0;
@@ -319,7 +325,7 @@ export default function AnalyticsClient() {
     // Full portfolio view — all orders, returns from sold only
     const portfolioInvested = orders.reduce((sum, o) => sum + (o.total_cost ?? 0), 0);
     const portfolioReturned = soldOrders.reduce((sum, o) => sum + (o.sold_total ?? 0), 0);
-    const portfolioProfit = portfolioReturned - portfolioInvested;
+    const portfolioProfit = portfolioReturned - soldOrders.reduce((sum, o) => sum + getProportionalCost(o.total_cost, o.qty_bought, soldQtyByOrderId.get(o.id) ?? (o.qty_bought ?? 0), o.listing_status), 0);
     const portfolioRoi = portfolioInvested > 0 ? (portfolioProfit / portfolioInvested) * 100 : 0;
     const portfolioTickets = orders.reduce((sum, o) => sum + getTicketQuantity(o), 0);
     const portfolioEvents = new Set(orders.map((o) => `${o.event_name}__${o.venue}`)).size;
@@ -344,7 +350,7 @@ export default function AnalyticsClient() {
         totalEvents: portfolioEvents,
       },
     };
-  }, [orders]);
+  }, [orders, soldQtyByOrderId]);
 
   const sortedEventRows = useMemo(() => {
     const rows = [...analytics.eventRows];
@@ -749,7 +755,7 @@ export default function AnalyticsClient() {
                   </thead>
                   <tbody>
                     {filteredOrders.filter(isSold).map((order) => {
-                      const cost = order.total_cost ?? 0;
+                      const cost = getProportionalCost(order.total_cost, order.qty_bought, soldQtyByOrderId.get(order.id) ?? (order.qty_bought ?? 0), order.listing_status);
                       const soldVal = inlineEdits[order.id] !== undefined
                         ? (inlineEdits[order.id] === "" ? 0 : Number(inlineEdits[order.id]))
                         : (order.sold_total ?? 0);
@@ -816,6 +822,17 @@ export default function AnalyticsClient() {
   );
 }
 
+function getProportionalCost(
+  totalCost: number | null,
+  qtyBought: number | null,
+  qtySold: number,
+  status: string | null,
+): number {
+  const cost = totalCost ?? 0;
+  if (status !== "Partially Sold" || (qtyBought ?? 0) <= 0 || qtySold <= 0) return cost;
+  return Math.min(cost, (qtySold / qtyBought!) * cost);
+}
+
 function isSold(order: Order) {
   return normalizeStatus(order.listing_status) === "Sold" || (order.sold_total ?? 0) > 0;
 }
@@ -840,8 +857,9 @@ function getTicketQuantity(order: Order) {
   return 1;
 }
 
-function getProfit(order: Order) {
-  return (order.sold_total ?? 0) - (order.total_cost ?? 0);
+function getProfit(order: Order, soldQtyByOrderId: Map<number, number>) {
+  const effCost = getProportionalCost(order.total_cost, order.qty_bought, soldQtyByOrderId.get(order.id) ?? (order.qty_bought ?? 0), order.listing_status);
+  return (order.sold_total ?? 0) - effCost;
 }
 
 function getApproxDaysToSell(order: Order, soldAt: string | null) {
@@ -893,7 +911,7 @@ function parseEventDate(value: string | null): Date | null {
   return null;
 }
 
-function buildMonthlyProfitSeries(orders: Order[], soldAtMap: Record<number, string>): SeriesPoint[] {
+function buildMonthlyProfitSeries(orders: Order[], soldAtMap: Record<number, string>, soldQtyByOrderId: Map<number, number>): SeriesPoint[] {
   const map = new Map<string, SeriesPoint>();
   const todayKey = (() => {
     const n = new Date();
@@ -910,8 +928,8 @@ function buildMonthlyProfitSeries(orders: Order[], soldAtMap: Record<number, str
     if (key > todayKey) continue;
     const label = new Intl.DateTimeFormat("en-GB", { month: "short", year: "2-digit" }).format(date);
     const current = map.get(key) ?? { label, profit: 0, cost: 0, sales: 0 };
-    current.profit += getProfit(order);
-    current.cost += order.total_cost ?? 0;
+    current.profit += getProfit(order, soldQtyByOrderId);
+    current.cost += getProportionalCost(order.total_cost, order.qty_bought, soldQtyByOrderId.get(order.id) ?? (order.qty_bought ?? 0), order.listing_status);
     current.sales += order.sold_total ?? 0;
     map.set(key, current);
   }
@@ -924,7 +942,7 @@ function buildMonthlyProfitSeries(orders: Order[], soldAtMap: Record<number, str
   return sorted.slice(-12);
 }
 
-function buildEventProfit(orders: Order[]): EventProfit[] {
+function buildEventProfit(orders: Order[], soldQtyByOrderId: Map<number, number>): EventProfit[] {
   const map = new Map<string, EventProfit>();
 
   for (const order of orders) {
@@ -941,9 +959,9 @@ function buildEventProfit(orders: Order[]): EventProfit[] {
       roi: 0,
     };
 
-    current.profit += getProfit(order);
+    current.profit += getProfit(order, soldQtyByOrderId);
     current.sales += order.sold_total ?? 0;
-    current.cost += order.total_cost ?? 0;
+    current.cost += getProportionalCost(order.total_cost, order.qty_bought, soldQtyByOrderId.get(order.id) ?? (order.qty_bought ?? 0), order.listing_status);
     current.tickets += getTicketQuantity(order);
     map.set(key, current);
   }
