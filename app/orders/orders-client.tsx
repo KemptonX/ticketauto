@@ -61,6 +61,7 @@ type OrderGroup = {
   orders: Order[];
   totalQty: number;
   totalCost: number;
+  totalEffectiveCost: number;
   totalSold: number;
   soldCount: number;
   partiallySoldCount: number;
@@ -100,6 +101,17 @@ const sourceTypeOptions = [
   { value: "ticketmaster_ca", label: "TM CA" },
   { value: "axs", label: "AXS" },
 ];
+
+function getProportionalCost(
+  totalCost: number | null,
+  qtyBought: number | null,
+  qtySold: number,
+  status: string | null,
+): number {
+  const cost = totalCost ?? 0;
+  if (status !== "Partially Sold" || (qtyBought ?? 0) <= 0 || qtySold <= 0) return cost;
+  return Math.min(cost, (qtySold / qtyBought!) * cost);
+}
 
 type NewTicketForm = {
   event_name: string;
@@ -805,6 +817,7 @@ export default function OrdersClient() {
           orders: [],
           totalQty: 0,
           totalCost: 0,
+          totalEffectiveCost: 0,
           totalSold: 0,
           soldCount: 0,
           partiallySoldCount: 0,
@@ -821,6 +834,10 @@ export default function OrdersClient() {
       group.totalQty += order.qty_bought ?? 0;
       group.totalCost += order.total_cost ?? 0;
       group.totalSold += order.sold_total ?? 0;
+      if (order.sold_total != null) {
+        const qtySold = soldQtyByOrderId.get(order.id) ?? (order.qty_bought ?? 0);
+        group.totalEffectiveCost += getProportionalCost(order.total_cost, order.qty_bought, qtySold, order.listing_status);
+      }
 
       const addedAt = order.created_at ? new Date(order.created_at).getTime() : 0;
       if (addedAt > group.latestAddedAt) group.latestAddedAt = addedAt;
@@ -861,10 +878,10 @@ export default function OrdersClient() {
       0,
     );
     const totalProfit = filteredOrders.reduce((sum, order) => {
-      if (order.sold_total == null || order.total_cost == null) {
-        return sum;
-      }
-      return sum + (order.sold_total - order.total_cost);
+      if (order.sold_total == null) return sum;
+      const qtySold = soldQtyByOrderId.get(order.id) ?? (order.qty_bought ?? 0);
+      const effCost = getProportionalCost(order.total_cost, order.qty_bought, qtySold, order.listing_status);
+      return sum + (order.sold_total - effCost);
     }, 0);
 
     const roi = totalCost > 0 ? (totalProfit / totalCost) * 100 : 0;
@@ -895,7 +912,7 @@ export default function OrdersClient() {
           totalProfit !== 0 ? `${formatCurrency(totalProfit)} net profit` : "No profit yet",
       },
     ];
-  }, [filteredOrders]);
+  }, [filteredOrders, soldQtyByOrderId]);
 
   return (
     <div className={`orders-shell${(selectedOrder || showAddForm) ? " orders-shell-drawer-open" : ""}`}>
@@ -1137,10 +1154,10 @@ export default function OrdersClient() {
               {groupedOrders.map((group) => {
                 const expanded = expandedGroups.includes(group.key);
                 const groupProfit = group.orders.some((o) => o.sold_total != null)
-                  ? group.totalSold - group.totalCost
+                  ? group.totalSold - group.totalEffectiveCost
                   : null;
-                const groupRoi = groupProfit != null && group.totalCost > 0
-                  ? (groupProfit / group.totalCost) * 100
+                const groupRoi = groupProfit != null && group.totalEffectiveCost > 0
+                  ? (groupProfit / group.totalEffectiveCost) * 100
                   : null;
                 const soldRatio = group.totalQty > 0 ? (group.soldCount / group.totalQty) * 100 : 0;
 
@@ -1259,10 +1276,11 @@ export default function OrdersClient() {
                           </thead>
                           <tbody>
                             {group.orders.map((order) => {
-                              const cost = order.total_cost ?? 0;
                               const sold = order.sold_total ?? 0;
-                              const profit = order.sold_total != null ? sold - cost : null;
-                              const roi = profit != null && cost > 0 ? (profit / cost) * 100 : null;
+                              const qtySoldRow = soldQtyByOrderId.get(order.id) ?? (order.qty_bought ?? 0);
+                              const effCost = getProportionalCost(order.total_cost, order.qty_bought, qtySoldRow, order.listing_status);
+                              const profit = order.sold_total != null ? sold - effCost : null;
+                              const roi = profit != null && effCost > 0 ? (profit / effCost) * 100 : null;
                               const active = selectedOrderId === order.id;
                               const isNew = order.created_at ? new Date(order.created_at).getTime() > Date.now() - 86400000 : false;
 
@@ -1577,8 +1595,8 @@ export default function OrdersClient() {
                 <span className={`status-badge status-static ${getStatusTone(selectedOrder.listing_status)}`}>
                   {selectedOrder.listing_status || "Unlisted"}
                 </span>
-                <strong className={`drawer-profit ${getDeltaTone((selectedOrder.sold_total ?? 0) - (selectedOrder.total_cost ?? 0))}`}>
-                  {renderDeltaValue((selectedOrder.sold_total ?? 0) - (selectedOrder.total_cost ?? 0), true)}
+                <strong className={`drawer-profit ${getDeltaTone((selectedOrder.sold_total ?? 0) - getProportionalCost(selectedOrder.total_cost, selectedOrder.qty_bought, soldQtyByOrderId.get(selectedOrder.id) ?? (selectedOrder.qty_bought ?? 0), selectedOrder.listing_status))}`}>
+                  {renderDeltaValue((selectedOrder.sold_total ?? 0) - getProportionalCost(selectedOrder.total_cost, selectedOrder.qty_bought, soldQtyByOrderId.get(selectedOrder.id) ?? (selectedOrder.qty_bought ?? 0), selectedOrder.listing_status), true)}
                 </strong>
               </div>
             </section>
@@ -1784,7 +1802,7 @@ export default function OrdersClient() {
                 <span>Profit</span>
                 <strong>
                   {formatCurrency(
-                    (selectedOrder.sold_total ?? 0) - (selectedOrder.total_cost ?? 0),
+                    (selectedOrder.sold_total ?? 0) - getProportionalCost(selectedOrder.total_cost, selectedOrder.qty_bought, soldQtyByOrderId.get(selectedOrder.id) ?? (selectedOrder.qty_bought ?? 0), selectedOrder.listing_status),
                   )}
                 </strong>
               </div>

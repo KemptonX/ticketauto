@@ -1,6 +1,6 @@
 ﻿import type { SupabaseClient } from "@supabase/supabase-js";
 
-const GMAIL_QUERY = 'is:unread from:orders.viagogo.com ("Please transfer the tickets for sale" OR "Please send your tickets" OR "You sold your ticket for") newer_than:120d';
+const GMAIL_QUERY = 'is:unread from:orders.viagogo.com ("Please transfer the tickets for sale" OR "Please send your tickets" OR "You sold your ticket for" OR "Please upload your e-tickets") newer_than:120d';
 const PROCESSED_LABEL = "My Sales";
 
 type GmailAccount = {
@@ -169,6 +169,7 @@ export async function syncViagogoSalesInbox({
     if (
       !lowerSubject.includes("please transfer the tickets for sale") &&
       !lowerSubject.includes("please send your tickets") &&
+      !lowerSubject.includes("please upload your e-tickets") &&
       !isSoldConfirmation
     ) {
       continue;
@@ -365,6 +366,7 @@ export async function syncViagogoSalesOutlookInbox({
     if (
       !lowerSubject.includes("please transfer the tickets for sale") &&
       !lowerSubject.includes("please send your tickets") &&
+      !lowerSubject.includes("please upload your e-tickets") &&
       !isSoldConfirmation
     ) {
       continue;
