@@ -32,6 +32,17 @@ type Sale = {
   sold_at: string | null;
 };
 
+function getProportionalCost(
+  totalCost: number | null,
+  qtyBought: number | null,
+  qtySold: number,
+  status: string | null,
+): number {
+  const cost = totalCost ?? 0;
+  if (status !== "Partially Sold" || (qtyBought ?? 0) <= 0 || qtySold <= 0) return cost;
+  return Math.min(cost, (qtySold / qtyBought!) * cost);
+}
+
 const navItems = [
   { label: "Dashboard", href: "/", active: true },
   { label: "Tickets", href: "/orders", active: false },
@@ -201,8 +212,12 @@ export default function DeskClient() {
       : new Date(now.getFullYear() - 1, 3, 1);  // Apr 1 last year
     const fyEnd = new Date(fyStart.getFullYear() + 1, 3, 1);
 
-    // Profit from orders: use sold_total (any order with sold_total > 0 was sold)
-    // Group by event_date so monthly/yearly goals reflect when the event was, not when it sold
+    // Build qty sold per order from linked sales for proportional cost
+    const soldQtyByOrderId = new Map<number, number>();
+    for (const s of sales) {
+      if (s.inventory_order_id == null) continue;
+      soldQtyByOrderId.set(s.inventory_order_id, (soldQtyByOrderId.get(s.inventory_order_id) ?? 0) + (s.qty_sold ?? 0));
+    }
 
     const monthlyRevenue = orders
       .filter((o) => {
@@ -220,7 +235,7 @@ export default function DeskClient() {
         if (!d) return false;
         return d >= monthStart && d < nextMonth;
       })
-      .reduce((sum, o) => sum + (o.total_cost ?? 0), 0);
+      .reduce((sum, o) => sum + getProportionalCost(o.total_cost, o.qty_bought, soldQtyByOrderId.get(o.id) ?? (o.qty_bought ?? 0), o.listing_status), 0);
 
     const monthlyProfit = orders
       .filter((o) => {
@@ -229,7 +244,7 @@ export default function DeskClient() {
         if (!d) return false;
         return d >= monthStart && d < nextMonth;
       })
-      .reduce((sum, o) => sum + ((o.sold_total ?? 0) - (o.total_cost ?? 0)), 0);
+      .reduce((sum, o) => sum + ((o.sold_total ?? 0) - getProportionalCost(o.total_cost, o.qty_bought, soldQtyByOrderId.get(o.id) ?? (o.qty_bought ?? 0), o.listing_status)), 0);
 
     const monthlyROI = monthlyCost > 0 ? (monthlyProfit / monthlyCost) * 100 : null;
 
@@ -241,7 +256,7 @@ export default function DeskClient() {
         if (!d) return false;
         return d >= fyStart && d < fyEnd;
       })
-      .reduce((sum, o) => sum + ((o.sold_total ?? 0) - (o.total_cost ?? 0)), 0);
+      .reduce((sum, o) => sum + ((o.sold_total ?? 0) - getProportionalCost(o.total_cost, o.qty_bought, soldQtyByOrderId.get(o.id) ?? (o.qty_bought ?? 0), o.listing_status)), 0);
 
     // Projections based on daily run rate
     const dayOfMonth = now.getDate();
@@ -257,7 +272,8 @@ export default function DeskClient() {
     for (const o of orders) {
       if ((o.sold_total ?? 0) <= 0) continue;
       const name = o.event_name ?? "Untitled";
-      const profit = (o.sold_total ?? 0) - (o.total_cost ?? 0);
+      const effCost = getProportionalCost(o.total_cost, o.qty_bought, soldQtyByOrderId.get(o.id) ?? (o.qty_bought ?? 0), o.listing_status);
+      const profit = (o.sold_total ?? 0) - effCost;
       eventProfitMap.set(name, (eventProfitMap.get(name) ?? 0) + profit);
     }
     let bestEvent = "";
@@ -306,7 +322,7 @@ export default function DeskClient() {
 
     const closedProfit = orders
       .filter((o) => (o.sold_total ?? 0) > 0)
-      .reduce((sum, o) => sum + ((o.sold_total ?? 0) - (o.total_cost ?? 0)), 0);
+      .reduce((sum, o) => sum + ((o.sold_total ?? 0) - getProportionalCost(o.total_cost, o.qty_bought, soldQtyByOrderId.get(o.id) ?? (o.qty_bought ?? 0), o.listing_status)), 0);
 
     const availableCount = orders.filter(
       (o) => o.listing_status !== "Sold" && o.listing_status !== "Archived",
@@ -315,15 +331,17 @@ export default function DeskClient() {
     const soldCount = orders.filter((o) => o.listing_status === "Sold").length;
 
     return { capitalIn, closedProfit, availableCount, soldCount, monthlyRevenue, monthlyProfit, monthlyROI, openCount, bestEvent, bestProfit, thisMonthCount, thisMonthSold, thisMonthPayout, thisMonthTickets, thisMonthTicketsSold, thisMonthTicketsRemaining, yearlyProfit, fyStart, fyEnd, monthlyProjected, yearlyProjected };
-  }, [orders]);
+  }, [orders, sales]);
 
   const eventPnL = useMemo(() => {
-    // Build payout map: order id → total payout from matched sales
+    // Build payout and qty-sold maps from matched sales
     const payoutByOrder = new Map<number, number>();
+    const soldQtyByOrderId = new Map<number, number>();
     for (const sale of sales) {
       if (sale.inventory_order_id == null) continue;
       const payout = sale.payout_total ?? sale.sale_total ?? 0;
       payoutByOrder.set(sale.inventory_order_id, (payoutByOrder.get(sale.inventory_order_id) ?? 0) + payout);
+      soldQtyByOrderId.set(sale.inventory_order_id, (soldQtyByOrderId.get(sale.inventory_order_id) ?? 0) + (sale.qty_sold ?? 0));
     }
 
     // Group orders by event
@@ -333,6 +351,7 @@ export default function DeskClient() {
       eventDate: string | null;
       dateValue: Date | null;
       totalCost: number;
+      totalEffectiveCost: number;
       totalPayout: number;
       totalQty: number;
       soldQty: number;
@@ -348,24 +367,30 @@ export default function DeskClient() {
           eventDate: order.event_date ?? null,
           dateValue: parseDate(order.event_date),
           totalCost: 0,
+          totalEffectiveCost: 0,
           totalPayout: 0,
           totalQty: 0,
           soldQty: 0,
         });
       }
       const group = map.get(key)!;
+      const orderPayout = payoutByOrder.get(order.id) ?? 0;
       group.totalCost += order.total_cost ?? 0;
-      group.totalPayout += payoutByOrder.get(order.id) ?? 0;
+      group.totalPayout += orderPayout;
       group.totalQty += order.qty_bought ?? 1;
       if (order.listing_status === "Sold") group.soldQty += order.qty_bought ?? 1;
+      if (orderPayout > 0) {
+        const qtySold = soldQtyByOrderId.get(order.id) ?? (order.qty_bought ?? 0);
+        group.totalEffectiveCost += getProportionalCost(order.total_cost, order.qty_bought, qtySold, order.listing_status);
+      }
     }
 
     return Array.from(map.values())
       .filter((g) => g.totalCost > 0 || g.totalPayout > 0)
       .map((g) => ({
         ...g,
-        profit: g.totalPayout - g.totalCost,
-        roi: g.totalCost > 0 ? ((g.totalPayout - g.totalCost) / g.totalCost) * 100 : null,
+        profit: g.totalPayout - g.totalEffectiveCost,
+        roi: g.totalEffectiveCost > 0 ? ((g.totalPayout - g.totalEffectiveCost) / g.totalEffectiveCost) * 100 : null,
       }))
       .sort((a, b) => {
         if (a.dateValue && b.dateValue) return a.dateValue.getTime() - b.dateValue.getTime();
