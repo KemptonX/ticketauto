@@ -853,6 +853,12 @@ export default function OrdersClient() {
         const remaining = qty - actualSold;
         if (remaining > 0) group.listedCount += remaining;
       }
+      else if (status === "Archived") {
+        const archivedSold = soldQtyByOrderId.get(order.id) ?? ((order.sold_total ?? 0) > 0 ? qty : 0);
+        if (archivedSold > 0) group.soldCount += archivedSold;
+        const remaining = qty - archivedSold;
+        if (remaining > 0) group.unlistedCount += remaining;
+      }
       else if (status === "Listed") group.listedCount += qty;
       else if (status === "Problem / Missing") group.problemCount += qty;
       else group.unlistedCount += qty;
