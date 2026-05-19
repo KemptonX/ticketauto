@@ -245,12 +245,14 @@ export async function syncViagogoSalesInbox({
 
     if (match) {
       const currentUsed = orderUsage.get(match.order.id) ?? 0;
-      orderUsage.set(match.order.id, currentUsed + (parsed.qtySold ?? 1));
+      const newQtySold = currentUsed + (parsed.qtySold ?? 1);
+      orderUsage.set(match.order.id, newQtySold);
       matched += 1;
       await updateMatchedOrder(supabase, {
         userId,
         order: match.order,
         payoutTotal: parsed.payoutTotal,
+        totalQtySold: newQtySold,
       });
     }
 
@@ -327,13 +329,15 @@ export async function rematchViagogoSales({
     }
 
     const currentUsed = orderUsage.get(match.order.id) ?? 0;
-    orderUsage.set(match.order.id, currentUsed + (sale.qty_sold ?? 1));
+    const newQtySold = currentUsed + (sale.qty_sold ?? 1);
+    orderUsage.set(match.order.id, newQtySold);
 
     matched += 1;
     await updateMatchedOrder(supabase, {
       userId,
       order: match.order,
       payoutTotal: sale.payout_total,
+      totalQtySold: newQtySold,
     });
   }
 
@@ -443,12 +447,14 @@ export async function syncViagogoSalesOutlookInbox({
 
     if (match) {
       const currentUsed = orderUsage.get(match.order.id) ?? 0;
-      orderUsage.set(match.order.id, currentUsed + (parsed.qtySold ?? 1));
+      const newQtySold = currentUsed + (parsed.qtySold ?? 1);
+      orderUsage.set(match.order.id, newQtySold);
       matched += 1;
       await updateMatchedOrder(supabase, {
         userId,
         order: match.order,
         payoutTotal: parsed.payoutTotal,
+        totalQtySold: newQtySold,
       });
     }
 
@@ -514,14 +520,18 @@ async function updateMatchedOrder(
     userId,
     order,
     payoutTotal,
+    totalQtySold,
   }: {
     userId: string;
     order: CandidateOrder;
     payoutTotal: number | null;
+    totalQtySold: number;
   },
 ) {
+  const qtyBought = order.qty_bought ?? 0;
+  const newStatus = qtyBought > 0 && totalQtySold < qtyBought ? "Partially Sold" : "Sold";
   const payload: Record<string, string | number | null> = {
-    listing_status: "Sold",
+    listing_status: newStatus,
   };
 
   if (payoutTotal != null) {
