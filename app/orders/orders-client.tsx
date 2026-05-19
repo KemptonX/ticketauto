@@ -847,7 +847,12 @@ export default function OrdersClient() {
       const qty = order.qty_bought ?? 0;
       const actualSold = soldQtyByOrderId.get(order.id) ?? qty;
       if (status === "Sold") group.soldCount += actualSold;
-      else if (status === "Partially Sold") { group.soldCount += actualSold; group.partiallySoldCount += 1; }
+      else if (status === "Partially Sold") {
+        group.soldCount += actualSold;
+        group.partiallySoldCount += 1;
+        const remaining = qty - actualSold;
+        if (remaining > 0) group.listedCount += remaining;
+      }
       else if (status === "Listed") group.listedCount += qty;
       else if (status === "Problem / Missing") group.problemCount += qty;
       else group.unlistedCount += qty;
