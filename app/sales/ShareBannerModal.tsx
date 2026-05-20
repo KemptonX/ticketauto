@@ -510,28 +510,18 @@ function _txMark(ctx: CanvasRenderingContext2D, x: number, y: number, cssSize: n
 }
 
 function _bannerBg(ctx: CanvasRenderingContext2D, W: number, H: number, isPos: boolean, sc: number) {
-  const bg = ctx.createLinearGradient(0, 0, W * 0.5, H);
-  bg.addColorStop(0, "#0c0c16");
-  bg.addColorStop(0.6, "#080810");
-  bg.addColorStop(1, "#0e0a14");
-  ctx.fillStyle = bg;
+  // Solid background — no radial gradients (avoids Chrome GPU createPattern crash)
+  ctx.fillStyle = "#0c0c16";
   ctx.fillRect(0, 0, W, H);
-  const g1 = ctx.createRadialGradient(0, 0, 0, 0, 0, 320 * sc);
-  g1.addColorStop(0, "rgba(155,92,255,0.10)");
-  g1.addColorStop(1, "rgba(155,92,255,0)");
-  ctx.fillStyle = g1;
-  ctx.fillRect(0, 0, W, H);
-  const g2 = ctx.createRadialGradient(W, H, 0, W, H, 280 * sc);
-  g2.addColorStop(0, "rgba(255,79,163,0.12)");
-  g2.addColorStop(1, "rgba(255,79,163,0)");
-  ctx.fillStyle = g2;
-  ctx.fillRect(0, 0, W, H);
-  const gcx = W / 2, gcy = H * 0.4;
-  const g3 = ctx.createRadialGradient(gcx, gcy, 0, gcx, gcy, 300 * sc);
-  g3.addColorStop(0, isPos ? "rgba(74,222,128,0.07)" : "rgba(248,113,113,0.07)");
-  g3.addColorStop(1, "rgba(0,0,0,0)");
-  ctx.fillStyle = g3;
-  ctx.fillRect(0, 0, W, H);
+  // Purple tint — top-left corner, solid fill (approximates radial glow)
+  ctx.fillStyle = "rgba(155,92,255,0.07)";
+  ctx.fillRect(0, 0, W * 0.55, H * 0.45);
+  // Pink tint — bottom-right corner
+  ctx.fillStyle = "rgba(255,79,163,0.07)";
+  ctx.fillRect(W * 0.45, H * 0.55, W * 0.55, H * 0.45);
+  // Centre profit/loss tint
+  ctx.fillStyle = isPos ? "rgba(74,222,128,0.04)" : "rgba(248,113,113,0.04)";
+  ctx.fillRect(W * 0.2, H * 0.25, W * 0.6, H * 0.3);
   // Watermark X
   ctx.save();
   ctx.globalAlpha = 0.04;
@@ -568,8 +558,6 @@ function _badge(ctx: CanvasRenderingContext2D, rightX: number, cy: number, text:
   ctx.stroke();
   ctx.save();
   ctx.fillStyle = "#4ade80";
-  ctx.shadowColor = "#4ade80";
-  ctx.shadowBlur = 6 * sc;
   ctx.beginPath();
   ctx.arc(px + pw + dotR, cy, dotR, 0, Math.PI * 2);
   ctx.fill();
@@ -656,8 +644,6 @@ function _heroSection(
   ctx.textAlign = "center";
   ctx.textBaseline = "top";
   ctx.fillStyle = profitColor;
-  ctx.shadowColor = profitColor;
-  ctx.shadowBlur = 40 * sc;
   ctx.fillText(profitStr, W / 2, numTop);
   ctx.restore();
 
