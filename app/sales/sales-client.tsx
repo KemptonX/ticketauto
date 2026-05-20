@@ -104,7 +104,7 @@ export default function SalesClient() {
   const [search, setSearch] = useState("");
   const [matchFilter, setMatchFilter] = useState("All");
   const [accountFilter, setAccountFilter] = useState("All");
-  const sortByDate = "closest";
+  const [sortBy, setSortBy] = useState("recently-sold");
   const [expandedGroups, setExpandedGroups] = useState<string[]>([]);
   const [selectedSaleId, setSelectedSaleId] = useState<number | null>(null);
   const [matchingOrderId, setMatchingOrderId] = useState<number | null>(null);
@@ -642,6 +642,7 @@ export default function SalesClient() {
     setSearch("");
     setMatchFilter("All");
     setAccountFilter("All");
+    setSortBy("recently-sold");
   }
 
   const accountOptions = useMemo(() => {
@@ -726,12 +727,28 @@ export default function SalesClient() {
     }
 
     return Array.from(map.values()).sort((a, b) => {
-      if (a.latestSoldAt && b.latestSoldAt) return b.latestSoldAt.getTime() - a.latestSoldAt.getTime();
-      if (a.latestSoldAt) return -1;
-      if (b.latestSoldAt) return 1;
-      return b.soldFor - a.soldFor;
+      switch (sortBy) {
+        case "recently-sold":
+          if (a.latestSoldAt && b.latestSoldAt) return b.latestSoldAt.getTime() - a.latestSoldAt.getTime();
+          return a.latestSoldAt ? -1 : b.latestSoldAt ? 1 : 0;
+        case "oldest-sold":
+          if (a.latestSoldAt && b.latestSoldAt) return a.latestSoldAt.getTime() - b.latestSoldAt.getTime();
+          return a.latestSoldAt ? -1 : b.latestSoldAt ? 1 : 0;
+        case "event-soonest":
+          if (a.dateValue && b.dateValue) return a.dateValue.getTime() - b.dateValue.getTime();
+          return a.dateValue ? -1 : b.dateValue ? 1 : 0;
+        case "event-latest":
+          if (a.dateValue && b.dateValue) return b.dateValue.getTime() - a.dateValue.getTime();
+          return a.dateValue ? -1 : b.dateValue ? 1 : 0;
+        case "highest-profit":
+          return b.profit - a.profit;
+        case "highest-revenue":
+          return b.soldFor - a.soldFor;
+        default:
+          return 0;
+      }
     });
-  }, [filteredSales, matchedOrders, allOrders, sortByDate]);
+  }, [filteredSales, matchedOrders, allOrders, sortBy]);
 
 
   const selectedSale = selectedSaleRaw;
@@ -913,6 +930,17 @@ export default function SalesClient() {
                     {option}
                   </option>
                 ))}
+              </select>
+            </label>
+            <label className="filter-field">
+              <span className="filter-label">Sort by</span>
+              <select className="field" value={sortBy} onChange={(event) => setSortBy(event.target.value)}>
+                <option value="recently-sold">Recently sold</option>
+                <option value="oldest-sold">Oldest sold</option>
+                <option value="event-soonest">Event date (soonest)</option>
+                <option value="event-latest">Event date (latest)</option>
+                <option value="highest-profit">Highest profit</option>
+                <option value="highest-revenue">Highest revenue</option>
               </select>
             </label>
           </div>
