@@ -510,23 +510,28 @@ export function ShareMultiBannerModal({ stats, onClose }: MultiShareProps) {
     setCopying(true);
     try {
       const canvas = await capture();
-      await new Promise<void>((resolve, reject) => {
-        canvas.toBlob(async (blob) => {
-          if (!blob) { reject(new Error("No blob")); return; }
-          try {
-            await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
-            resolve();
-          } catch {
-            const url = canvas.toDataURL("image/png");
-            const a = document.createElement("a");
-            a.href = url; a.download = "sales-summary-ticketx.png"; a.click();
-            resolve();
-          }
-        }, "image/png");
-      });
+      const dataUrl = canvas.toDataURL("image/png");
+
+      let clipboardOk = false;
+      if (typeof ClipboardItem !== "undefined" && navigator.clipboard?.write) {
+        try {
+          const res = await fetch(dataUrl);
+          const blob = await res.blob();
+          await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+          clipboardOk = true;
+        } catch { /* clipboard blocked, fall through */ }
+      }
+
+      if (!clipboardOk) {
+        const a = document.createElement("a");
+        a.href = dataUrl;
+        a.download = "sales-summary-ticketx.png";
+        a.click();
+      }
+
       setCopied(true);
       setTimeout(() => setCopied(false), 2500);
-    } catch { /* ignore */ }
+    } catch { /* capture error */ }
     setCopying(false);
   }
 
@@ -616,26 +621,28 @@ export default function ShareBannerModal({ sale, order, onClose }: Props) {
     setCopying(true);
     try {
       const canvas = await capture();
-      await new Promise<void>((resolve, reject) => {
-        canvas.toBlob(async (blob) => {
-          if (!blob) { reject(new Error("No blob")); return; }
-          try {
-            await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
-            resolve();
-          } catch {
-            // Clipboard API blocked — fall back to download
-            const url = canvas.toDataURL("image/png");
-            const a = document.createElement("a");
-            a.href = url;
-            a.download = `${sale.event_name ?? "sale"}-ticketx.png`;
-            a.click();
-            resolve();
-          }
-        }, "image/png");
-      });
+      const dataUrl = canvas.toDataURL("image/png");
+
+      let clipboardOk = false;
+      if (typeof ClipboardItem !== "undefined" && navigator.clipboard?.write) {
+        try {
+          const res = await fetch(dataUrl);
+          const blob = await res.blob();
+          await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+          clipboardOk = true;
+        } catch { /* clipboard blocked, fall through */ }
+      }
+
+      if (!clipboardOk) {
+        const a = document.createElement("a");
+        a.href = dataUrl;
+        a.download = `${sale.event_name ?? "sale"}-ticketx.png`;
+        a.click();
+      }
+
       setCopied(true);
       setTimeout(() => setCopied(false), 2500);
-    } catch { /* ignore */ }
+    } catch { /* capture error */ }
     setCopying(false);
   }
 
