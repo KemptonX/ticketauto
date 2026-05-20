@@ -492,6 +492,7 @@ export function ShareMultiBannerModal({ stats, onClose }: MultiShareProps) {
   const [downloading, setDownloading] = useState(false);
   const [copied, setCopied] = useState(false);
   const [showConfetti, setShowConfetti] = useState(false);
+  const [copyError, setCopyError] = useState("");
 
   useEffect(() => {
     const t1 = setTimeout(() => setVisible(true), 16);
@@ -501,46 +502,57 @@ export function ShareMultiBannerModal({ stats, onClose }: MultiShareProps) {
   }, []);
 
   async function capture() {
-    if (!bannerRef.current) throw new Error("No banner ref");
+    if (!bannerRef.current) throw new Error("Banner element not found");
     const { default: html2canvas } = await import("html2canvas");
-    return html2canvas(bannerRef.current, { scale: 2, useCORS: true, backgroundColor: null, logging: false });
+    return html2canvas(bannerRef.current, { scale: 2, useCORS: true, allowTaint: true, backgroundColor: "#0c0c16", logging: false });
   }
 
   async function handleCopy() {
     setCopying(true);
+    setCopyError("");
     try {
+      const canvas = await capture();
+      const dataUrl = canvas.toDataURL("image/png");
+
       if (typeof ClipboardItem !== "undefined" && navigator.clipboard?.write) {
-        const blobPromise: Promise<Blob> = capture().then(
-          c => new Promise((res, rej) => c.toBlob(b => b ? res(b) : rej(new Error("toBlob null")), "image/png"))
-        );
         try {
-          await navigator.clipboard.write([new ClipboardItem({ "image/png": blobPromise })]);
+          const blob = await new Promise<Blob>((res, rej) =>
+            canvas.toBlob(b => b ? res(b) : rej(new Error("toBlob returned null")), "image/png")
+          );
+          await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
           setCopied(true);
           setTimeout(() => setCopied(false), 2500);
           setCopying(false);
           return;
-        } catch { /* permission denied or unsupported, fall through */ }
+        } catch (clipErr) {
+          setCopyError(`Clipboard blocked — downloading instead (${clipErr instanceof Error ? clipErr.message : String(clipErr)})`);
+        }
       }
-      const canvas = await capture();
+
       const a = document.createElement("a");
-      a.href = canvas.toDataURL("image/png");
+      a.href = dataUrl;
       a.download = "sales-summary-ticketx.png";
       a.click();
       setCopied(true);
       setTimeout(() => setCopied(false), 2500);
-    } catch { /* ignore */ }
+    } catch (err) {
+      setCopyError(`Capture failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
     setCopying(false);
   }
 
   async function handleDownload() {
     setDownloading(true);
+    setCopyError("");
     try {
       const canvas = await capture();
       const a = document.createElement("a");
       a.href = canvas.toDataURL("image/png");
       a.download = "sales-summary-ticketx.png";
       a.click();
-    } catch { /* ignore */ }
+    } catch (err) {
+      setCopyError(`Download failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
     setDownloading(false);
   }
 
@@ -566,6 +578,12 @@ export function ShareMultiBannerModal({ stats, onClose }: MultiShareProps) {
             <MultiSaleBanner stats={stats} animated={visible} />
           </div>
         </div>
+
+        {copyError && (
+          <div style={{ width: "100%", padding: "10px 14px", background: "rgba(248,113,113,0.1)", border: "1px solid rgba(248,113,113,0.3)", borderRadius: 10, fontSize: 12, color: "#fca5a5", lineHeight: 1.4 }}>
+            {copyError}
+          </div>
+        )}
 
         <div style={{ display: "flex", gap: 10, width: "100%" }}>
           <button type="button" onClick={() => void handleCopy()} disabled={copying} style={{ flex: 1, padding: "14px 0", background: copied ? "rgba(74,222,128,0.15)" : "linear-gradient(135deg, rgba(155,92,255,0.25), rgba(255,79,163,0.25))", border: copied ? "1px solid rgba(74,222,128,0.4)" : "1px solid rgba(255,79,163,0.3)", borderRadius: 14, cursor: copying ? "wait" : "pointer", color: copied ? "#4ade80" : "rgba(255,255,255,0.9)", fontSize: 14, fontWeight: 600, letterSpacing: "-0.01em", transition: "all 200ms ease" }}>
@@ -596,6 +614,7 @@ export default function ShareBannerModal({ sale, order, onClose }: Props) {
   const [downloading, setDownloading] = useState(false);
   const [copied, setCopied] = useState(false);
   const [showConfetti, setShowConfetti] = useState(false);
+  const [copyError, setCopyError] = useState("");
 
   useEffect(() => {
     const t1 = setTimeout(() => setVisible(true), 16);
@@ -605,55 +624,65 @@ export default function ShareBannerModal({ sale, order, onClose }: Props) {
   }, []);
 
   async function capture() {
-    if (!bannerRef.current) throw new Error("No banner ref");
+    if (!bannerRef.current) throw new Error("Banner element not found");
     const { default: html2canvas } = await import("html2canvas");
     return html2canvas(bannerRef.current, {
       scale: 2,
       useCORS: true,
-      backgroundColor: null,
+      allowTaint: true,
+      backgroundColor: "#0c0c16",
       logging: false,
     });
   }
 
   async function handleCopy() {
     setCopying(true);
+    setCopyError("");
     const filename = `${sale.event_name ?? "sale"}-ticketx.png`;
     try {
+      const canvas = await capture();
+      const dataUrl = canvas.toDataURL("image/png");
+
       if (typeof ClipboardItem !== "undefined" && navigator.clipboard?.write) {
-        // Pass Promise<Blob> directly — ClipboardItem is claimed on the click (user gesture),
-        // the blob resolves async. This keeps clipboard permission alive across the capture.
-        const blobPromise: Promise<Blob> = capture().then(
-          c => new Promise((res, rej) => c.toBlob(b => b ? res(b) : rej(new Error("toBlob null")), "image/png"))
-        );
         try {
-          await navigator.clipboard.write([new ClipboardItem({ "image/png": blobPromise })]);
+          const blob = await new Promise<Blob>((res, rej) =>
+            canvas.toBlob(b => b ? res(b) : rej(new Error("toBlob returned null")), "image/png")
+          );
+          await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
           setCopied(true);
           setTimeout(() => setCopied(false), 2500);
           setCopying(false);
           return;
-        } catch { /* permission denied or unsupported, fall through */ }
+        } catch (clipErr) {
+          setCopyError(`Clipboard blocked — downloading instead (${clipErr instanceof Error ? clipErr.message : String(clipErr)})`);
+        }
       }
-      // Fallback: download the PNG
-      const canvas = await capture();
+
+      // Fallback: download
       const a = document.createElement("a");
-      a.href = canvas.toDataURL("image/png");
+      a.href = dataUrl;
       a.download = filename;
       a.click();
       setCopied(true);
       setTimeout(() => setCopied(false), 2500);
-    } catch { /* ignore */ }
+    } catch (err) {
+      setCopyError(`Capture failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
     setCopying(false);
   }
 
   async function handleDownload() {
     setDownloading(true);
+    setCopyError("");
     try {
       const canvas = await capture();
       const a = document.createElement("a");
       a.href = canvas.toDataURL("image/png");
       a.download = `${sale.event_name ?? "sale"}-ticketx.png`;
       a.click();
-    } catch { /* ignore */ }
+    } catch (err) {
+      setCopyError(`Download failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
     setDownloading(false);
   }
 
@@ -723,6 +752,13 @@ export default function ShareBannerModal({ sale, order, onClose }: Props) {
             <SaleBanner sale={sale} order={order} animated={visible} />
           </div>
         </div>
+
+        {/* Error message */}
+        {copyError && (
+          <div style={{ width: "100%", padding: "10px 14px", background: "rgba(248,113,113,0.1)", border: "1px solid rgba(248,113,113,0.3)", borderRadius: 10, fontSize: 12, color: "#fca5a5", lineHeight: 1.4 }}>
+            {copyError}
+          </div>
+        )}
 
         {/* Action buttons */}
         <div style={{ display: "flex", gap: 10, width: "100%" }}>
