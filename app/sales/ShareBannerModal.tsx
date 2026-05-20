@@ -122,14 +122,8 @@ function Confetti() {
 function TxMark({ size = 22 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden>
-      <defs>
-        <linearGradient id="tx-share-grad" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stopColor="#9B5CFF" />
-          <stop offset="100%" stopColor="#FF4FA3" />
-        </linearGradient>
-      </defs>
-      <path d="M4.5 4.5L19.5 19.5" stroke="url(#tx-share-grad)" strokeWidth="3.5" strokeLinecap="round" />
-      <path d="M19.5 4.5L4.5 19.5" stroke="url(#tx-share-grad)" strokeWidth="3.5" strokeLinecap="round" />
+      <path d="M4.5 4.5L19.5 19.5" stroke="#9B5CFF" strokeWidth="3.5" strokeLinecap="round" />
+      <path d="M19.5 4.5L4.5 19.5" stroke="#FF4FA3" strokeWidth="3.5" strokeLinecap="round" />
     </svg>
   );
 }
@@ -301,7 +295,6 @@ export function SaleBanner({ sale, order, animated }: BannerProps) {
           flex: 1, background: "rgba(255,255,255,0.04)",
           border: "1px solid rgba(255,255,255,0.08)",
           borderRadius: 14, padding: "14px 18px",
-          backdropFilter: "blur(8px)",
         }}>
           <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "rgba(255,255,255,0.28)", marginBottom: 6 }}>
             Bought For
@@ -319,7 +312,6 @@ export function SaleBanner({ sale, order, animated }: BannerProps) {
           flex: 1, background: "rgba(255,79,163,0.06)",
           border: "1px solid rgba(255,79,163,0.15)",
           borderRadius: 14, padding: "14px 18px",
-          backdropFilter: "blur(8px)",
         }}>
           <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "rgba(255,79,163,0.6)", marginBottom: 6 }}>
             Sold For
@@ -504,7 +496,17 @@ export function ShareMultiBannerModal({ stats, onClose }: MultiShareProps) {
   async function capture() {
     if (!bannerRef.current) throw new Error("Banner element not found");
     const { default: html2canvas } = await import("html2canvas");
-    return html2canvas(bannerRef.current, { scale: 2, useCORS: true, allowTaint: true, backgroundColor: "#0c0c16", logging: false });
+    return html2canvas(bannerRef.current, {
+      scale: 2, useCORS: true, allowTaint: true, backgroundColor: "#0c0c16", logging: false,
+      onclone: (_doc, el) => {
+        el.querySelectorAll<HTMLElement>("*").forEach(node => {
+          node.style.animation = "none";
+          node.style.transition = "none";
+          node.style.backdropFilter = "none";
+          (node.style as CSSStyleDeclaration & { webkitBackdropFilter: string }).webkitBackdropFilter = "none";
+        });
+      },
+    });
   }
 
   async function handleCopy() {
@@ -627,11 +629,15 @@ export default function ShareBannerModal({ sale, order, onClose }: Props) {
     if (!bannerRef.current) throw new Error("Banner element not found");
     const { default: html2canvas } = await import("html2canvas");
     return html2canvas(bannerRef.current, {
-      scale: 2,
-      useCORS: true,
-      allowTaint: true,
-      backgroundColor: "#0c0c16",
-      logging: false,
+      scale: 2, useCORS: true, allowTaint: true, backgroundColor: "#0c0c16", logging: false,
+      onclone: (_doc, el) => {
+        el.querySelectorAll<HTMLElement>("*").forEach(node => {
+          node.style.animation = "none";
+          node.style.transition = "none";
+          node.style.backdropFilter = "none";
+          (node.style as CSSStyleDeclaration & { webkitBackdropFilter: string }).webkitBackdropFilter = "none";
+        });
+      },
     });
   }
 
