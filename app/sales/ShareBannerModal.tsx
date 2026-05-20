@@ -472,7 +472,7 @@ export function MultiSaleBanner({ stats, animated }: { stats: MultiSaleStats; an
   );
 }
 
-// ─── Canvas drawing (replaces html2canvas) ───────────────────────────────────
+// ─── Canvas drawing ───────────────────────────────────────────────────────────
 
 function _rr(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
   ctx.beginPath();
@@ -510,19 +510,14 @@ function _txMark(ctx: CanvasRenderingContext2D, x: number, y: number, cssSize: n
 }
 
 function _bannerBg(ctx: CanvasRenderingContext2D, W: number, H: number, isPos: boolean, sc: number) {
-  // Solid background — no radial gradients (avoids Chrome GPU createPattern crash)
   ctx.fillStyle = "#0c0c16";
   ctx.fillRect(0, 0, W, H);
-  // Purple tint — top-left corner, solid fill (approximates radial glow)
   ctx.fillStyle = "rgba(155,92,255,0.07)";
   ctx.fillRect(0, 0, W * 0.55, H * 0.45);
-  // Pink tint — bottom-right corner
   ctx.fillStyle = "rgba(255,79,163,0.07)";
   ctx.fillRect(W * 0.45, H * 0.55, W * 0.55, H * 0.45);
-  // Centre profit/loss tint
   ctx.fillStyle = isPos ? "rgba(74,222,128,0.04)" : "rgba(248,113,113,0.04)";
   ctx.fillRect(W * 0.2, H * 0.25, W * 0.6, H * 0.3);
-  // Watermark X
   ctx.save();
   ctx.globalAlpha = 0.04;
   const wx = (540 - 32 - 180) * sc, wy = (540 - 48 - 180) * sc;
@@ -720,13 +715,14 @@ function _bannerFooter(
   }
 }
 
-function drawSaleBannerToCanvas(sale: Sale, order: MatchedOrder | null): HTMLCanvasElement {
-  const sc = 2, W = 540 * sc, H = 540 * sc;
-  const canvas = document.createElement("canvas");
-  canvas.width = W; canvas.height = H;
-  const ctx = canvas.getContext("2d", { willReadFrequently: true });
-  if (!ctx) throw new Error("Canvas 2D context unavailable");
-
+// Draw the single-sale banner into an existing 2D context.
+// W and H are the physical pixel dimensions (e.g. 1080×1080 for 2× scale).
+function _drawSaleBanner(
+  ctx: CanvasRenderingContext2D,
+  W: number, H: number,
+  sale: Sale, order: MatchedOrder | null,
+): void {
+  const sc = W / 540;
   const revenue = sale.payout_total ?? sale.sale_total ?? 0;
   const cost = (() => {
     if (!order?.total_cost) return 0;
@@ -791,10 +787,7 @@ function drawSaleBannerToCanvas(sale: Sale, order: MatchedOrder | null): HTMLCan
   ctx.restore();
 
   const divY = venueY + 13 * sc + 16 * sc;
-  const divG = ctx.createLinearGradient(spad, divY, W - spad, divY);
-  divG.addColorStop(0, "rgba(255,255,255,0.06)");
-  divG.addColorStop(1, "rgba(255,255,255,0.02)");
-  ctx.fillStyle = divG;
+  ctx.fillStyle = "rgba(255,255,255,0.04)";
   ctx.fillRect(spad, divY, W - spad * 2, sc);
 
   const footerTop = H - (1 + 12 + 14 + 22) * sc;
@@ -820,18 +813,16 @@ function drawSaleBannerToCanvas(sale: Sale, order: MatchedOrder | null): HTMLCan
   _heroSection(ctx, W, divY + sc, boxTop,
     (isPos ? "" : "−") + formatCurrency(Math.abs(profit)),
     roi, isPos, profitColor, sc);
-
-  return canvas;
 }
 
-function drawMultiBannerToCanvas(stats: MultiSaleStats): HTMLCanvasElement {
+// Draw the multi-sale banner into an existing 2D context.
+function _drawMultiBanner(
+  ctx: CanvasRenderingContext2D,
+  W: number, H: number,
+  stats: MultiSaleStats,
+): void {
   const { totalRevenue, totalCost, totalProfit, roi, salesCount, totalTickets, eventNames } = stats;
-  const sc = 2, W = 540 * sc, H = 540 * sc;
-  const canvas = document.createElement("canvas");
-  canvas.width = W; canvas.height = H;
-  const ctx = canvas.getContext("2d", { willReadFrequently: true });
-  if (!ctx) throw new Error("Canvas 2D context unavailable");
-
+  const sc = W / 540;
   const isPos = totalProfit >= 0;
   const profitColor = isPos ? "#4ade80" : "#f87171";
 
@@ -907,10 +898,7 @@ function drawMultiBannerToCanvas(stats: MultiSaleStats): HTMLCanvasElement {
   ctx.restore();
 
   const divY = subLineY + 12 * sc + 16 * sc;
-  const divG = ctx.createLinearGradient(spad, divY, W - spad, divY);
-  divG.addColorStop(0, "rgba(255,255,255,0.06)");
-  divG.addColorStop(1, "rgba(255,255,255,0.02)");
-  ctx.fillStyle = divG;
+  ctx.fillStyle = "rgba(255,255,255,0.04)";
   ctx.fillRect(spad, divY, W - spad * 2, sc);
 
   const footerTop = H - (1 + 12 + 14 + 22) * sc;
@@ -933,8 +921,45 @@ function drawMultiBannerToCanvas(stats: MultiSaleStats): HTMLCanvasElement {
   _heroSection(ctx, W, divY + sc, boxTop,
     (isPos ? "" : "−") + formatCurrency(Math.abs(totalProfit)),
     roi, isPos, profitColor, sc);
+}
 
-  return canvas;
+// Render banner to JPEG blob.
+// Tries OffscreenCanvas first (off-main-thread, bypasses GPU compositor entirely).
+// Falls back to a regular HTMLCanvasElement with willReadFrequently to force CPU rendering.
+async function renderBannerToBlob(
+  drawFn: (ctx: CanvasRenderingContext2D, W: number, H: number) => void,
+): Promise<Blob> {
+  const W = 1080, H = 1080;
+
+  if (typeof OffscreenCanvas !== "undefined") {
+    try {
+      const oc = new OffscreenCanvas(W, H);
+      const ctx = oc.getContext("2d") as CanvasRenderingContext2D | null;
+      if (ctx) {
+        drawFn(ctx, W, H);
+        return await oc.convertToBlob({ type: "image/jpeg", quality: 0.92 });
+      }
+    } catch { /* fall through to HTMLCanvasElement */ }
+  }
+
+  const canvas = document.createElement("canvas");
+  canvas.width = W;
+  canvas.height = H;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) throw new Error("Canvas 2D context unavailable");
+  drawFn(ctx, W, H);
+  return new Promise<Blob>((res, rej) =>
+    canvas.toBlob(b => b ? res(b) : rej(new Error("toBlob returned null")), "image/jpeg", 0.92)
+  );
+}
+
+function _downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -947,76 +972,50 @@ type MultiShareProps = {
 export function ShareMultiBannerModal({ stats, onClose }: MultiShareProps) {
   const [visible, setVisible] = useState(false);
   const [copying, setCopying] = useState(false);
-  const [downloading, setDownloading] = useState(false);
   const [copied, setCopied] = useState(false);
   const [showConfetti, setShowConfetti] = useState(false);
-  const [copyError, setCopyError] = useState("");
+  const [bannerBlob, setBannerBlob] = useState<Blob | null>(null);
+  const [genError, setGenError] = useState("");
 
   useEffect(() => {
     const t1 = setTimeout(() => setVisible(true), 16);
     const t2 = setTimeout(() => setShowConfetti(true), 200);
     const t3 = setTimeout(() => setShowConfetti(false), 1400);
+    renderBannerToBlob((ctx, W, H) => _drawMultiBanner(ctx, W, H, stats))
+      .then(blob => setBannerBlob(blob))
+      .catch(err => setGenError(err instanceof Error ? err.message : String(err)));
     return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
   }, []);
 
-  async function handleCopy() {
+  // Non-async: blob is pre-generated, so clipboard.write() is called immediately
+  // within the user-gesture context with no async work in between.
+  function handleCopy() {
+    if (!bannerBlob) return;
+    const blob = bannerBlob;
     setCopying(true);
-    setCopyError("");
-    let canvas: HTMLCanvasElement;
-    try {
-      canvas = drawMultiBannerToCanvas(stats);
-    } catch (err) {
-      setCopyError(`Draw failed: ${err instanceof Error ? err.message : String(err)}`);
-      setCopying(false);
-      return;
-    }
-    try {
-      const blob = await new Promise<Blob>((res, rej) =>
-        canvas.toBlob(b => b ? res(b) : rej(new Error("toBlob returned null")), "image/png")
-      );
-      if (typeof ClipboardItem !== "undefined" && navigator.clipboard?.write) {
-        try {
-          await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+    if (typeof ClipboardItem !== "undefined" && navigator.clipboard?.write) {
+      void navigator.clipboard.write([new ClipboardItem({ "image/jpeg": blob })])
+        .then(() => {
           setCopied(true);
           setTimeout(() => setCopied(false), 2500);
-          setCopying(false);
-          return;
-        } catch {
-          // clipboard blocked — fall through to download
-        }
-      }
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "sales-summary-ticketx.png";
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(url), 10000);
+        })
+        .catch(() => {
+          _downloadBlob(blob, "sales-summary-ticketx.jpg");
+          setCopied(true);
+          setTimeout(() => setCopied(false), 2500);
+        })
+        .finally(() => setCopying(false));
+    } else {
+      _downloadBlob(blob, "sales-summary-ticketx.jpg");
       setCopied(true);
       setTimeout(() => setCopied(false), 2500);
-    } catch (err) {
-      setCopyError(`Export failed: ${err instanceof Error ? err.message : String(err)}`);
+      setCopying(false);
     }
-    setCopying(false);
   }
 
-  async function handleDownload() {
-    setDownloading(true);
-    setCopyError("");
-    try {
-      const canvas = drawMultiBannerToCanvas(stats);
-      const blob = await new Promise<Blob>((res, rej) =>
-        canvas.toBlob(b => b ? res(b) : rej(new Error("toBlob returned null")), "image/png")
-      );
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "sales-summary-ticketx.png";
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(url), 10000);
-    } catch (err) {
-      setCopyError(`Download failed: ${err instanceof Error ? err.message : String(err)}`);
-    }
-    setDownloading(false);
+  function handleDownload() {
+    if (!bannerBlob) return;
+    _downloadBlob(bannerBlob, "sales-summary-ticketx.jpg");
   }
 
   function handleOverlayClick(e: React.MouseEvent) {
@@ -1042,18 +1041,35 @@ export function ShareMultiBannerModal({ stats, onClose }: MultiShareProps) {
           </div>
         </div>
 
-        {copyError && (
+        {genError && (
           <div style={{ width: "100%", padding: "10px 14px", background: "rgba(248,113,113,0.1)", border: "1px solid rgba(248,113,113,0.3)", borderRadius: 10, fontSize: 12, color: "#fca5a5", lineHeight: 1.4 }}>
-            {copyError}
+            {genError}
           </div>
         )}
 
         <div style={{ display: "flex", gap: 10, width: "100%" }}>
-          <button type="button" onClick={() => void handleCopy()} disabled={copying} style={{ flex: 1, padding: "14px 0", background: copied ? "rgba(74,222,128,0.15)" : "linear-gradient(135deg, rgba(155,92,255,0.25), rgba(255,79,163,0.25))", border: copied ? "1px solid rgba(74,222,128,0.4)" : "1px solid rgba(255,79,163,0.3)", borderRadius: 14, cursor: copying ? "wait" : "pointer", color: copied ? "#4ade80" : "rgba(255,255,255,0.9)", fontSize: 14, fontWeight: 600, letterSpacing: "-0.01em", transition: "all 200ms ease" }}>
-            {copying ? "Capturing…" : copied ? "✓ Copied to clipboard!" : "Copy to Clipboard"}
+          <button
+            type="button"
+            onClick={handleCopy}
+            disabled={!bannerBlob || copying}
+            style={{
+              flex: 1, padding: "14px 0",
+              background: copied ? "rgba(74,222,128,0.15)" : !bannerBlob ? "rgba(255,255,255,0.04)" : "linear-gradient(135deg, rgba(155,92,255,0.25), rgba(255,79,163,0.25))",
+              border: copied ? "1px solid rgba(74,222,128,0.4)" : "1px solid rgba(255,79,163,0.3)",
+              borderRadius: 14, cursor: (!bannerBlob || copying) ? "wait" : "pointer",
+              color: copied ? "#4ade80" : "rgba(255,255,255,0.9)",
+              fontSize: 14, fontWeight: 600, letterSpacing: "-0.01em", transition: "all 200ms ease",
+            }}
+          >
+            {!bannerBlob && !genError ? "Generating…" : copied ? "✓ Copied!" : copying ? "Copying…" : "Copy to Clipboard"}
           </button>
-          <button type="button" onClick={() => void handleDownload()} disabled={downloading} style={{ padding: "14px 20px", background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 14, cursor: downloading ? "wait" : "pointer", color: "rgba(255,255,255,0.55)", fontSize: 14, fontWeight: 600, whiteSpace: "nowrap" }}>
-            {downloading ? "…" : "Download"}
+          <button
+            type="button"
+            onClick={handleDownload}
+            disabled={!bannerBlob}
+            style={{ padding: "14px 20px", background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 14, cursor: !bannerBlob ? "wait" : "pointer", color: "rgba(255,255,255,0.55)", fontSize: 14, fontWeight: 600, whiteSpace: "nowrap" }}
+          >
+            Download
           </button>
         </div>
       </div>
@@ -1073,77 +1089,51 @@ type Props = {
 export default function ShareBannerModal({ sale, order, onClose }: Props) {
   const [visible, setVisible] = useState(false);
   const [copying, setCopying] = useState(false);
-  const [downloading, setDownloading] = useState(false);
   const [copied, setCopied] = useState(false);
   const [showConfetti, setShowConfetti] = useState(false);
-  const [copyError, setCopyError] = useState("");
+  const [bannerBlob, setBannerBlob] = useState<Blob | null>(null);
+  const [genError, setGenError] = useState("");
 
   useEffect(() => {
     const t1 = setTimeout(() => setVisible(true), 16);
     const t2 = setTimeout(() => setShowConfetti(true), 200);
     const t3 = setTimeout(() => setShowConfetti(false), 1400);
+    renderBannerToBlob((ctx, W, H) => _drawSaleBanner(ctx, W, H, sale, order))
+      .then(blob => setBannerBlob(blob))
+      .catch(err => setGenError(err instanceof Error ? err.message : String(err)));
     return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
   }, []);
 
-  async function handleCopy() {
+  // Non-async: blob is pre-generated, so clipboard.write() is called immediately
+  // within the user-gesture context with no async work in between.
+  function handleCopy() {
+    if (!bannerBlob) return;
+    const blob = bannerBlob;
+    const filename = `${sale.event_name ?? "sale"}-ticketx.jpg`;
     setCopying(true);
-    setCopyError("");
-    const filename = `${sale.event_name ?? "sale"}-ticketx.png`;
-    let canvas: HTMLCanvasElement;
-    try {
-      canvas = drawSaleBannerToCanvas(sale, order);
-    } catch (err) {
-      setCopyError(`Draw failed: ${err instanceof Error ? err.message : String(err)}`);
-      setCopying(false);
-      return;
-    }
-    try {
-      const blob = await new Promise<Blob>((res, rej) =>
-        canvas.toBlob(b => b ? res(b) : rej(new Error("toBlob returned null")), "image/png")
-      );
-      if (typeof ClipboardItem !== "undefined" && navigator.clipboard?.write) {
-        try {
-          await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+    if (typeof ClipboardItem !== "undefined" && navigator.clipboard?.write) {
+      void navigator.clipboard.write([new ClipboardItem({ "image/jpeg": blob })])
+        .then(() => {
           setCopied(true);
           setTimeout(() => setCopied(false), 2500);
-          setCopying(false);
-          return;
-        } catch {
-          // clipboard blocked — fall through to download
-        }
-      }
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename;
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(url), 10000);
+        })
+        .catch(() => {
+          _downloadBlob(blob, filename);
+          setCopied(true);
+          setTimeout(() => setCopied(false), 2500);
+        })
+        .finally(() => setCopying(false));
+    } else {
+      _downloadBlob(blob, filename);
       setCopied(true);
       setTimeout(() => setCopied(false), 2500);
-    } catch (err) {
-      setCopyError(`Export failed: ${err instanceof Error ? err.message : String(err)}`);
+      setCopying(false);
     }
-    setCopying(false);
   }
 
-  async function handleDownload() {
-    setDownloading(true);
-    setCopyError("");
-    try {
-      const canvas = drawSaleBannerToCanvas(sale, order);
-      const blob = await new Promise<Blob>((res, rej) =>
-        canvas.toBlob(b => b ? res(b) : rej(new Error("toBlob returned null")), "image/png")
-      );
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${sale.event_name ?? "sale"}-ticketx.png`;
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(url), 10000);
-    } catch (err) {
-      setCopyError(`Download failed: ${err instanceof Error ? err.message : String(err)}`);
-    }
-    setDownloading(false);
+  function handleDownload() {
+    if (!bannerBlob) return;
+    _downloadBlob(bannerBlob, `${sale.event_name ?? "sale"}-ticketx.jpg`);
   }
 
   function handleOverlayClick(e: React.MouseEvent) {
@@ -1174,10 +1164,8 @@ export default function ShareBannerModal({ sale, order, onClose }: Props) {
           overflowY: "auto",
         }}
       >
-        {/* Confetti */}
         {showConfetti && <Confetti />}
 
-        {/* Header row */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%" }}>
           <div>
             <div style={{ fontSize: 18, fontWeight: 700, letterSpacing: "-0.03em", color: "rgba(255,255,255,0.95)" }}>
@@ -1202,7 +1190,6 @@ export default function ShareBannerModal({ sale, order, onClose }: Props) {
           </button>
         </div>
 
-        {/* Banner preview — wrapped to clip corners for display */}
         <div style={{
           borderRadius: 20, overflow: "hidden",
           boxShadow: "0 0 0 1px rgba(255,255,255,0.08), 0 32px 80px rgba(0,0,0,0.7), 0 0 60px rgba(155,92,255,0.12)",
@@ -1213,52 +1200,52 @@ export default function ShareBannerModal({ sale, order, onClose }: Props) {
           </div>
         </div>
 
-        {/* Error message */}
-        {copyError && (
+        {genError && (
           <div style={{ width: "100%", padding: "10px 14px", background: "rgba(248,113,113,0.1)", border: "1px solid rgba(248,113,113,0.3)", borderRadius: 10, fontSize: 12, color: "#fca5a5", lineHeight: 1.4 }}>
-            {copyError}
+            {genError}
           </div>
         )}
 
-        {/* Action buttons */}
         <div style={{ display: "flex", gap: 10, width: "100%" }}>
           <button
             type="button"
-            onClick={() => void handleCopy()}
-            disabled={copying}
+            onClick={handleCopy}
+            disabled={!bannerBlob || copying}
             style={{
               flex: 1, padding: "14px 0",
               background: copied
                 ? "rgba(74,222,128,0.15)"
+                : !bannerBlob
+                ? "rgba(255,255,255,0.04)"
                 : "linear-gradient(135deg, rgba(155,92,255,0.25), rgba(255,79,163,0.25))",
               border: copied
                 ? "1px solid rgba(74,222,128,0.4)"
                 : "1px solid rgba(255,79,163,0.3)",
-              borderRadius: 14, cursor: copying ? "wait" : "pointer",
+              borderRadius: 14, cursor: (!bannerBlob || copying) ? "wait" : "pointer",
               color: copied ? "#4ade80" : "rgba(255,255,255,0.9)",
               fontSize: 14, fontWeight: 600, letterSpacing: "-0.01em",
               transition: "all 200ms ease",
               boxShadow: copied ? "0 0 20px rgba(74,222,128,0.2)" : "0 0 20px rgba(255,79,163,0.1)",
             }}
           >
-            {copying ? "Capturing…" : copied ? "✓ Copied to clipboard!" : "Copy to Clipboard"}
+            {!bannerBlob && !genError ? "Generating…" : copied ? "✓ Copied!" : copying ? "Copying…" : "Copy to Clipboard"}
           </button>
           <button
             type="button"
-            onClick={() => void handleDownload()}
-            disabled={downloading}
+            onClick={handleDownload}
+            disabled={!bannerBlob}
             style={{
               padding: "14px 20px",
               background: "rgba(255,255,255,0.06)",
               border: "1px solid rgba(255,255,255,0.1)",
-              borderRadius: 14, cursor: downloading ? "wait" : "pointer",
+              borderRadius: 14, cursor: !bannerBlob ? "wait" : "pointer",
               color: "rgba(255,255,255,0.55)",
               fontSize: 14, fontWeight: 600,
               transition: "all 150ms ease",
               whiteSpace: "nowrap",
             }}
           >
-            {downloading ? "…" : "Download"}
+            Download
           </button>
         </div>
       </div>
