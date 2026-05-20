@@ -509,29 +509,26 @@ export function ShareMultiBannerModal({ stats, onClose }: MultiShareProps) {
   async function handleCopy() {
     setCopying(true);
     try {
-      const canvas = await capture();
-      const dataUrl = canvas.toDataURL("image/png");
-
-      let clipboardOk = false;
       if (typeof ClipboardItem !== "undefined" && navigator.clipboard?.write) {
+        const blobPromise: Promise<Blob> = capture().then(
+          c => new Promise((res, rej) => c.toBlob(b => b ? res(b) : rej(new Error("toBlob null")), "image/png"))
+        );
         try {
-          const res = await fetch(dataUrl);
-          const blob = await res.blob();
-          await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
-          clipboardOk = true;
-        } catch { /* clipboard blocked, fall through */ }
+          await navigator.clipboard.write([new ClipboardItem({ "image/png": blobPromise })]);
+          setCopied(true);
+          setTimeout(() => setCopied(false), 2500);
+          setCopying(false);
+          return;
+        } catch { /* permission denied or unsupported, fall through */ }
       }
-
-      if (!clipboardOk) {
-        const a = document.createElement("a");
-        a.href = dataUrl;
-        a.download = "sales-summary-ticketx.png";
-        a.click();
-      }
-
+      const canvas = await capture();
+      const a = document.createElement("a");
+      a.href = canvas.toDataURL("image/png");
+      a.download = "sales-summary-ticketx.png";
+      a.click();
       setCopied(true);
       setTimeout(() => setCopied(false), 2500);
-    } catch { /* capture error */ }
+    } catch { /* ignore */ }
     setCopying(false);
   }
 
@@ -539,9 +536,10 @@ export function ShareMultiBannerModal({ stats, onClose }: MultiShareProps) {
     setDownloading(true);
     try {
       const canvas = await capture();
-      const url = canvas.toDataURL("image/png");
       const a = document.createElement("a");
-      a.href = url; a.download = "sales-summary-ticketx.png"; a.click();
+      a.href = canvas.toDataURL("image/png");
+      a.download = "sales-summary-ticketx.png";
+      a.click();
     } catch { /* ignore */ }
     setDownloading(false);
   }
@@ -619,30 +617,31 @@ export default function ShareBannerModal({ sale, order, onClose }: Props) {
 
   async function handleCopy() {
     setCopying(true);
+    const filename = `${sale.event_name ?? "sale"}-ticketx.png`;
     try {
-      const canvas = await capture();
-      const dataUrl = canvas.toDataURL("image/png");
-
-      let clipboardOk = false;
       if (typeof ClipboardItem !== "undefined" && navigator.clipboard?.write) {
+        // Pass Promise<Blob> directly — ClipboardItem is claimed on the click (user gesture),
+        // the blob resolves async. This keeps clipboard permission alive across the capture.
+        const blobPromise: Promise<Blob> = capture().then(
+          c => new Promise((res, rej) => c.toBlob(b => b ? res(b) : rej(new Error("toBlob null")), "image/png"))
+        );
         try {
-          const res = await fetch(dataUrl);
-          const blob = await res.blob();
-          await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
-          clipboardOk = true;
-        } catch { /* clipboard blocked, fall through */ }
+          await navigator.clipboard.write([new ClipboardItem({ "image/png": blobPromise })]);
+          setCopied(true);
+          setTimeout(() => setCopied(false), 2500);
+          setCopying(false);
+          return;
+        } catch { /* permission denied or unsupported, fall through */ }
       }
-
-      if (!clipboardOk) {
-        const a = document.createElement("a");
-        a.href = dataUrl;
-        a.download = `${sale.event_name ?? "sale"}-ticketx.png`;
-        a.click();
-      }
-
+      // Fallback: download the PNG
+      const canvas = await capture();
+      const a = document.createElement("a");
+      a.href = canvas.toDataURL("image/png");
+      a.download = filename;
+      a.click();
       setCopied(true);
       setTimeout(() => setCopied(false), 2500);
-    } catch { /* capture error */ }
+    } catch { /* ignore */ }
     setCopying(false);
   }
 
@@ -650,9 +649,8 @@ export default function ShareBannerModal({ sale, order, onClose }: Props) {
     setDownloading(true);
     try {
       const canvas = await capture();
-      const url = canvas.toDataURL("image/png");
       const a = document.createElement("a");
-      a.href = url;
+      a.href = canvas.toDataURL("image/png");
       a.download = `${sale.event_name ?? "sale"}-ticketx.png`;
       a.click();
     } catch { /* ignore */ }
