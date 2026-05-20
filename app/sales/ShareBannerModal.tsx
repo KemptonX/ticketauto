@@ -216,7 +216,7 @@ export function SaleBanner({ sale, order, animated }: BannerProps) {
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <TxMark size={20} />
           <span style={{ fontSize: 15, fontWeight: 700, letterSpacing: "-0.02em", color: "rgba(255,255,255,0.9)" }}>
-            Ticket<span style={{ background: "linear-gradient(135deg,#9b5cff,#ff4fa3)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>X</span>
+            Ticket<span style={{ color: "#b87bff" }}>X</span>
           </span>
         </div>
         <div style={{
@@ -406,7 +406,7 @@ export function MultiSaleBanner({ stats, animated }: { stats: MultiSaleStats; an
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <TxMark size={20} />
           <span style={{ fontSize: 15, fontWeight: 700, letterSpacing: "-0.02em", color: "rgba(255,255,255,0.9)" }}>
-            Ticket<span style={{ background: "linear-gradient(135deg,#9b5cff,#ff4fa3)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>X</span>
+            Ticket<span style={{ color: "#b87bff" }}>X</span>
           </span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 7, background: "rgba(74,222,128,0.12)", border: "1px solid rgba(74,222,128,0.3)", borderRadius: 999, padding: "5px 12px" }}>
