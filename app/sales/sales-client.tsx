@@ -66,6 +66,7 @@ type SaleGroup = {
   venue: string;
   eventDate: string;
   dateValue: Date | null;
+  latestSoldAt: Date | null;
   sales: Sale[];
   salesCount: number;
   ticketsSold: number;
@@ -691,6 +692,7 @@ export default function SalesClient() {
           venue,
           eventDate,
           dateValue: parseEventDateValue(eventDate),
+          latestSoldAt: null,
           sales: [],
           salesCount: 0,
           ticketsSold: 0,
@@ -705,6 +707,10 @@ export default function SalesClient() {
 
       const group = map.get(key)!;
       group.sales.push(sale);
+      if (sale.sold_at) {
+        const soldDate = new Date(sale.sold_at);
+        if (!group.latestSoldAt || soldDate > group.latestSoldAt) group.latestSoldAt = soldDate;
+      }
       group.salesCount += 1;
       if (sale.created_at && new Date(sale.created_at).getTime() > Date.now() - 86400000) group.hasNew = true;
       group.ticketsSold += ticketsSold;
@@ -720,20 +726,9 @@ export default function SalesClient() {
     }
 
     return Array.from(map.values()).sort((a, b) => {
-      if (a.dateValue && b.dateValue) {
-        return sortByDate === "closest"
-          ? a.dateValue.getTime() - b.dateValue.getTime()
-          : b.dateValue.getTime() - a.dateValue.getTime();
-      }
-      if (a.dateValue) {
-        return sortByDate === "closest" ? -1 : 1;
-      }
-      if (b.dateValue) {
-        return sortByDate === "closest" ? 1 : -1;
-      }
-      if (a.unmatchedCount !== b.unmatchedCount) {
-        return b.unmatchedCount - a.unmatchedCount;
-      }
+      if (a.latestSoldAt && b.latestSoldAt) return b.latestSoldAt.getTime() - a.latestSoldAt.getTime();
+      if (a.latestSoldAt) return -1;
+      if (b.latestSoldAt) return 1;
       return b.soldFor - a.soldFor;
     });
   }, [filteredSales, matchedOrders, allOrders, sortByDate]);
