@@ -769,14 +769,16 @@ export default function SalesClient() {
     if (selectedSaleIds.size === 0) return null;
     const arr = sales.filter(s => selectedSaleIds.has(s.id));
     let totalTickets = 0, totalRevenue = 0, totalCost = 0;
+    const seenEvents = new Set<string>();
     for (const s of arr) {
       totalTickets += s.qty_sold ?? 0;
       totalRevenue += s.payout_total ?? s.sale_total ?? 0;
       totalCost += getSaleCost(s, getReferenceOrderForSale(s, matchedOrders, allOrders));
+      if (s.event_name) seenEvents.add(s.event_name);
     }
     const totalProfit = totalRevenue - totalCost;
     const roi = totalCost > 0 ? (totalProfit / totalCost) * 100 : null;
-    return { salesCount: arr.length, totalTickets, totalRevenue, totalCost, totalProfit, roi };
+    return { salesCount: arr.length, totalTickets, totalRevenue, totalCost, totalProfit, roi, eventNames: Array.from(seenEvents) };
   }, [selectedSaleIds, sales, matchedOrders, allOrders]);
 
   function toggleSaleSelection(id: number) {

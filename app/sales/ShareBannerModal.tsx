@@ -366,10 +366,11 @@ export type MultiSaleStats = {
   totalCost: number;
   totalProfit: number;
   roi: number | null;
+  eventNames: string[];
 };
 
 export function MultiSaleBanner({ stats, animated }: { stats: MultiSaleStats; animated: boolean }) {
-  const { totalRevenue, totalCost, totalProfit, roi, salesCount, totalTickets } = stats;
+  const { totalRevenue, totalCost, totalProfit, roi, salesCount, totalTickets, eventNames } = stats;
   const isPositive = totalProfit >= 0;
 
   const animatedProfit = useCountUp(totalProfit, animated);
@@ -417,10 +418,25 @@ export function MultiSaleBanner({ stats, animated }: { stats: MultiSaleStats; an
       </div>
 
       <div style={{ padding: "18px 28px 0" }}>
-        <div style={{ fontSize: 17, fontWeight: 700, letterSpacing: "-0.03em", color: "rgba(255,255,255,0.95)", lineHeight: 1.2 }}>
-          {totalTickets} ticket{totalTickets !== 1 ? "s" : ""} across {salesCount} sale{salesCount !== 1 ? "s" : ""}
+        {eventNames.length === 1 ? (
+          <div style={{ fontSize: 17, fontWeight: 700, letterSpacing: "-0.03em", color: "rgba(255,255,255,0.95)", lineHeight: 1.2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+            {eventNames[0]}
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+            {eventNames.slice(0, 3).map((name, i) => (
+              <div key={i} style={{ fontSize: eventNames.length === 2 ? 15 : 13, fontWeight: 700, letterSpacing: "-0.025em", color: "rgba(255,255,255,0.9)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                {name}
+              </div>
+            ))}
+            {eventNames.length > 3 && (
+              <div style={{ fontSize: 12, color: "rgba(255,255,255,0.3)" }}>+{eventNames.length - 3} more</div>
+            )}
+          </div>
+        )}
+        <div style={{ marginTop: 5, fontSize: 12, color: "rgba(255,255,255,0.3)" }}>
+          {totalTickets} ticket{totalTickets !== 1 ? "s" : ""} · {salesCount} sale{salesCount !== 1 ? "s" : ""}
         </div>
-        <div style={{ marginTop: 4, fontSize: 13, color: "rgba(255,255,255,0.35)" }}>Combined performance</div>
       </div>
 
       <div style={{ margin: "16px 28px 0", height: 1, background: "linear-gradient(90deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02))" }} />
