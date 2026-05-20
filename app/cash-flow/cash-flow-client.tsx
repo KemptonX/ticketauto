@@ -230,8 +230,23 @@ export default function CashFlowClient() {
     const totalTickets = tyEvents.reduce((s, ev) => s + ev.totalQty, 0);
     const ticketsLeft = totalTickets - ticketsSold;
     const soldPct = totalTickets > 0 ? (ticketsSold / totalTickets) * 100 : 0;
-    return { received, incoming, totalCash, roi, ticketsSold, ticketsLeft, totalTickets, soldPct };
-  }, [tyEvents]);
+
+    const tyStart = txStart(selectedTY);
+    const tyEnd = txEnd(selectedTY);
+    let unsoldValue = 0;
+    for (const o of orders) {
+      if (!o.event_date) continue;
+      const d = parseEventDate(o.event_date);
+      if (!d || d < tyStart || d > tyEnd) continue;
+      const qty = o.qty_bought ?? 1;
+      const cost = o.total_cost ?? 0;
+      const soldQty = soldQtyByOrderId.get(o.id) ?? 0;
+      const unsoldQty = Math.max(0, qty - soldQty);
+      unsoldValue += qty > 0 ? (cost / qty) * unsoldQty : 0;
+    }
+
+    return { received, incoming, totalCash, roi, ticketsSold, ticketsLeft, totalTickets, soldPct, unsoldValue };
+  }, [tyEvents, orders, soldQtyByOrderId, selectedTY]);
 
   const monthRows = useMemo((): MonthRow[] => {
     return txMonths(selectedTY).map(({ year, month, monthLabel }) => {
@@ -479,19 +494,11 @@ export default function CashFlowClient() {
             <strong>{formatCurrency(stats.totalCash)}</strong>
             <span>received + projected</span>
           </article>
-          <article
-            className={`kpi-card${
-              stats.roi != null && stats.roi >= 0
-                ? " analytics-kpi-profit"
-                : stats.roi != null
-                ? " analytics-kpi-risk"
-                : ""
-            }`}
-          >
+          <article className="kpi-card">
             <span className="kpi-accent" />
-            <p>Overall ROI</p>
-            <strong>{stats.roi != null ? `${stats.roi.toFixed(1)}%` : "—"}</strong>
-            <span>profit on capital spent</span>
+            <p>Unsold stock value</p>
+            <strong>{formatCurrency(stats.unsoldValue)}</strong>
+            <span>cost of tickets not yet sold</span>
           </article>
         </section>
 
