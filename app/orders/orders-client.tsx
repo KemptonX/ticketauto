@@ -1093,7 +1093,7 @@ export default function OrdersClient() {
               <p className="section-tag">{viewMode === "archived" ? "Archive" : viewMode === "ignored" ? "Ignored" : viewMode === "personal" ? "Personal" : "Tickets"}</p>
               <h4>{viewMode === "archived" ? "Archived tickets" : viewMode === "ignored" ? "Ignored tickets" : viewMode === "personal" ? "Personal tickets" : "Tickets by event"}</h4>
             </div>
-            <span className="table-count">{groupedOrders.length} events · {filteredOrders.length} tickets</span>
+            <span className="table-count">{groupedOrders.length} events · {filteredOrders.reduce((s, o) => s + (o.qty_bought ?? 0), 0)} tickets</span>
           </div>
 
           {viewMode !== "ignored" && selectedIds.size > 0 ? (
