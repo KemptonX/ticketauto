@@ -738,7 +738,8 @@ function drawSaleBannerToCanvas(sale: Sale, order: MatchedOrder | null): HTMLCan
   const sc = 2, W = 540 * sc, H = 540 * sc;
   const canvas = document.createElement("canvas");
   canvas.width = W; canvas.height = H;
-  const ctx = canvas.getContext("2d")!;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) throw new Error("Canvas 2D context unavailable");
 
   const revenue = sale.payout_total ?? sale.sale_total ?? 0;
   const cost = (() => {
@@ -842,7 +843,8 @@ function drawMultiBannerToCanvas(stats: MultiSaleStats): HTMLCanvasElement {
   const sc = 2, W = 540 * sc, H = 540 * sc;
   const canvas = document.createElement("canvas");
   canvas.width = W; canvas.height = H;
-  const ctx = canvas.getContext("2d")!;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) throw new Error("Canvas 2D context unavailable");
 
   const isPos = totalProfit >= 0;
   const profitColor = isPos ? "#4ade80" : "#f87171";
@@ -974,30 +976,39 @@ export function ShareMultiBannerModal({ stats, onClose }: MultiShareProps) {
   async function handleCopy() {
     setCopying(true);
     setCopyError("");
+    let canvas: HTMLCanvasElement;
     try {
-      const canvas = drawMultiBannerToCanvas(stats);
+      canvas = drawMultiBannerToCanvas(stats);
+    } catch (err) {
+      setCopyError(`Draw failed: ${err instanceof Error ? err.message : String(err)}`);
+      setCopying(false);
+      return;
+    }
+    try {
+      const blob = await new Promise<Blob>((res, rej) =>
+        canvas.toBlob(b => b ? res(b) : rej(new Error("toBlob returned null")), "image/png")
+      );
       if (typeof ClipboardItem !== "undefined" && navigator.clipboard?.write) {
         try {
-          const blob = await new Promise<Blob>((res, rej) =>
-            canvas.toBlob(b => b ? res(b) : rej(new Error("toBlob returned null")), "image/png")
-          );
           await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
           setCopied(true);
           setTimeout(() => setCopied(false), 2500);
           setCopying(false);
           return;
-        } catch (clipErr) {
-          setCopyError(`Clipboard blocked — downloading instead (${clipErr instanceof Error ? clipErr.message : String(clipErr)})`);
+        } catch {
+          // clipboard blocked — fall through to download
         }
       }
+      const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
-      a.href = canvas.toDataURL("image/png");
+      a.href = url;
       a.download = "sales-summary-ticketx.png";
       a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
       setCopied(true);
       setTimeout(() => setCopied(false), 2500);
     } catch (err) {
-      setCopyError(`Capture failed: ${err instanceof Error ? err.message : String(err)}`);
+      setCopyError(`Export failed: ${err instanceof Error ? err.message : String(err)}`);
     }
     setCopying(false);
   }
@@ -1007,10 +1018,15 @@ export function ShareMultiBannerModal({ stats, onClose }: MultiShareProps) {
     setCopyError("");
     try {
       const canvas = drawMultiBannerToCanvas(stats);
+      const blob = await new Promise<Blob>((res, rej) =>
+        canvas.toBlob(b => b ? res(b) : rej(new Error("toBlob returned null")), "image/png")
+      );
+      const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
-      a.href = canvas.toDataURL("image/png");
+      a.href = url;
       a.download = "sales-summary-ticketx.png";
       a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
     } catch (err) {
       setCopyError(`Download failed: ${err instanceof Error ? err.message : String(err)}`);
     }
@@ -1087,30 +1103,39 @@ export default function ShareBannerModal({ sale, order, onClose }: Props) {
     setCopying(true);
     setCopyError("");
     const filename = `${sale.event_name ?? "sale"}-ticketx.png`;
+    let canvas: HTMLCanvasElement;
     try {
-      const canvas = drawSaleBannerToCanvas(sale, order);
+      canvas = drawSaleBannerToCanvas(sale, order);
+    } catch (err) {
+      setCopyError(`Draw failed: ${err instanceof Error ? err.message : String(err)}`);
+      setCopying(false);
+      return;
+    }
+    try {
+      const blob = await new Promise<Blob>((res, rej) =>
+        canvas.toBlob(b => b ? res(b) : rej(new Error("toBlob returned null")), "image/png")
+      );
       if (typeof ClipboardItem !== "undefined" && navigator.clipboard?.write) {
         try {
-          const blob = await new Promise<Blob>((res, rej) =>
-            canvas.toBlob(b => b ? res(b) : rej(new Error("toBlob returned null")), "image/png")
-          );
           await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
           setCopied(true);
           setTimeout(() => setCopied(false), 2500);
           setCopying(false);
           return;
-        } catch (clipErr) {
-          setCopyError(`Clipboard blocked — downloading instead (${clipErr instanceof Error ? clipErr.message : String(clipErr)})`);
+        } catch {
+          // clipboard blocked — fall through to download
         }
       }
+      const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
-      a.href = canvas.toDataURL("image/png");
+      a.href = url;
       a.download = filename;
       a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
       setCopied(true);
       setTimeout(() => setCopied(false), 2500);
     } catch (err) {
-      setCopyError(`Capture failed: ${err instanceof Error ? err.message : String(err)}`);
+      setCopyError(`Export failed: ${err instanceof Error ? err.message : String(err)}`);
     }
     setCopying(false);
   }
@@ -1120,10 +1145,15 @@ export default function ShareBannerModal({ sale, order, onClose }: Props) {
     setCopyError("");
     try {
       const canvas = drawSaleBannerToCanvas(sale, order);
+      const blob = await new Promise<Blob>((res, rej) =>
+        canvas.toBlob(b => b ? res(b) : rej(new Error("toBlob returned null")), "image/png")
+      );
+      const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
-      a.href = canvas.toDataURL("image/png");
+      a.href = url;
       a.download = `${sale.event_name ?? "sale"}-ticketx.png`;
       a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
     } catch (err) {
       setCopyError(`Download failed: ${err instanceof Error ? err.message : String(err)}`);
     }
