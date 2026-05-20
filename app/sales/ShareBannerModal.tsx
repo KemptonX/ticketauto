@@ -924,13 +924,21 @@ function _drawMultiBanner(
 }
 
 // Render banner to JPEG blob.
-// Tries OffscreenCanvas first (off-main-thread, bypasses GPU compositor entirely).
-// Falls back to a regular HTMLCanvasElement with willReadFrequently to force CPU rendering.
+// Three-path strategy to avoid Chrome's GPU compositor createPattern crash:
+//
+// Path 1 — OffscreenCanvas.convertToBlob(): off-main-thread, most isolated.
+// Path 2 — getImageData → createImageBitmap(ImageData) → fresh CPU canvas → toBlob:
+//   getImageData on a willReadFrequently canvas reads from CPU memory (no GPU readback).
+//   createImageBitmap(ImageData) creates a bitmap from CPU memory, not a GPU canvas.
+//   The fresh canvas with willReadFrequently stays on CPU, so toBlob never hits the
+//   internal GPU createPattern path that Chrome bugs on.
+// Path 3 — direct toBlob on willReadFrequently canvas (simple last resort).
 async function renderBannerToBlob(
   drawFn: (ctx: CanvasRenderingContext2D, W: number, H: number) => void,
 ): Promise<Blob> {
   const W = 1080, H = 1080;
 
+  // Path 1: OffscreenCanvas
   if (typeof OffscreenCanvas !== "undefined") {
     try {
       const oc = new OffscreenCanvas(W, H);
@@ -939,9 +947,33 @@ async function renderBannerToBlob(
         drawFn(ctx, W, H);
         return await oc.convertToBlob({ type: "image/jpeg", quality: 0.92 });
       }
-    } catch { /* fall through to HTMLCanvasElement */ }
+    } catch { /* fall through */ }
   }
 
+  // Path 2: draw → getImageData → createImageBitmap → fresh canvas → toBlob
+  // This breaks the GPU path entirely: pixels go CPU → ImageBitmap → CPU canvas → blob.
+  try {
+    const drawCanvas = document.createElement("canvas");
+    drawCanvas.width = W;
+    drawCanvas.height = H;
+    const drawCtx = drawCanvas.getContext("2d", { willReadFrequently: true });
+    if (!drawCtx) throw new Error("no ctx");
+    drawFn(drawCtx, W, H);
+    const imageData = drawCtx.getImageData(0, 0, W, H);
+    const bitmap = await createImageBitmap(imageData);
+    const encCanvas = document.createElement("canvas");
+    encCanvas.width = W;
+    encCanvas.height = H;
+    const encCtx = encCanvas.getContext("2d", { willReadFrequently: true });
+    if (!encCtx) throw new Error("no enc ctx");
+    encCtx.drawImage(bitmap, 0, 0);
+    bitmap.close();
+    return await new Promise<Blob>((res, rej) =>
+      encCanvas.toBlob(b => b ? res(b) : rej(new Error("toBlob null")), "image/jpeg", 0.92)
+    );
+  } catch { /* fall through */ }
+
+  // Path 3: direct toBlob on willReadFrequently canvas
   const canvas = document.createElement("canvas");
   canvas.width = W;
   canvas.height = H;
