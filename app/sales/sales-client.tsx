@@ -7,7 +7,7 @@ import { supabase } from "@/src/lib/supabase";
 import { formatCurrency } from "@/src/lib/currency";
 import { loadTemplate, interpolate } from "@/src/lib/email-template";
 import { SidebarLogo, NavIcon, SidebarFooter } from "@/app/components/nav-icons";
-import ShareBannerModal from "./ShareBannerModal";
+import ShareBannerModal, { ShareMultiBannerModal, type MultiSaleStats } from "./ShareBannerModal";
 
 type Sale = {
   id: number;
@@ -126,6 +126,8 @@ export default function SalesClient() {
   const [emailFromAccountId, setEmailFromAccountId] = useState<string>("");
   const [thankYouSentIds, setThankYouSentIds] = useState<Record<number, true>>({});
   const [shareSaleId, setShareSaleId] = useState<number | null>(null);
+  const [selectedSaleIds, setSelectedSaleIds] = useState<Set<number>>(new Set());
+  const [shareMultiOpen, setShareMultiOpen] = useState(false);
 
   useEffect(() => {
     try {
@@ -763,6 +765,38 @@ export default function SalesClient() {
     [addSaleOrderId, allOrders],
   );
 
+  const selectedStats = useMemo((): MultiSaleStats | null => {
+    if (selectedSaleIds.size === 0) return null;
+    const arr = sales.filter(s => selectedSaleIds.has(s.id));
+    let totalTickets = 0, totalRevenue = 0, totalCost = 0;
+    for (const s of arr) {
+      totalTickets += s.qty_sold ?? 0;
+      totalRevenue += s.payout_total ?? s.sale_total ?? 0;
+      totalCost += getSaleCost(s, getReferenceOrderForSale(s, matchedOrders, allOrders));
+    }
+    const totalProfit = totalRevenue - totalCost;
+    const roi = totalCost > 0 ? (totalProfit / totalCost) * 100 : null;
+    return { salesCount: arr.length, totalTickets, totalRevenue, totalCost, totalProfit, roi };
+  }, [selectedSaleIds, sales, matchedOrders, allOrders]);
+
+  function toggleSaleSelection(id: number) {
+    setSelectedSaleIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleGroupSelection(groupSales: Sale[], allSelected: boolean) {
+    const ids = groupSales.map(s => s.id);
+    setSelectedSaleIds(prev => {
+      const next = new Set(prev);
+      if (allSelected) ids.forEach(id => next.delete(id));
+      else ids.forEach(id => next.add(id));
+      return next;
+    });
+  }
+
   const manualResults = useMemo(() => {
     const q = manualSearch.trim().toLowerCase();
     if (!q || !selectedSale) return [];
@@ -968,7 +1002,16 @@ export default function SalesClient() {
                     {expanded ? (
                       <div className="inventory-ticket-stack sales-ticket-grid">
                         <div className="inventory-ticket-header">
-                          <span>Seat</span>
+                          <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <input
+                              type="checkbox"
+                              checked={group.sales.length > 0 && group.sales.every(s => selectedSaleIds.has(s.id))}
+                              onChange={() => toggleGroupSelection(group.sales, group.sales.every(s => selectedSaleIds.has(s.id)))}
+                              onClick={e => e.stopPropagation()}
+                              style={{ width: 15, height: 15, cursor: "pointer", accentColor: "#9b5cff", flexShrink: 0 }}
+                            />
+                            Seat
+                          </span>
                           <span>Account</span>
                           <span>Buyer</span>
                           <span>Value</span>
@@ -980,6 +1023,7 @@ export default function SalesClient() {
                           const isUnmatched = sale.inventory_order_id == null;
                           const topSuggestion = isUnmatched ? getMatchSuggestions(sale, allOrders)[0] ?? null : null;
                           const isNew = sale.created_at ? new Date(sale.created_at).getTime() > Date.now() - 86400000 : false;
+                          const isChecked = selectedSaleIds.has(sale.id);
                           return (
                             <div key={sale.id}>
                               <div
@@ -993,12 +1037,21 @@ export default function SalesClient() {
                                 }}
                                 role="button"
                                 tabIndex={0}
-                                style={{ cursor: "pointer" }}
+                                style={{ cursor: "pointer", background: isChecked ? "rgba(155,92,255,0.07)" : undefined }}
                               >
-                                <div className="inventory-ticket-seat">
-                                  <strong>{sale.section || "Section —"}</strong>
-                                  <span>{formatSeatLabel(sale.row, sale.seat_from, sale.seat_to)}</span>
-                                  {isNew && <span className="new-badge new-badge-inline">New</span>}
+                                <div style={{ display: "flex", flexDirection: "row", alignItems: "center", gap: 8 }}>
+                                  <input
+                                    type="checkbox"
+                                    checked={isChecked}
+                                    onChange={() => toggleSaleSelection(sale.id)}
+                                    onClick={e => e.stopPropagation()}
+                                    style={{ width: 15, height: 15, cursor: "pointer", accentColor: "#9b5cff", flexShrink: 0 }}
+                                  />
+                                  <div className="inventory-ticket-seat">
+                                    <strong>{sale.section || "Section —"}</strong>
+                                    <span>{formatSeatLabel(sale.row, sale.seat_from, sale.seat_to)}</span>
+                                    {isNew && <span className="new-badge new-badge-inline">New</span>}
+                                  </div>
                                 </div>
                                 <span className="truncate-text" title={sale.account_email || ""}>
                                   {sale.account_email || "No account"}
@@ -1076,6 +1129,101 @@ export default function SalesClient() {
           )}
         </section>
 
+        {/* ── Selection toolbar ───────────────────────────────────────────── */}
+        {selectedSaleIds.size > 0 && selectedStats && (
+          <div style={{
+            position: "fixed",
+            bottom: 28,
+            left: "50%",
+            transform: "translateX(-50%)",
+            zIndex: 200,
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+            background: "rgba(14,14,22,0.92)",
+            backdropFilter: "blur(16px)",
+            border: "1px solid rgba(155,92,255,0.35)",
+            borderRadius: 999,
+            padding: "10px 16px 10px 20px",
+            boxShadow: "0 8px 40px rgba(0,0,0,0.6), 0 0 0 1px rgba(155,92,255,0.15), 0 0 30px rgba(155,92,255,0.12)",
+            whiteSpace: "nowrap",
+          }}>
+            <span style={{ fontSize: 13, fontWeight: 600, color: "rgba(255,255,255,0.5)", marginRight: 4 }}>
+              {selectedStats.salesCount} selected
+            </span>
+
+            <div style={{ width: 1, height: 20, background: "rgba(255,255,255,0.12)" }} />
+
+            <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
+              <span style={{ fontSize: 11, color: "rgba(255,255,255,0.35)", letterSpacing: "0.06em", textTransform: "uppercase" }}>Tickets</span>
+              <strong style={{ fontSize: 14, color: "rgba(255,255,255,0.85)" }}>{selectedStats.totalTickets}</strong>
+            </div>
+
+            <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
+              <span style={{ fontSize: 11, color: "rgba(255,255,255,0.35)", letterSpacing: "0.06em", textTransform: "uppercase" }}>Revenue</span>
+              <strong style={{ fontSize: 14, color: "#4fc3ff" }}>{formatCurrency(selectedStats.totalRevenue)}</strong>
+            </div>
+
+            <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
+              <span style={{ fontSize: 11, color: "rgba(255,255,255,0.35)", letterSpacing: "0.06em", textTransform: "uppercase" }}>Profit</span>
+              <strong style={{ fontSize: 14, color: selectedStats.totalProfit >= 0 ? "#4ade80" : "#f87171" }}>
+                {selectedStats.totalProfit >= 0 ? "+" : ""}{formatCurrency(selectedStats.totalProfit)}
+              </strong>
+            </div>
+
+            {selectedStats.roi !== null && (
+              <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
+                <span style={{ fontSize: 11, color: "rgba(255,255,255,0.35)", letterSpacing: "0.06em", textTransform: "uppercase" }}>ROI</span>
+                <strong style={{ fontSize: 14, color: selectedStats.totalProfit >= 0 ? "#4ade80" : "#f87171" }}>
+                  {selectedStats.roi >= 0 ? "+" : ""}{selectedStats.roi.toFixed(1)}%
+                </strong>
+              </div>
+            )}
+
+            <div style={{ width: 1, height: 20, background: "rgba(255,255,255,0.12)" }} />
+
+            <button
+              type="button"
+              onClick={() => setShareMultiOpen(true)}
+              style={{
+                display: "flex", alignItems: "center", gap: 6,
+                background: "linear-gradient(135deg, rgba(155,92,255,0.3), rgba(255,79,163,0.3))",
+                border: "1px solid rgba(155,92,255,0.4)",
+                borderRadius: 999,
+                padding: "6px 14px",
+                cursor: "pointer",
+                color: "rgba(255,255,255,0.9)",
+                fontSize: 13, fontWeight: 600,
+                transition: "all 150ms ease",
+              }}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="18" cy="5" r="3" />
+                <circle cx="6" cy="12" r="3" />
+                <circle cx="18" cy="19" r="3" />
+                <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
+                <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
+              </svg>
+              Share Success
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setSelectedSaleIds(new Set())}
+              style={{
+                background: "rgba(255,255,255,0.06)",
+                border: "1px solid rgba(255,255,255,0.1)",
+                borderRadius: 999,
+                padding: "6px 12px",
+                cursor: "pointer",
+                color: "rgba(255,255,255,0.4)",
+                fontSize: 13, fontWeight: 600,
+              }}
+            >
+              Clear
+            </button>
+          </div>
+        )}
       </main>
 
       {selectedSale ? (
@@ -1366,6 +1514,10 @@ export default function SalesClient() {
           </div>
       </aside>
       ) : null}
+
+      {shareMultiOpen && selectedStats && (
+        <ShareMultiBannerModal stats={selectedStats} onClose={() => setShareMultiOpen(false)} />
+      )}
 
       {shareSaleId != null && (() => {
         const shareSale = sales.find(s => s.id === shareSaleId);
