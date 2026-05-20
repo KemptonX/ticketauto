@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { formatCurrency } from "@/src/lib/currency";
 
@@ -472,13 +472,491 @@ export function MultiSaleBanner({ stats, animated }: { stats: MultiSaleStats; an
   );
 }
 
+// ─── Canvas drawing (replaces html2canvas) ───────────────────────────────────
+
+function _rr(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.arcTo(x + w, y, x + w, y + r, r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+  ctx.lineTo(x + r, y + h);
+  ctx.arcTo(x, y + h, x, y + h - r, r);
+  ctx.lineTo(x, y + r);
+  ctx.arcTo(x, y, x + r, y, r);
+  ctx.closePath();
+}
+
+const _F = '"Segoe UI", -apple-system, BlinkMacSystemFont, sans-serif';
+
+function _txMark(ctx: CanvasRenderingContext2D, x: number, y: number, cssSize: number, sc: number) {
+  const s = cssSize * sc;
+  const r = s / 24;
+  ctx.save();
+  ctx.lineCap = "round";
+  ctx.lineWidth = 3.5 * r;
+  ctx.strokeStyle = "#9B5CFF";
+  ctx.beginPath();
+  ctx.moveTo(x + 4.5 * r, y + 4.5 * r);
+  ctx.lineTo(x + 19.5 * r, y + 19.5 * r);
+  ctx.stroke();
+  ctx.strokeStyle = "#FF4FA3";
+  ctx.beginPath();
+  ctx.moveTo(x + 19.5 * r, y + 4.5 * r);
+  ctx.lineTo(x + 4.5 * r, y + 19.5 * r);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function _bannerBg(ctx: CanvasRenderingContext2D, W: number, H: number, isPos: boolean, sc: number) {
+  const bg = ctx.createLinearGradient(0, 0, W * 0.5, H);
+  bg.addColorStop(0, "#0c0c16");
+  bg.addColorStop(0.6, "#080810");
+  bg.addColorStop(1, "#0e0a14");
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, W, H);
+  const g1 = ctx.createRadialGradient(0, 0, 0, 0, 0, 320 * sc);
+  g1.addColorStop(0, "rgba(155,92,255,0.10)");
+  g1.addColorStop(1, "rgba(155,92,255,0)");
+  ctx.fillStyle = g1;
+  ctx.fillRect(0, 0, W, H);
+  const g2 = ctx.createRadialGradient(W, H, 0, W, H, 280 * sc);
+  g2.addColorStop(0, "rgba(255,79,163,0.12)");
+  g2.addColorStop(1, "rgba(255,79,163,0)");
+  ctx.fillStyle = g2;
+  ctx.fillRect(0, 0, W, H);
+  const gcx = W / 2, gcy = H * 0.4;
+  const g3 = ctx.createRadialGradient(gcx, gcy, 0, gcx, gcy, 300 * sc);
+  g3.addColorStop(0, isPos ? "rgba(74,222,128,0.07)" : "rgba(248,113,113,0.07)");
+  g3.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = g3;
+  ctx.fillRect(0, 0, W, H);
+  // Watermark X
+  ctx.save();
+  ctx.globalAlpha = 0.04;
+  const wx = (540 - 32 - 180) * sc, wy = (540 - 48 - 180) * sc;
+  const wmS = 180 * sc, wmR = wmS / 24;
+  ctx.lineCap = "round";
+  ctx.lineWidth = 3.5 * wmR;
+  ctx.strokeStyle = "white";
+  ctx.beginPath();
+  ctx.moveTo(wx + 4.5 * wmR, wy + 4.5 * wmR);
+  ctx.lineTo(wx + 19.5 * wmR, wy + 19.5 * wmR);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(wx + 19.5 * wmR, wy + 4.5 * wmR);
+  ctx.lineTo(wx + 4.5 * wmR, wy + 19.5 * wmR);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function _badge(ctx: CanvasRenderingContext2D, rightX: number, cy: number, text: string, sc: number) {
+  const fontSize = 11 * sc;
+  ctx.save();
+  ctx.font = `700 ${fontSize}px ${_F}`;
+  const textW = ctx.measureText(text).width;
+  const dotR = 3 * sc, gap = 7 * sc, ph = 5 * sc, pw = 12 * sc;
+  const pillW = pw + dotR * 2 + gap + textW + pw;
+  const pillH = fontSize + ph * 2;
+  const px = rightX - pillW, py = cy - pillH / 2;
+  _rr(ctx, px, py, pillW, pillH, pillH / 2);
+  ctx.fillStyle = "rgba(74,222,128,0.12)";
+  ctx.fill();
+  ctx.strokeStyle = "rgba(74,222,128,0.3)";
+  ctx.lineWidth = sc;
+  ctx.stroke();
+  ctx.save();
+  ctx.fillStyle = "#4ade80";
+  ctx.shadowColor = "#4ade80";
+  ctx.shadowBlur = 6 * sc;
+  ctx.beginPath();
+  ctx.arc(px + pw + dotR, cy, dotR, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+  ctx.fillStyle = "#4ade80";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+  ctx.fillText(text, px + pw + dotR * 2 + gap, cy);
+  ctx.restore();
+}
+
+function _statBox(
+  ctx: CanvasRenderingContext2D,
+  x: number, y: number, w: number, h: number,
+  label: string, value: string, sub: string,
+  sc: number, pink: boolean,
+) {
+  ctx.save();
+  _rr(ctx, x, y, w, h, 14 * sc);
+  ctx.fillStyle = pink ? "rgba(255,79,163,0.06)" : "rgba(255,255,255,0.04)";
+  ctx.fill();
+  ctx.strokeStyle = pink ? "rgba(255,79,163,0.15)" : "rgba(255,255,255,0.08)";
+  ctx.lineWidth = sc;
+  ctx.stroke();
+  ctx.restore();
+  const ix = x + 18 * sc;
+  let iy = y + 14 * sc;
+  ctx.save();
+  ctx.font = `700 ${10 * sc}px ${_F}`;
+  ctx.fillStyle = pink ? "rgba(255,79,163,0.6)" : "rgba(255,255,255,0.28)";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "top";
+  ctx.fillText(label, ix, iy);
+  iy += (10 + 6) * sc;
+  ctx.restore();
+  ctx.save();
+  ctx.font = `700 ${22 * sc}px ${_F}`;
+  ctx.fillStyle = "rgba(255,255,255,0.85)";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "top";
+  ctx.fillText(value, ix, iy);
+  iy += (22 + 3) * sc;
+  ctx.restore();
+  ctx.save();
+  ctx.font = `400 ${11 * sc}px ${_F}`;
+  ctx.fillStyle = "rgba(255,255,255,0.3)";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "top";
+  ctx.fillText(sub, ix, iy);
+  ctx.restore();
+}
+
+function _clip(ctx: CanvasRenderingContext2D, text: string, maxW: number): string {
+  if (ctx.measureText(text).width <= maxW) return text;
+  let t = text;
+  while (t.length > 0 && ctx.measureText(t + "…").width > maxW) t = t.slice(0, -1);
+  return t + "…";
+}
+
+function _heroSection(
+  ctx: CanvasRenderingContext2D,
+  W: number,
+  heroAreaTop: number, heroAreaBot: number,
+  profitStr: string, roi: number | null, isPos: boolean,
+  profitColor: string, sc: number,
+) {
+  const heroCY = (heroAreaTop + heroAreaBot) / 2;
+  const bigSz = 62 * sc, labelSz = 11 * sc;
+  const roiPillH = roi !== null ? (6 * 2 + 20) * sc : 0;
+  const contentH = labelSz + 10 * sc + bigSz + (roi !== null ? 10 * sc + roiPillH : 0);
+  const top = heroCY - contentH / 2;
+
+  ctx.save();
+  ctx.font = `700 ${labelSz}px ${_F}`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "top";
+  ctx.fillStyle = "rgba(255,255,255,0.25)";
+  ctx.fillText("TOTAL PROFIT", W / 2, top);
+  ctx.restore();
+
+  const numTop = top + labelSz + 10 * sc;
+  ctx.save();
+  ctx.font = `800 ${bigSz}px ${_F}`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "top";
+  ctx.fillStyle = profitColor;
+  ctx.shadowColor = profitColor;
+  ctx.shadowBlur = 40 * sc;
+  ctx.fillText(profitStr, W / 2, numTop);
+  ctx.restore();
+
+  if (roi !== null) {
+    const roiTop = numTop + bigSz + 10 * sc;
+    const roiStr = (isPos ? "+" : "−") + Math.abs(roi).toFixed(1) + "%";
+    const roiLabel = "ROI";
+    const ph = 6 * sc, pw = 16 * sc, gap = 8 * sc;
+    ctx.save();
+    ctx.font = `800 ${20 * sc}px ${_F}`;
+    const roiNumW = ctx.measureText(roiStr).width;
+    ctx.font = `600 ${12 * sc}px ${_F}`;
+    const roiLabelW = ctx.measureText(roiLabel).width;
+    ctx.restore();
+    const pillW = pw + roiNumW + gap + roiLabelW + pw;
+    const pillH = 20 * sc + ph * 2;
+    const pillX = W / 2 - pillW / 2;
+    ctx.save();
+    _rr(ctx, pillX, roiTop, pillW, pillH, pillH / 2);
+    ctx.fillStyle = isPos ? "rgba(74,222,128,0.1)" : "rgba(248,113,113,0.1)";
+    ctx.fill();
+    ctx.strokeStyle = isPos ? "rgba(74,222,128,0.25)" : "rgba(248,113,113,0.25)";
+    ctx.lineWidth = sc;
+    ctx.stroke();
+    ctx.restore();
+    const pillCY = roiTop + pillH / 2;
+    ctx.save();
+    ctx.font = `800 ${20 * sc}px ${_F}`;
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = profitColor;
+    ctx.fillText(roiStr, pillX + pw, pillCY);
+    ctx.restore();
+    ctx.save();
+    ctx.font = `600 ${12 * sc}px ${_F}`;
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = profitColor;
+    ctx.globalAlpha = 0.7;
+    ctx.fillText(roiLabel, pillX + pw + roiNumW + gap, pillCY);
+    ctx.restore();
+  }
+}
+
+function _bannerFooter(
+  ctx: CanvasRenderingContext2D,
+  W: number, footerTop: number, spad: number, sc: number, rightText: string,
+) {
+  ctx.save();
+  ctx.strokeStyle = "rgba(255,255,255,0.05)";
+  ctx.lineWidth = sc;
+  ctx.beginPath();
+  ctx.moveTo(0, footerTop);
+  ctx.lineTo(W, footerTop);
+  ctx.stroke();
+  ctx.restore();
+  const fIconSz = 14, fY = footerTop + 12 * sc;
+  _txMark(ctx, spad, fY, fIconSz, sc);
+  ctx.save();
+  ctx.font = `600 ${12 * sc}px ${_F}`;
+  ctx.textBaseline = "top";
+  ctx.textAlign = "left";
+  ctx.fillStyle = "rgba(255,255,255,0.25)";
+  ctx.fillText("ticketx.app", spad + fIconSz * sc + 6 * sc, fY);
+  ctx.restore();
+  if (rightText) {
+    ctx.save();
+    ctx.font = `400 ${11 * sc}px ${_F}`;
+    ctx.textBaseline = "top";
+    ctx.textAlign = "right";
+    ctx.fillStyle = "rgba(255,255,255,0.22)";
+    ctx.fillText(rightText, W - spad, fY + sc);
+    ctx.restore();
+  }
+}
+
+function drawSaleBannerToCanvas(sale: Sale, order: MatchedOrder | null): HTMLCanvasElement {
+  const sc = 2, W = 540 * sc, H = 540 * sc;
+  const canvas = document.createElement("canvas");
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext("2d")!;
+
+  const revenue = sale.payout_total ?? sale.sale_total ?? 0;
+  const cost = (() => {
+    if (!order?.total_cost) return 0;
+    if (!order.qty_bought || !sale.qty_sold || order.qty_bought <= 0) return order.total_cost;
+    return (order.total_cost / order.qty_bought) * sale.qty_sold;
+  })();
+  const profit = revenue - cost;
+  const roi = cost > 0 ? (profit / cost) * 100 : null;
+  const isPos = profit >= 0;
+  const profitColor = isPos ? "#4ade80" : "#f87171";
+
+  _bannerBg(ctx, W, H, isPos, sc);
+
+  const spad = 28 * sc, topY = 24 * sc, iconSz = 20;
+  const iconCY = topY + (iconSz * sc) / 2;
+  _txMark(ctx, spad, topY, iconSz, sc);
+
+  ctx.save();
+  ctx.font = `700 ${15 * sc}px ${_F}`;
+  ctx.textBaseline = "middle";
+  ctx.textAlign = "left";
+  ctx.fillStyle = "rgba(255,255,255,0.9)";
+  const txStart = spad + iconSz * sc + 8 * sc;
+  ctx.fillText("Ticket", txStart, iconCY);
+  const tW = ctx.measureText("Ticket").width;
+  ctx.fillStyle = "#b87bff";
+  ctx.fillText("X", txStart + tW, iconCY);
+  ctx.restore();
+
+  _badge(ctx, W - spad, iconCY, "Sale Completed", sc);
+
+  const eventInfoTop = topY + iconSz * sc + 18 * sc;
+  ctx.save();
+  ctx.font = `700 ${17 * sc}px ${_F}`;
+  ctx.textBaseline = "top";
+  ctx.textAlign = "left";
+  ctx.fillStyle = "rgba(255,255,255,0.95)";
+  ctx.fillText(_clip(ctx, sale.event_name || "Event", W - spad * 2), spad, eventInfoTop);
+  ctx.restore();
+
+  const venueY = eventInfoTop + 17 * sc * 1.2 + 4 * sc;
+  ctx.save();
+  ctx.font = `400 ${13 * sc}px ${_F}`;
+  ctx.textBaseline = "top";
+  ctx.textAlign = "left";
+  let curX = spad;
+  if (sale.venue) {
+    ctx.fillStyle = "rgba(255,255,255,0.4)";
+    const vStr = _clip(ctx, sale.venue, 260 * sc);
+    ctx.fillText(vStr, curX, venueY);
+    curX += ctx.measureText(vStr).width;
+    if (sale.event_date) {
+      ctx.fillStyle = "rgba(255,255,255,0.2)";
+      ctx.fillText(" · ", curX, venueY);
+      curX += ctx.measureText(" · ").width;
+    }
+  }
+  if (sale.event_date) {
+    ctx.fillStyle = "rgba(255,255,255,0.35)";
+    ctx.fillText(formatEventDate(sale.event_date), curX, venueY);
+  }
+  ctx.restore();
+
+  const divY = venueY + 13 * sc + 16 * sc;
+  const divG = ctx.createLinearGradient(spad, divY, W - spad, divY);
+  divG.addColorStop(0, "rgba(255,255,255,0.06)");
+  divG.addColorStop(1, "rgba(255,255,255,0.02)");
+  ctx.fillStyle = divG;
+  ctx.fillRect(spad, divY, W - spad * 2, sc);
+
+  const footerTop = H - (1 + 12 + 14 + 22) * sc;
+  const boxH = 86 * sc, boxOutPadB = 20 * sc;
+  const boxTop = footerTop - boxOutPadB - boxH;
+  const bOL = 24 * sc, bGap = 12 * sc;
+  const bW = (W - 2 * bOL - bGap) / 2;
+
+  _statBox(ctx, bOL, boxTop, bW, boxH, "BOUGHT FOR",
+    cost > 0 ? formatCurrency(cost) : "—",
+    sale.qty_sold ? `${sale.qty_sold} × ticket${sale.qty_sold > 1 ? "s" : ""}` : "—",
+    sc, false);
+  _statBox(ctx, bOL + bW + bGap, boxTop, bW, boxH, "SOLD FOR",
+    revenue > 0 ? formatCurrency(revenue) : "—",
+    `via ${formatSource(sale.source)}`,
+    sc, true);
+
+  const rightFooter = sale.section
+    ? sale.section + (sale.row ? ` · Row ${sale.row}` : "")
+    : "";
+  _bannerFooter(ctx, W, footerTop, spad, sc, rightFooter);
+
+  _heroSection(ctx, W, divY + sc, boxTop,
+    (isPos ? "" : "−") + formatCurrency(Math.abs(profit)),
+    roi, isPos, profitColor, sc);
+
+  return canvas;
+}
+
+function drawMultiBannerToCanvas(stats: MultiSaleStats): HTMLCanvasElement {
+  const { totalRevenue, totalCost, totalProfit, roi, salesCount, totalTickets, eventNames } = stats;
+  const sc = 2, W = 540 * sc, H = 540 * sc;
+  const canvas = document.createElement("canvas");
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext("2d")!;
+
+  const isPos = totalProfit >= 0;
+  const profitColor = isPos ? "#4ade80" : "#f87171";
+
+  _bannerBg(ctx, W, H, isPos, sc);
+
+  const spad = 28 * sc, topY = 24 * sc, iconSz = 20;
+  const iconCY = topY + (iconSz * sc) / 2;
+  _txMark(ctx, spad, topY, iconSz, sc);
+
+  ctx.save();
+  ctx.font = `700 ${15 * sc}px ${_F}`;
+  ctx.textBaseline = "middle";
+  ctx.textAlign = "left";
+  ctx.fillStyle = "rgba(255,255,255,0.9)";
+  const txStart = spad + iconSz * sc + 8 * sc;
+  ctx.fillText("Ticket", txStart, iconCY);
+  const tW = ctx.measureText("Ticket").width;
+  ctx.fillStyle = "#b87bff";
+  ctx.fillText("X", txStart + tW, iconCY);
+  ctx.restore();
+
+  _badge(ctx, W - spad, iconCY, `${salesCount} Sales Completed`, sc);
+
+  const eventInfoTop = topY + iconSz * sc + 18 * sc;
+  let eventInfoBottom = eventInfoTop;
+
+  if (eventNames.length === 1) {
+    ctx.save();
+    ctx.font = `700 ${17 * sc}px ${_F}`;
+    ctx.textBaseline = "top";
+    ctx.textAlign = "left";
+    ctx.fillStyle = "rgba(255,255,255,0.95)";
+    ctx.fillText(_clip(ctx, eventNames[0], W - spad * 2), spad, eventInfoTop);
+    ctx.restore();
+    eventInfoBottom = eventInfoTop + 17 * sc * 1.2;
+  } else {
+    const nfs = eventNames.length === 2 ? 15 : 13;
+    const lh = nfs * sc * 1.3;
+    let ny = eventInfoTop;
+    for (const name of eventNames.slice(0, 3)) {
+      ctx.save();
+      ctx.font = `700 ${nfs * sc}px ${_F}`;
+      ctx.textBaseline = "top";
+      ctx.textAlign = "left";
+      ctx.fillStyle = "rgba(255,255,255,0.9)";
+      ctx.fillText(_clip(ctx, name, W - spad * 2), spad, ny);
+      ctx.restore();
+      ny += lh;
+    }
+    if (eventNames.length > 3) {
+      ctx.save();
+      ctx.font = `400 ${12 * sc}px ${_F}`;
+      ctx.textBaseline = "top";
+      ctx.textAlign = "left";
+      ctx.fillStyle = "rgba(255,255,255,0.3)";
+      ctx.fillText(`+${eventNames.length - 3} more`, spad, ny);
+      ctx.restore();
+      ny += 12 * sc * 1.3;
+    }
+    eventInfoBottom = ny;
+  }
+
+  const subLineY = eventInfoBottom + 5 * sc;
+  ctx.save();
+  ctx.font = `400 ${12 * sc}px ${_F}`;
+  ctx.textBaseline = "top";
+  ctx.textAlign = "left";
+  ctx.fillStyle = "rgba(255,255,255,0.3)";
+  ctx.fillText(
+    `${totalTickets} ticket${totalTickets !== 1 ? "s" : ""} · ${salesCount} sale${salesCount !== 1 ? "s" : ""}`,
+    spad, subLineY,
+  );
+  ctx.restore();
+
+  const divY = subLineY + 12 * sc + 16 * sc;
+  const divG = ctx.createLinearGradient(spad, divY, W - spad, divY);
+  divG.addColorStop(0, "rgba(255,255,255,0.06)");
+  divG.addColorStop(1, "rgba(255,255,255,0.02)");
+  ctx.fillStyle = divG;
+  ctx.fillRect(spad, divY, W - spad * 2, sc);
+
+  const footerTop = H - (1 + 12 + 14 + 22) * sc;
+  const boxH = 86 * sc, boxOutPadB = 20 * sc;
+  const boxTop = footerTop - boxOutPadB - boxH;
+  const bOL = 24 * sc, bGap = 12 * sc;
+  const bW = (W - 2 * bOL - bGap) / 2;
+
+  _statBox(ctx, bOL, boxTop, bW, boxH, "TOTAL COST",
+    totalCost > 0 ? formatCurrency(totalCost) : "—",
+    `${totalTickets} ticket${totalTickets !== 1 ? "s" : ""}`,
+    sc, false);
+  _statBox(ctx, bOL + bW + bGap, boxTop, bW, boxH, "TOTAL REVENUE",
+    totalRevenue > 0 ? formatCurrency(totalRevenue) : "—",
+    `${salesCount} sale${salesCount !== 1 ? "s" : ""}`,
+    sc, true);
+
+  _bannerFooter(ctx, W, footerTop, spad, sc, `${salesCount} combined sales`);
+
+  _heroSection(ctx, W, divY + sc, boxTop,
+    (isPos ? "" : "−") + formatCurrency(Math.abs(totalProfit)),
+    roi, isPos, profitColor, sc);
+
+  return canvas;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 type MultiShareProps = {
   stats: MultiSaleStats;
   onClose: () => void;
 };
 
 export function ShareMultiBannerModal({ stats, onClose }: MultiShareProps) {
-  const bannerRef = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(false);
   const [copying, setCopying] = useState(false);
   const [downloading, setDownloading] = useState(false);
@@ -493,29 +971,11 @@ export function ShareMultiBannerModal({ stats, onClose }: MultiShareProps) {
     return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
   }, []);
 
-  async function capture() {
-    if (!bannerRef.current) throw new Error("Banner element not found");
-    const { default: html2canvas } = await import("html2canvas");
-    return html2canvas(bannerRef.current, {
-      scale: 2, useCORS: true, allowTaint: true, backgroundColor: "#0c0c16", logging: false,
-      onclone: (_doc, el) => {
-        el.querySelectorAll<HTMLElement>("*").forEach(node => {
-          node.style.animation = "none";
-          node.style.transition = "none";
-          node.style.backdropFilter = "none";
-          (node.style as CSSStyleDeclaration & { webkitBackdropFilter: string }).webkitBackdropFilter = "none";
-        });
-      },
-    });
-  }
-
   async function handleCopy() {
     setCopying(true);
     setCopyError("");
     try {
-      const canvas = await capture();
-      const dataUrl = canvas.toDataURL("image/png");
-
+      const canvas = drawMultiBannerToCanvas(stats);
       if (typeof ClipboardItem !== "undefined" && navigator.clipboard?.write) {
         try {
           const blob = await new Promise<Blob>((res, rej) =>
@@ -530,9 +990,8 @@ export function ShareMultiBannerModal({ stats, onClose }: MultiShareProps) {
           setCopyError(`Clipboard blocked — downloading instead (${clipErr instanceof Error ? clipErr.message : String(clipErr)})`);
         }
       }
-
       const a = document.createElement("a");
-      a.href = dataUrl;
+      a.href = canvas.toDataURL("image/png");
       a.download = "sales-summary-ticketx.png";
       a.click();
       setCopied(true);
@@ -547,7 +1006,7 @@ export function ShareMultiBannerModal({ stats, onClose }: MultiShareProps) {
     setDownloading(true);
     setCopyError("");
     try {
-      const canvas = await capture();
+      const canvas = drawMultiBannerToCanvas(stats);
       const a = document.createElement("a");
       a.href = canvas.toDataURL("image/png");
       a.download = "sales-summary-ticketx.png";
@@ -576,7 +1035,7 @@ export function ShareMultiBannerModal({ stats, onClose }: MultiShareProps) {
         </div>
 
         <div style={{ borderRadius: 20, overflow: "hidden", boxShadow: "0 0 0 1px rgba(255,255,255,0.08), 0 32px 80px rgba(0,0,0,0.7), 0 0 60px rgba(155,92,255,0.12)", flexShrink: 0 }}>
-          <div ref={bannerRef}>
+          <div>
             <MultiSaleBanner stats={stats} animated={visible} />
           </div>
         </div>
@@ -610,7 +1069,6 @@ type Props = {
 };
 
 export default function ShareBannerModal({ sale, order, onClose }: Props) {
-  const bannerRef = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(false);
   const [copying, setCopying] = useState(false);
   const [downloading, setDownloading] = useState(false);
@@ -625,30 +1083,12 @@ export default function ShareBannerModal({ sale, order, onClose }: Props) {
     return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
   }, []);
 
-  async function capture() {
-    if (!bannerRef.current) throw new Error("Banner element not found");
-    const { default: html2canvas } = await import("html2canvas");
-    return html2canvas(bannerRef.current, {
-      scale: 2, useCORS: true, allowTaint: true, backgroundColor: "#0c0c16", logging: false,
-      onclone: (_doc, el) => {
-        el.querySelectorAll<HTMLElement>("*").forEach(node => {
-          node.style.animation = "none";
-          node.style.transition = "none";
-          node.style.backdropFilter = "none";
-          (node.style as CSSStyleDeclaration & { webkitBackdropFilter: string }).webkitBackdropFilter = "none";
-        });
-      },
-    });
-  }
-
   async function handleCopy() {
     setCopying(true);
     setCopyError("");
     const filename = `${sale.event_name ?? "sale"}-ticketx.png`;
     try {
-      const canvas = await capture();
-      const dataUrl = canvas.toDataURL("image/png");
-
+      const canvas = drawSaleBannerToCanvas(sale, order);
       if (typeof ClipboardItem !== "undefined" && navigator.clipboard?.write) {
         try {
           const blob = await new Promise<Blob>((res, rej) =>
@@ -663,10 +1103,8 @@ export default function ShareBannerModal({ sale, order, onClose }: Props) {
           setCopyError(`Clipboard blocked — downloading instead (${clipErr instanceof Error ? clipErr.message : String(clipErr)})`);
         }
       }
-
-      // Fallback: download
       const a = document.createElement("a");
-      a.href = dataUrl;
+      a.href = canvas.toDataURL("image/png");
       a.download = filename;
       a.click();
       setCopied(true);
@@ -681,7 +1119,7 @@ export default function ShareBannerModal({ sale, order, onClose }: Props) {
     setDownloading(true);
     setCopyError("");
     try {
-      const canvas = await capture();
+      const canvas = drawSaleBannerToCanvas(sale, order);
       const a = document.createElement("a");
       a.href = canvas.toDataURL("image/png");
       a.download = `${sale.event_name ?? "sale"}-ticketx.png`;
@@ -754,7 +1192,7 @@ export default function ShareBannerModal({ sale, order, onClose }: Props) {
           boxShadow: "0 0 0 1px rgba(255,255,255,0.08), 0 32px 80px rgba(0,0,0,0.7), 0 0 60px rgba(155,92,255,0.12)",
           flexShrink: 0,
         }}>
-          <div ref={bannerRef}>
+          <div>
             <SaleBanner sale={sale} order={order} animated={visible} />
           </div>
         </div>
