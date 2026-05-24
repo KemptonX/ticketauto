@@ -133,6 +133,16 @@ select {
   background-clip: text;
 }
 
+.sidebar-version {
+  font-size: 10px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.25);
+  letter-spacing: 0.04em;
+  margin-left: 2px;
+  align-self: flex-end;
+  padding-bottom: 2px;
+}
+
 /* keep old brand-mark hidden if it still appears anywhere */
 .brand-mark { display: none; }
 .sidebar-brand { display: none; }
