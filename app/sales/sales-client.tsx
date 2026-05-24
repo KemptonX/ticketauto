@@ -450,30 +450,43 @@ export default function SalesClient() {
 
     setMassMatchLoading(true);
     const group = groupedSales.find((g) => g.key === saleGroupKey);
-    const unmatchedSales = group?.sales.filter((s) => s.inventory_order_id == null && s.split_of_sale_id == null) ?? [];
+    const targetOrderIds = new Set(targetOrders.map((o) => o.id));
 
-    // Fetch how many tickets are already linked to each target order so we
-    // don't count already-sold capacity as available.
-    const { data: existingSalesData } = await supabase
+    // ── Reset phase ──────────────────────────────────────────────────────────
+    // Delete any overflow records previously created by mass match for these orders
+    await supabase
       .from("sales")
-      .select("inventory_order_id, qty_sold")
-      .in("inventory_order_id", targetOrders.map((o) => o.id));
+      .delete()
+      .in("inventory_order_id", [...targetOrderIds])
+      .not("split_of_sale_id", "is", null);
 
-    const existingQtyByOrder = new Map<number, number>();
-    for (const s of existingSalesData ?? []) {
-      if (s.inventory_order_id == null) continue;
-      existingQtyByOrder.set(
-        s.inventory_order_id,
-        (existingQtyByOrder.get(s.inventory_order_id) ?? 0) + (s.qty_sold ?? 0),
-      );
+    // Also delete orphaned overflow records (inventory_order_id null) whose
+    // parent sale is in this sale group
+    const groupSaleIds = (group?.sales ?? []).filter((s) => s.split_of_sale_id == null).map((s) => s.id);
+    if (groupSaleIds.length > 0) {
+      await supabase
+        .from("sales")
+        .delete()
+        .in("split_of_sale_id", groupSaleIds);
     }
 
-    // Track remaining capacity per order (qty_bought minus already-linked tickets)
+    // Unlink any sales in this group already matched to the target orders
+    const alreadyLinked = (group?.sales ?? []).filter(
+      (s) => s.inventory_order_id != null && targetOrderIds.has(s.inventory_order_id) && s.split_of_sale_id == null,
+    );
+    if (alreadyLinked.length > 0) {
+      await supabase
+        .from("sales")
+        .update({ inventory_order_id: null, match_confidence: null })
+        .in("id", alreadyLinked.map((s) => s.id));
+    }
+
+    // All non-overflow sales in this group are now candidates
+    const unmatchedSales = (group?.sales ?? []).filter((s) => s.split_of_sale_id == null);
+
+    // Fresh capacity — every order starts at full qty_bought
     const orderCapacity = new Map<number, number>(
-      targetOrders.map((o) => {
-        const used = existingQtyByOrder.get(o.id) ?? 0;
-        return [o.id, Math.max(0, (o.qty_bought ?? 1) - used)];
-      })
+      targetOrders.map((o) => [o.id, o.qty_bought ?? 1])
     );
     const matchedOrderIds = new Set<number>();
     let matched = 0;
@@ -579,7 +592,7 @@ export default function SalesClient() {
     setMassMatchGroupKey(null);
     setMassMatchInput("");
     setMassMatchLoading(false);
-    setMessage(`Mass matched ${matched} of ${unmatchedSales.length} sale${unmatchedSales.length !== 1 ? "s" : ""} to order group #${targetId}`);
+    setMessage(`Mass matched ${matched} of ${unmatchedSales.length} sale${unmatchedSales.length !== 1 ? "s" : ""} to order group #${targetId} — synced ${matchedOrderIds.size} order${matchedOrderIds.size !== 1 ? "s" : ""}`);
   }
 
   function findOrdersByGroupId(id: string): MatchedOrder[] {
