@@ -1,6 +1,6 @@
 ﻿import type { SupabaseClient } from "@supabase/supabase-js";
 
-const GMAIL_QUERY = 'is:unread from:orders.viagogo.com ("Please transfer the tickets for sale" OR "Please send your tickets" OR "You sold your ticket for" OR "Please upload your e-tickets") newer_than:120d';
+const GMAIL_QUERY = 'is:unread from:orders.viagogo.com ("Please transfer the tickets for sale" OR "Please send your tickets" OR "You sold your ticket for" OR "Please upload your e-tickets") newer_than:14d';
 const PROCESSED_LABEL = "My Sales";
 
 type GmailAccount = {
@@ -154,11 +154,21 @@ export async function syncViagogoSalesInbox({
   const candidateOrders = await loadCandidateOrders(supabase, userId);
   const orderUsage = await loadOrderUsage(supabase, userId);
 
+  // Fetch all message bodies in parallel batches of 10
+  const BATCH_SIZE = 10;
+  const fullMessages: Awaited<ReturnType<typeof getMessage>>[] = [];
+  for (let i = 0; i < messages.length; i += BATCH_SIZE) {
+    const chunk = messages.slice(i, i + BATCH_SIZE);
+    const fetched = await Promise.all(chunk.map((m) => getMessage(accessToken, m.id)));
+    fullMessages.push(...fetched);
+  }
+
   let inserted = 0;
   let matched = 0;
 
-  for (const message of messages) {
-    const fullMessage = await getMessage(accessToken, message.id);
+  for (let msgIdx = 0; msgIdx < messages.length; msgIdx++) {
+    const message = messages[msgIdx];
+    const fullMessage = fullMessages[msgIdx];
     const headers = fullMessage.payload.headers || [];
     const subject = getHeader(headers, "Subject");
     const body = getBody(fullMessage.payload);
@@ -1194,7 +1204,7 @@ async function gmailRequest<T>(accessToken: string, input: string, init?: Reques
 async function listMessages(accessToken: string, query: string) {
   const url = new URL("https://gmail.googleapis.com/gmail/v1/users/me/messages");
   url.searchParams.set("q", query);
-  url.searchParams.set("maxResults", "25");
+  url.searchParams.set("maxResults", "50");
 
   const data = await gmailRequest<{ messages?: Array<{ id: string }> }>(accessToken, url.toString());
   return data.messages || [];
