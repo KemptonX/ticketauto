@@ -42,6 +42,7 @@ const GMAIL_QUERY = [
   '(ticketmaster -subject:"Welcome to Ticketmaster" ("Order Update" OR "ticket confirmation" OR "You\'re in!" OR "You Got Tickets" OR "Your Ticketmaster order" OR "Order confirm" OR "Confirmacion de compra" OR "compra para" OR "ORDER NUMBER" OR "Order number"))',
   '(subject:"Thank you for purchasing tickets for" "AXS Mobile ID")',
 ].join(' OR ');
+const GMAIL_QUERY_FILTERED = `is:unread newer_than:14d (${GMAIL_QUERY})`;
 const PROCESSED_LABEL = "My Tickets";
 const FORWARD_TO_ACCOUNT = "kemptoncameron9x@gmail.com";
 
@@ -109,10 +110,10 @@ export async function syncGmailInbox({
 }): Promise<SyncResult> {
   const accessToken = await getValidAccessToken({ supabase, gmailAccount });
   const labelId = await getOrCreateLabel(accessToken, PROCESSED_LABEL);
-  const messages = await listMessages(accessToken, GMAIL_QUERY);
+  const messages = await listMessages(accessToken, GMAIL_QUERY_FILTERED);
 
-  // Fetch full message bodies in parallel batches of 5
-  const BATCH_SIZE = 5;
+  // Fetch full message bodies in parallel batches of 10
+  const BATCH_SIZE = 10;
   const fullMessages: GmailMessage[] = [];
   for (let i = 0; i < messages.length; i += BATCH_SIZE) {
     const chunk = messages.slice(i, i + BATCH_SIZE);
@@ -379,7 +380,7 @@ async function listMessages(accessToken: string, query: string) {
   do {
     const url = new URL("https://gmail.googleapis.com/gmail/v1/users/me/messages");
     url.searchParams.set("q", query);
-    url.searchParams.set("maxResults", "500");
+    url.searchParams.set("maxResults", "50");
     if (pageToken) url.searchParams.set("pageToken", pageToken);
 
     const data = await gmailRequest<{ messages?: Array<{ id: string }>; nextPageToken?: string }>(
