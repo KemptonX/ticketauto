@@ -453,6 +453,7 @@ export default function SalesClient() {
     const unmatchedSales = group?.sales.filter((s) => s.inventory_order_id == null && s.split_of_sale_id == null) ?? [];
 
     const orderUsage = new Map<number, number>();
+    const matchedOrderIds = new Set<number>();
     let matched = 0;
 
     for (const sale of unmatchedSales) {
@@ -480,7 +481,12 @@ export default function SalesClient() {
       if (!error) {
         matched++;
         orderUsage.set(bestOrder.id, (orderUsage.get(bestOrder.id) ?? 0) + (sale.qty_sold ?? 1));
+        matchedOrderIds.add(bestOrder.id);
       }
+    }
+
+    for (const orderId of matchedOrderIds) {
+      await syncOrderFromSales(orderId);
     }
 
     await loadSales(true);
