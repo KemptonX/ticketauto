@@ -1126,10 +1126,10 @@ export default function SalesClient() {
                                   <div className="inline-match-info">
                                     <span className="inline-match-label">Best match</span>
                                     <strong>{topSuggestion.order.booking_ref || topSuggestion.order.event_name || "Ticket"}</strong>
-                                    <span>{topSuggestion.order.section || "—"} · {formatSeatLabel(topSuggestion.order.row, topSuggestion.order.seat_from, topSuggestion.order.seat_to)} · {topSuggestion.score}%</span>
                                     {topSuggestion.order.event_date && (
-                                      <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{formatEventDate(topSuggestion.order.event_date)}</span>
+                                      <span style={{ fontSize: 11, fontWeight: 600, color: "rgba(255,255,255,0.75)", background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 5, padding: "1px 7px", display: "inline-block" }}>{formatEventDate(topSuggestion.order.event_date)}</span>
                                     )}
+                                    <span>{topSuggestion.order.section || "—"} · {formatSeatLabel(topSuggestion.order.row, topSuggestion.order.seat_from, topSuggestion.order.seat_to)} · {topSuggestion.score}%</span>
                                   </div>
                                   <button
                                     type="button"
@@ -1456,12 +1456,12 @@ export default function SalesClient() {
                   <div key={order.id} className="inventory-ticket-row">
                     <div className="inventory-ticket-seat">
                       <strong>{order.booking_ref || order.event_name || "Ticket"}</strong>
+                      {order.event_date && (
+                        <span style={{ fontSize: 11, fontWeight: 600, color: "rgba(255,255,255,0.75)", background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 5, padding: "1px 7px", display: "inline-block" }}>{formatEventDate(order.event_date)}</span>
+                      )}
                       <span>
                         {order.section || "Section —"} • {formatSeatLabel(order.row, order.seat_from, order.seat_to)}
                       </span>
-                      {order.event_date && (
-                        <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{formatEventDate(order.event_date)}</span>
-                      )}
                     </div>
                     <span className="truncate-text" title={order.account_email || ""}>
                       {order.account_email || "No account"}
@@ -1518,10 +1518,10 @@ export default function SalesClient() {
                     <div key={order.id} className="inventory-ticket-row">
                       <div className="inventory-ticket-seat">
                         <strong>{order.booking_ref || order.event_name || "Ticket"}</strong>
-                        <span>{order.event_name || "—"}</span>
                         {order.event_date && (
-                          <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{formatEventDate(order.event_date)}</span>
+                          <span style={{ fontSize: 11, fontWeight: 600, color: "rgba(255,255,255,0.75)", background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 5, padding: "1px 7px", display: "inline-block" }}>{formatEventDate(order.event_date)}</span>
                         )}
+                        <span>{order.event_name || "—"}</span>
                       </div>
                       <span className="truncate-text" title={order.account_email || ""}>
                         {order.account_email || "—"}
@@ -1836,25 +1836,53 @@ function getMatchSuggestions(sale: Sale, orders: MatchedOrder[]) {
       order,
       score: getManualMatchScore(sale, order),
     }))
-    .filter((item) => item.score > 0)
+    .filter((item) => item.score >= 20)
     .sort((a, b) => b.score - a.score)
     .slice(0, 8);
 }
 
+function getEventWords(value?: string | null): string[] {
+  if (!value) return [];
+  const stop = new Set(["the", "and", "for", "at"]);
+  return value
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((w) => w.length > 2 && !stop.has(w));
+}
+
+function compareEventNameSuggestion(left?: string | null, right?: string | null): number {
+  if (!left || !right) return 0;
+  const a = normalizeCompareValue(left);
+  const b = normalizeCompareValue(right);
+  if (a === b) return 1;
+  if (a.includes(b) || b.includes(a)) return 0.85;
+  // Word-level overlap as fallback (catches "Taylor Swift World Tour" vs "Taylor Swift")
+  const aWords = getEventWords(left);
+  const bSet = new Set(getEventWords(right));
+  let overlap = 0;
+  for (const w of aWords) { if (bSet.has(w)) overlap++; }
+  if (overlap >= 2) return 0.65;
+  if (overlap >= 1) return 0.40;
+  return 0;
+}
+
 function getManualMatchScore(sale: Sale, order: MatchedOrder) {
-  const eventScore = compareText(order.event_name, sale.event_name);
   const dateScore = compareEventDay(order.event_date, sale.event_date);
+  // Hard gate: both dates present but different → definitely wrong event
+  if (dateScore === 0) return 0;
+
+  const eventScore = compareEventNameSuggestion(order.event_name, sale.event_name);
+  if (eventScore === 0) return 0;
+
   const venueScore = compareText(order.venue, sale.venue);
   const sectionScore = compareSectionForUi(order.section, sale.section);
   const rowScore = compareExact(order.row, sale.row);
   const seatScore = compareSeats(order.seat_from, order.seat_to, sale.seat_from, sale.seat_to);
 
-  if (eventScore === 0) return 0;
-  if (dateScore === 0) return 0; // both dates present but different — definitely wrong event
-
+  // Date is the primary anchor — weight it heavily alongside event name
   const total =
-    eventScore * 0.6 +
-    (dateScore ?? 0) * 0.25 + // null = one/both dates missing; no bonus, no penalty
+    eventScore * 0.45 +
+    (dateScore ?? 0) * 0.40 +
     venueScore * 0.08 +
     sectionScore * 0.04 +
     rowScore * 0.02 +
