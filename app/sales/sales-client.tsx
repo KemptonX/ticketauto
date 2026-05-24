@@ -156,13 +156,7 @@ export default function SalesClient() {
   }, []);
 
   useEffect(() => {
-    async function init() {
-      if (!showArchived) {
-        await autoArchivePastSales();
-      }
-      void loadSales(false, showArchived);
-    }
-    void init();
+    void loadSales(false, showArchived);
   }, [showArchived]);
 
   const selectedSaleRaw = sales.find((s) => s.id === selectedSaleId) || null;
