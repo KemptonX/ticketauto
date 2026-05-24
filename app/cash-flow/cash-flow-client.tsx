@@ -139,7 +139,8 @@ export default function CashFlowClient() {
       supabase
         .from("sales")
         .select("inventory_order_id, qty_sold")
-        .not("inventory_order_id", "is", null),
+        .not("inventory_order_id", "is", null)
+        .not("sale_status", "in", '("Archived","Deleted")'),
     ]);
 
     if (ordersResult.error) {
@@ -237,7 +238,11 @@ export default function CashFlowClient() {
     for (const o of orders) {
       if (!o.event_date) continue;
       const d = parseEventDate(o.event_date);
+      // Only future events count as unsold stock — past events can't be sold
       if (!d || d < tyStart || d > tyEnd) continue;
+      if (d <= today) continue;
+      // Fully sold orders have no unsold stock
+      if (o.listing_status === "Sold") continue;
       const qty = o.qty_bought ?? 1;
       const cost = o.total_cost ?? 0;
       const soldQty = soldQtyByOrderId.get(o.id) ?? 0;
