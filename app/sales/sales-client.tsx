@@ -452,36 +452,103 @@ export default function SalesClient() {
     const group = groupedSales.find((g) => g.key === saleGroupKey);
     const unmatchedSales = group?.sales.filter((s) => s.inventory_order_id == null && s.split_of_sale_id == null) ?? [];
 
-    const orderUsage = new Map<number, number>();
+    // Track remaining capacity per order
+    const orderCapacity = new Map<number, number>(
+      targetOrders.map((o) => [o.id, o.qty_bought ?? 1])
+    );
     const matchedOrderIds = new Set<number>();
     let matched = 0;
 
-    for (const sale of unmatchedSales) {
+    type Pending = { saleId: number; qty: number; payout: number | null; ref: Sale; overflowOf: number | null };
+    const queue: Pending[] = unmatchedSales.map((s) => ({
+      saleId: s.id, qty: s.qty_sold ?? 1, payout: s.payout_total, ref: s, overflowOf: null,
+    }));
+
+    for (const pending of queue) {
       let bestOrder: MatchedOrder | null = null;
       let bestScore = -1;
 
       for (const order of targetOrders) {
-        const used = orderUsage.get(order.id) ?? 0;
-        if (used >= (order.qty_bought ?? 1)) continue;
-        const score = getManualMatchScore(sale, order);
+        if ((orderCapacity.get(order.id) ?? 0) <= 0) continue;
+        const score = getManualMatchScore(pending.ref, order);
         if (score > bestScore) { bestScore = score; bestOrder = order; }
       }
 
       if (!bestOrder) {
-        bestOrder = targetOrders.find((o) => (orderUsage.get(o.id) ?? 0) < (o.qty_bought ?? 1)) ?? targetOrders[0];
+        bestOrder = targetOrders.find((o) => (orderCapacity.get(o.id) ?? 0) > 0) ?? null;
       }
 
       if (!bestOrder) continue;
 
-      const { error } = await supabase
-        .from("sales")
-        .update({ inventory_order_id: bestOrder.id, match_confidence: bestScore > 0 ? bestScore / 100 : null })
-        .eq("id", sale.id);
+      const available = orderCapacity.get(bestOrder.id) ?? 0;
+      const toAssign = Math.min(pending.qty, available);
+      const fraction = toAssign / pending.qty;
+      const assignedPayout = pending.payout != null ? Math.round(pending.payout * fraction * 100) / 100 : null;
+      const remainder = pending.qty - toAssign;
 
-      if (!error) {
-        matched++;
-        orderUsage.set(bestOrder.id, (orderUsage.get(bestOrder.id) ?? 0) + (sale.qty_sold ?? 1));
-        matchedOrderIds.add(bestOrder.id);
+      if (remainder > 0) {
+        // Split: update this sale record with the capped qty, create overflow for the rest
+        const overflowPayout = pending.payout != null ? Math.round(pending.payout * (1 - fraction) * 100) / 100 : null;
+
+        const { error: updateErr } = await supabase
+          .from("sales")
+          .update({
+            inventory_order_id: bestOrder.id,
+            qty_sold: toAssign,
+            payout_total: assignedPayout,
+            match_confidence: bestScore > 0 ? bestScore / 100 : null,
+          })
+          .eq("id", pending.saleId);
+
+        if (!updateErr) {
+          matched++;
+          orderCapacity.set(bestOrder.id, available - toAssign);
+          matchedOrderIds.add(bestOrder.id);
+
+          // Insert overflow record, then queue it for matching
+          const { data: ovRow } = await supabase
+            .from("sales")
+            .insert({
+              source: pending.ref.source,
+              source_message_id: `${pending.ref.source_message_id}-overflow-${bestOrder.id}`,
+              event_name: pending.ref.event_name,
+              venue: pending.ref.venue,
+              event_date: pending.ref.event_date,
+              section: pending.ref.section,
+              row: pending.ref.row,
+              seat_from: pending.ref.seat_from,
+              seat_to: pending.ref.seat_to,
+              account_email: pending.ref.account_email,
+              buyer_email: pending.ref.buyer_email,
+              currency: pending.ref.currency,
+              sale_status: pending.ref.sale_status,
+              price_per_ticket: pending.ref.price_per_ticket,
+              qty_sold: remainder,
+              payout_total: overflowPayout,
+              sale_total: pending.ref.sale_total != null ? Math.round(pending.ref.sale_total * (1 - fraction) * 100) / 100 : null,
+              split_of_sale_id: pending.overflowOf ?? pending.saleId,
+              inventory_order_id: null,
+              match_confidence: null,
+            })
+            .select("id")
+            .single();
+
+          if (ovRow) {
+            queue.push({ saleId: ovRow.id, qty: remainder, payout: overflowPayout, ref: pending.ref, overflowOf: pending.overflowOf ?? pending.saleId });
+          }
+        }
+      } else {
+        // Sale fits entirely within order capacity
+        const { error } = await supabase
+          .from("sales")
+          .update({ inventory_order_id: bestOrder.id, match_confidence: bestScore > 0 ? bestScore / 100 : null })
+          .eq("id", pending.saleId);
+
+        if (!error) {
+          matched++;
+          orderCapacity.set(bestOrder.id, available - toAssign);
+          matchedOrderIds.add(bestOrder.id);
+        }
       }
     }
 
