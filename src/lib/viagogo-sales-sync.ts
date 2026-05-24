@@ -337,6 +337,58 @@ export async function syncViagogoSalesInbox({
           totalQtySold: newQtySold,
         });
       }
+
+      // Repair: if a prior scan split this sale but the overflow insert failed
+      // (e.g. missing column), the existing record will have a lower qty_sold
+      // than the email. Detect this and recreate the missing overflow.
+      if (
+        existingSale &&
+        existingSale.qty_sold != null &&
+        parsed.qtySold != null &&
+        parsed.qtySold > existingSale.qty_sold
+      ) {
+        const missingQty = parsed.qtySold - existingSale.qty_sold;
+        const { data: existingOverflow } = await supabase
+          .from("sales")
+          .select("id")
+          .eq("split_of_sale_id", existingSale.id)
+          .maybeSingle();
+
+        if (!existingOverflow) {
+          const round2 = (n: number) => Math.round(n * 100) / 100;
+          const overflowFraction = missingQty / parsed.qtySold;
+          const overflowMatch = findBestInventoryMatch({
+            orders: candidateOrders,
+            orderUsage,
+            sale: { ...parsed, qtySold: missingQty },
+          });
+
+          const { error: repairError } = await supabase.from("sales").insert({
+            ...baseSaleData,
+            external_sale_id: null,
+            source_message_id: sourceMessageId + "-overflow",
+            qty_sold: missingQty,
+            sale_total: parsed.saleTotal != null ? round2(parsed.saleTotal * overflowFraction) : null,
+            payout_total: parsed.payoutTotal != null ? round2(parsed.payoutTotal * overflowFraction) : null,
+            inventory_order_id: overflowMatch?.order.id ?? null,
+            match_confidence: overflowMatch ? Number(overflowMatch.score.toFixed(2)) : null,
+            split_of_sale_id: existingSale.id,
+          });
+
+          if (!repairError && overflowMatch) {
+            const ovUsed = orderUsage.get(overflowMatch.order.id) ?? 0;
+            const ovNew = ovUsed + missingQty;
+            orderUsage.set(overflowMatch.order.id, ovNew);
+            matched += 1;
+            await updateMatchedOrder(supabase, {
+              userId,
+              order: overflowMatch.order,
+              payoutTotal: parsed.payoutTotal != null ? round2(parsed.payoutTotal * overflowFraction) : null,
+              totalQtySold: ovNew,
+            });
+          }
+        }
+      }
     }
 
     await markMessageProcessed(accessToken, message.id, labelId);
