@@ -452,9 +452,28 @@ export default function SalesClient() {
     const group = groupedSales.find((g) => g.key === saleGroupKey);
     const unmatchedSales = group?.sales.filter((s) => s.inventory_order_id == null && s.split_of_sale_id == null) ?? [];
 
-    // Track remaining capacity per order
+    // Fetch how many tickets are already linked to each target order so we
+    // don't count already-sold capacity as available.
+    const { data: existingSalesData } = await supabase
+      .from("sales")
+      .select("inventory_order_id, qty_sold")
+      .in("inventory_order_id", targetOrders.map((o) => o.id));
+
+    const existingQtyByOrder = new Map<number, number>();
+    for (const s of existingSalesData ?? []) {
+      if (s.inventory_order_id == null) continue;
+      existingQtyByOrder.set(
+        s.inventory_order_id,
+        (existingQtyByOrder.get(s.inventory_order_id) ?? 0) + (s.qty_sold ?? 0),
+      );
+    }
+
+    // Track remaining capacity per order (qty_bought minus already-linked tickets)
     const orderCapacity = new Map<number, number>(
-      targetOrders.map((o) => [o.id, o.qty_bought ?? 1])
+      targetOrders.map((o) => {
+        const used = existingQtyByOrder.get(o.id) ?? 0;
+        return [o.id, Math.max(0, (o.qty_bought ?? 1) - used)];
+      })
     );
     const matchedOrderIds = new Set<number>();
     let matched = 0;
