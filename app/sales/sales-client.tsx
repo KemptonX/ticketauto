@@ -1311,6 +1311,7 @@ export default function SalesClient() {
                                     <strong>{sale.section || "Section —"}</strong>
                                     <span>{formatSeatLabel(sale.row, sale.seat_from, sale.seat_to)}</span>
                                     <span className="sale-qty-badge">{sale.qty_sold ?? 1} ticket{(sale.qty_sold ?? 1) !== 1 ? "s" : ""}</span>
+                                    {sale.external_sale_id && <span className="sale-id-chip">{sale.external_sale_id}</span>}
                                     {isNew && <span className="new-badge new-badge-inline">New</span>}
                                     {sale.split_of_sale_id != null && <span className="new-badge new-badge-inline" style={{ background: "rgba(255,180,0,0.15)", color: "#f5c842", borderColor: "rgba(255,180,0,0.3)" }}>↳ Split</span>}
                                   </div>

@@ -978,6 +978,19 @@ select {
   letter-spacing: 0.02em;
 }
 
+.sale-id-chip {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 500;
+  font-family: monospace;
+  color: rgba(255, 255, 255, 0.4);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 5px;
+  padding: 1px 7px;
+  letter-spacing: 0.02em;
+}
+
 .title-chips {
   display: flex;
   align-items: center;
