@@ -122,6 +122,7 @@ export default function SalesClient() {
   const [savingSale, setSavingSale] = useState(false);
   const [saleEdits, setSaleEdits] = useState<{ qty_sold: string; price_per_ticket: string; sale_total: string; payout_total: string } | null>(null);
   const [showArchived, setShowArchived] = useState(false);
+  const [showDeleted, setShowDeleted] = useState(false);
   const [manualSearch, setManualSearch] = useState("");
   const [showAddSale, setShowAddSale] = useState(false);
   const [addSaleOrderId, setAddSaleOrderId] = useState<number | null>(null);
@@ -156,8 +157,8 @@ export default function SalesClient() {
   }, []);
 
   useEffect(() => {
-    void loadSales(false, showArchived);
-  }, [showArchived]);
+    void loadSales(false, showArchived, showDeleted);
+  }, [showArchived, showDeleted]);
 
   const selectedSaleRaw = sales.find((s) => s.id === selectedSaleId) || null;
 
@@ -218,7 +219,7 @@ export default function SalesClient() {
     window.location.href = "/login";
   }
 
-  async function loadSales(showRefreshing = false, archived = showArchived) {
+  async function loadSales(showRefreshing = false, archived = showArchived, deleted = showDeleted) {
     if (showRefreshing) {
       setRefreshing(true);
     } else {
@@ -226,9 +227,11 @@ export default function SalesClient() {
     }
 
     const query = supabase.from("sales").select("*").order("sold_at", { ascending: false }).order("created_at", { ascending: false });
-    const { data, error } = await (archived
-      ? query.eq("sale_status", "Archived")
-      : query.neq("sale_status", "Archived"));
+    const { data, error } = await (
+      deleted ? query.eq("sale_status", "Deleted")
+      : archived ? query.eq("sale_status", "Archived")
+      : query.not("sale_status", "in", '("Archived","Deleted")')
+    );
 
     if (error) {
       setMessage(error.message);
@@ -319,25 +322,23 @@ export default function SalesClient() {
   }
 
   async function deleteSale(id: number) {
-    const confirmed = window.confirm("Delete this sale row?");
-    if (!confirmed) {
-      return;
-    }
-
+    const confirmed = window.confirm("Move this sale to Deleted? You can restore it later.");
+    if (!confirmed) return;
     setMessage("");
-
-    const { error } = await supabase.from("sales").delete().eq("id", id);
-
-    if (error) {
-      setMessage(error.message);
-      return;
-    }
-
+    const { error } = await supabase.from("sales").update({ sale_status: "Deleted" }).eq("id", id);
+    if (error) { setMessage(error.message); return; }
     setSales((current) => current.filter((sale) => sale.id !== id));
-    if (selectedSaleId === id) {
-      setSelectedSaleId(null);
-    }
-    setMessage("Sale row deleted");
+    if (selectedSaleId === id) setSelectedSaleId(null);
+    setMessage("Sale moved to Deleted — switch to Deleted tab to restore.");
+  }
+
+  async function restoreSale(sale: Sale) {
+    setMessage("");
+    const { error } = await supabase.from("sales").update({ sale_status: "Sold" }).eq("id", sale.id);
+    if (error) { setMessage(error.message); return; }
+    setSales((current) => current.filter((s) => s.id !== sale.id));
+    if (selectedSaleId === sale.id) setSelectedSaleId(null);
+    setMessage("Sale restored to Active.");
   }
 
   async function archiveSale(sale: Sale) {
@@ -1040,7 +1041,7 @@ export default function SalesClient() {
             <button className="secondary-button" onClick={exportSalesCSV} type="button">
               Export CSV
             </button>
-            {!showArchived && (
+            {!showArchived && !showDeleted && (
               <>
                 <button className="secondary-button" onClick={() => void scanSalesNow()} disabled={scanning} type="button">
                   {scanning ? "Scanning..." : "Scan Sales"}
@@ -1065,17 +1066,24 @@ export default function SalesClient() {
             <div className="view-toggle">
               <button
                 type="button"
-                className={showArchived ? "toggle-btn" : "toggle-btn toggle-btn-active"}
-                onClick={() => { setShowArchived(false); setSelectedSaleId(null); }}
+                className={!showArchived && !showDeleted ? "toggle-btn toggle-btn-active" : "toggle-btn"}
+                onClick={() => { setShowArchived(false); setShowDeleted(false); setSelectedSaleId(null); }}
               >
                 Active
               </button>
               <button
                 type="button"
                 className={showArchived ? "toggle-btn toggle-btn-active" : "toggle-btn"}
-                onClick={() => { setShowArchived(true); setSelectedSaleId(null); }}
+                onClick={() => { setShowArchived(true); setShowDeleted(false); setSelectedSaleId(null); }}
               >
                 Archived
+              </button>
+              <button
+                type="button"
+                className={showDeleted ? "toggle-btn toggle-btn-active" : "toggle-btn"}
+                onClick={() => { setShowDeleted(true); setShowArchived(false); setSelectedSaleId(null); }}
+              >
+                Deleted
               </button>
             </div>
             <button className="ghost-button" type="button" onClick={resetFilters}>
@@ -1650,13 +1658,23 @@ export default function SalesClient() {
                   {unmatching ? "Unmatching..." : "Unmatch Sale"}
                 </button>
               ) : null}
-              <button
-                className="danger-button"
-                type="button"
-                onClick={() => void deleteSale(selectedSale.id)}
-              >
-                Delete Sale
-              </button>
+              {showDeleted ? (
+                <button
+                  className="primary-button"
+                  type="button"
+                  onClick={() => void restoreSale(selectedSale)}
+                >
+                  Restore Sale
+                </button>
+              ) : (
+                <button
+                  className="danger-button"
+                  type="button"
+                  onClick={() => void deleteSale(selectedSale.id)}
+                >
+                  Delete Sale
+                </button>
+              )}
               <button
                 className="primary-button"
                 type="button"
