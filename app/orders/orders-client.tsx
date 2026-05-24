@@ -157,6 +157,15 @@ const navItems = [
   { label: "Clients", href: "/clients", active: false },
 ];
 
+function computeGroupId(key: string): string {
+  let h = 5381;
+  for (let i = 0; i < key.length; i++) {
+    h = ((h << 5) + h) ^ key.charCodeAt(i);
+    h = h >>> 0;
+  }
+  return String(h % 100000).padStart(5, "0");
+}
+
 export default function OrdersClient() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [soldQtyByOrderId, setSoldQtyByOrderId] = useState<Map<number, number>>(new Map());
@@ -673,6 +682,7 @@ export default function OrdersClient() {
   const [bulkStatus, setBulkStatus] = useState("Listed");
   const [mergingGroupKey, setMergingGroupKey] = useState<string | null>(null);
   const [merging, setMerging] = useState(false);
+  const [copiedGroupId, setCopiedGroupId] = useState<string | null>(null);
 
   function toggleSelect(id: number) {
     setSelectedIds((prev) => {
@@ -1265,6 +1275,18 @@ export default function OrdersClient() {
                           <div className="title-chips">
                             {group.hasNew && <span className="new-badge">New</span>}
                             {(() => { const d = formatDaysAway(group.dateValue); return d ? <span className={`days-chip ${d.tone}`}>{d.label}</span> : null; })()}
+                            <span
+                              className="group-id-chip"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                void navigator.clipboard.writeText(computeGroupId(group.key));
+                                setCopiedGroupId(group.key);
+                                setTimeout(() => setCopiedGroupId(null), 1500);
+                              }}
+                              title="Click to copy group ID for mass matching"
+                            >
+                              {copiedGroupId === group.key ? "Copied!" : `#${computeGroupId(group.key)}`}
+                            </span>
                           </div>
                         </div>
                         <div className="inventory-group-metrics">

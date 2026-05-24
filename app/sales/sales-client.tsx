@@ -94,6 +94,15 @@ const navItems = [
 const matchFilterOptions = ["All", "Matched", "Unmatched"];
 
 
+function computeGroupId(key: string): string {
+  let h = 5381;
+  for (let i = 0; i < key.length; i++) {
+    h = ((h << 5) + h) ^ key.charCodeAt(i);
+    h = h >>> 0;
+  }
+  return String(h % 100000).padStart(5, "0");
+}
+
 export default function SalesClient() {
   const [sales, setSales] = useState<Sale[]>([]);
   const [matchedOrders, setMatchedOrders] = useState<Record<number, MatchedOrder>>({});
@@ -130,6 +139,12 @@ export default function SalesClient() {
   const [shareSaleId, setShareSaleId] = useState<number | null>(null);
   const [selectedSaleIds, setSelectedSaleIds] = useState<Set<number>>(new Set());
   const [shareMultiOpen, setShareMultiOpen] = useState(false);
+  const [massMatchGroupKey, setMassMatchGroupKey] = useState<string | null>(null);
+  const [massMatchInput, setMassMatchInput] = useState("");
+  const [massMatchLoading, setMassMatchLoading] = useState(false);
+  const [copiedSaleGroupId, setCopiedSaleGroupId] = useState<string | null>(null);
+  const [groupIdInput, setGroupIdInput] = useState("");
+  const [groupIdSuggestions, setGroupIdSuggestions] = useState<MatchedOrder[] | null>(null);
 
   useEffect(() => {
     try {
@@ -164,6 +179,8 @@ export default function SalesClient() {
       setSaleEdits(null);
     }
     setManualSearch("");
+    setGroupIdInput("");
+    setGroupIdSuggestions(null);
   }, [selectedSaleId]);
 
   async function saveSaleEdits() {
@@ -423,6 +440,68 @@ export default function SalesClient() {
     if (updateError) {
       throw new Error(updateError.message);
     }
+  }
+
+  async function handleMassMatch(saleGroupKey: string) {
+    const targetId = massMatchInput.trim().padStart(5, "0");
+    const targetOrders = allOrders.filter((o) => {
+      const key = `${o.event_name || "Untitled ticket"}__${o.venue || "Venue missing"}__${o.event_date || "Date missing"}`;
+      return computeGroupId(key) === targetId;
+    });
+
+    if (targetOrders.length === 0) {
+      setMessage(`No order group found with ID ${targetId}`);
+      return;
+    }
+
+    setMassMatchLoading(true);
+    const group = groupedSales.find((g) => g.key === saleGroupKey);
+    const unmatchedSales = group?.sales.filter((s) => s.inventory_order_id == null && s.split_of_sale_id == null) ?? [];
+
+    const orderUsage = new Map<number, number>();
+    let matched = 0;
+
+    for (const sale of unmatchedSales) {
+      let bestOrder: MatchedOrder | null = null;
+      let bestScore = -1;
+
+      for (const order of targetOrders) {
+        const used = orderUsage.get(order.id) ?? 0;
+        if (used >= (order.qty_bought ?? 1)) continue;
+        const score = getManualMatchScore(sale, order);
+        if (score > bestScore) { bestScore = score; bestOrder = order; }
+      }
+
+      if (!bestOrder) {
+        bestOrder = targetOrders.find((o) => (orderUsage.get(o.id) ?? 0) < (o.qty_bought ?? 1)) ?? targetOrders[0];
+      }
+
+      if (!bestOrder) continue;
+
+      const { error } = await supabase
+        .from("sales")
+        .update({ inventory_order_id: bestOrder.id, match_confidence: bestScore > 0 ? bestScore / 100 : null })
+        .eq("id", sale.id);
+
+      if (!error) {
+        matched++;
+        orderUsage.set(bestOrder.id, (orderUsage.get(bestOrder.id) ?? 0) + (sale.qty_sold ?? 1));
+      }
+    }
+
+    await loadSales(true);
+    setMassMatchGroupKey(null);
+    setMassMatchInput("");
+    setMassMatchLoading(false);
+    setMessage(`Mass matched ${matched} of ${unmatchedSales.length} sale${unmatchedSales.length !== 1 ? "s" : ""} to order group #${targetId}`);
+  }
+
+  function findOrdersByGroupId(id: string): MatchedOrder[] {
+    const targetId = id.trim().padStart(5, "0");
+    return allOrders.filter((o) => {
+      const key = `${o.event_name || "Untitled ticket"}__${o.venue || "Venue missing"}__${o.event_date || "Date missing"}`;
+      return computeGroupId(key) === targetId;
+    });
   }
 
   async function matchSaleToOrder(sale: Sale, order: MatchedOrder, score: number) {
@@ -976,6 +1055,9 @@ export default function SalesClient() {
                 const expanded = expandedGroups.includes(group.key);
                 const matchedRatio = group.salesCount > 0 ? (group.matchedCount / group.salesCount) * 100 : 0;
 
+                const groupId = computeGroupId(group.key);
+                const isMassMatchActive = massMatchGroupKey === group.key;
+
                 return (
                   <article
                     key={group.key}
@@ -1025,7 +1107,58 @@ export default function SalesClient() {
                         <span className="inventory-chevron">{expanded ? "−" : "+"}</span>
                       </div>
                     </button>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "0 12px", flexShrink: 0 }}>
+                      <span
+                        className="group-id-chip"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void navigator.clipboard.writeText(groupId);
+                          setCopiedSaleGroupId(group.key);
+                          setTimeout(() => setCopiedSaleGroupId(null), 1500);
+                        }}
+                        title="Click to copy group ID"
+                      >
+                        {copiedSaleGroupId === group.key ? "Copied!" : `#${groupId}`}
+                      </span>
+                      {group.unmatchedCount > 0 && (
+                        <button
+                          className={`merge-btn${isMassMatchActive ? " merge-btn-active" : ""}`}
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (isMassMatchActive) { setMassMatchGroupKey(null); setMassMatchInput(""); }
+                            else { setMassMatchGroupKey(group.key); setMassMatchInput(""); }
+                          }}
+                        >
+                          {isMassMatchActive ? "Cancel" : "Mass match"}
+                        </button>
+                      )}
                     </div>
+                    </div>
+
+                    {isMassMatchActive && (
+                      <div style={{ padding: "10px 16px 12px", borderTop: "1px solid rgba(255,255,255,0.06)", display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                        <span style={{ fontSize: 12, color: "var(--text-2)", flexShrink: 0 }}>Order group ID:</span>
+                        <input
+                          className="field field-compact"
+                          placeholder="e.g. 24157"
+                          value={massMatchInput}
+                          onChange={(e) => setMassMatchInput(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === "Enter" && massMatchInput.trim()) void handleMassMatch(group.key); }}
+                          style={{ width: 110 }}
+                          autoFocus
+                        />
+                        <button
+                          className="primary-button"
+                          type="button"
+                          disabled={massMatchLoading || !massMatchInput.trim()}
+                          onClick={() => void handleMassMatch(group.key)}
+                        >
+                          {massMatchLoading ? "Matching…" : `Match ${group.unmatchedCount} sale${group.unmatchedCount !== 1 ? "s" : ""}`}
+                        </button>
+                        <span style={{ fontSize: 11, color: "var(--text-muted)" }}>Copy the group ID from the Tickets page and paste it here</span>
+                      </div>
+                    )}
 
                     {expanded ? (
                       <div className="inventory-ticket-stack sales-ticket-grid">
@@ -1482,9 +1615,77 @@ export default function SalesClient() {
 
             <section className="drawer-summary" style={{ marginTop: "1rem" }}>
               <div style={{ gridColumn: "1 / -1" }}>
-                <span>{matchSuggestions.length === 0 ? "No scored candidates — search all orders below" : "Can't find it? Search all orders"}</span>
+                <span>{matchSuggestions.length === 0 && !groupIdSuggestions ? "No scored candidates — search by group ID or name below" : "Can't find it? Search below"}</span>
               </div>
             </section>
+
+            <div style={{ padding: "0 0 0.5rem", display: "flex", gap: 8 }}>
+              <input
+                className="field"
+                placeholder="Group ID (e.g. 24157)"
+                value={groupIdInput}
+                onChange={(e) => { setGroupIdInput(e.target.value); if (!e.target.value.trim()) setGroupIdSuggestions(null); }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && groupIdInput.trim()) {
+                    const found = findOrdersByGroupId(groupIdInput);
+                    setGroupIdSuggestions(found.length > 0 ? found : []);
+                  }
+                }}
+                style={{ flex: "0 0 140px" }}
+              />
+              <button
+                className="secondary-button"
+                type="button"
+                onClick={() => {
+                  const found = findOrdersByGroupId(groupIdInput);
+                  setGroupIdSuggestions(found.length > 0 ? found : []);
+                }}
+              >
+                Find
+              </button>
+            </div>
+
+            {groupIdSuggestions !== null && selectedSale && (
+              <div className="inventory-ticket-stack" style={{ marginBottom: "0.75rem" }}>
+                <div className="inventory-ticket-header">
+                  <span>Order</span>
+                  <span>Account</span>
+                  <span>Match %</span>
+                  <span>Action</span>
+                </div>
+                {groupIdSuggestions.length === 0 ? (
+                  <div className="inventory-ticket-row">
+                    <div className="inventory-ticket-seat"><strong>No orders found</strong><span>Check the ID and try again.</span></div>
+                    <span>—</span><span>—</span><span>—</span>
+                  </div>
+                ) : (
+                  groupIdSuggestions
+                    .map((order) => ({ order, score: getManualMatchScore(selectedSale, order) }))
+                    .sort((a, b) => b.score - a.score)
+                    .map(({ order, score }) => (
+                      <div key={order.id} className="inventory-ticket-row">
+                        <div className="inventory-ticket-seat">
+                          <strong>{order.booking_ref || order.event_name || "Ticket"}</strong>
+                          {order.event_date && (
+                            <span style={{ fontSize: 11, fontWeight: 600, color: "rgba(255,255,255,0.75)", background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 5, padding: "1px 7px", display: "inline-block" }}>{formatEventDate(order.event_date)}</span>
+                          )}
+                          <span>{order.section || "—"} · {formatSeatLabel(order.row, order.seat_from, order.seat_to)}</span>
+                        </div>
+                        <span className="truncate-text" title={order.account_email || ""}>{order.account_email || "—"}</span>
+                        <strong className="inventory-cost-value">{score > 0 ? `${score}%` : "—"}</strong>
+                        <button
+                          className="secondary-button"
+                          type="button"
+                          onClick={() => void matchSaleToOrder(selectedSale, order, score)}
+                          disabled={matchingOrderId === order.id}
+                        >
+                          {matchingOrderId === order.id ? "Matching..." : "Match"}
+                        </button>
+                      </div>
+                    ))
+                )}
+              </div>
+            )}
 
             <div style={{ padding: "0 0 0.5rem" }}>
               <input

@@ -1730,6 +1730,30 @@ select {
   cursor: pointer;
 }
 
+.group-id-chip {
+  display: inline-flex;
+  align-items: center;
+  font-size: 10px;
+  font-weight: 700;
+  font-family: monospace;
+  color: rgba(255,255,255,0.45);
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 6px;
+  padding: 1px 7px;
+  cursor: pointer;
+  letter-spacing: 0.04em;
+  transition: color 0.15s, background 0.15s, border-color 0.15s;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.group-id-chip:hover {
+  color: rgba(255,255,255,0.8);
+  background: rgba(255,255,255,0.09);
+  border-color: rgba(255,255,255,0.2);
+}
+
 .merge-btn {
   flex-shrink: 0;
   align-self: center;
