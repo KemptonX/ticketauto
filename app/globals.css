@@ -966,6 +966,18 @@ select {
   vertical-align: middle;
 }
 
+.sale-qty-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.7);
+  background: rgba(155, 92, 255, 0.12);
+  border: 1px solid rgba(155, 92, 255, 0.25);
+  border-radius: 5px;
+  padding: 1px 7px;
+  letter-spacing: 0.02em;
+}
+
 .title-chips {
   display: flex;
   align-items: center;
