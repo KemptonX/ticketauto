@@ -171,7 +171,7 @@ export default function DeskClient() {
       supabase
         .from("sales")
         .select("id, event_name, venue, event_date, account_email, qty_sold, sale_total, payout_total, inventory_order_id, sold_at")
-        .neq("sale_status", "Archived"),
+        .not("sale_status", "in", '("Archived","Deleted")'),
     ]);
     if (ordersResult.data) setOrders(ordersResult.data as Order[]);
     if (salesResult.data) setSales(salesResult.data as Sale[]);

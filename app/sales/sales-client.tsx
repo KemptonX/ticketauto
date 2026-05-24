@@ -329,10 +329,14 @@ export default function SalesClient() {
     const confirmed = window.confirm("Move this sale to Deleted? You can restore it later.");
     if (!confirmed) return;
     setMessage("");
+    const saleToDelete = sales.find(s => s.id === id);
     const { error } = await supabase.from("sales").update({ sale_status: "Deleted" }).eq("id", id);
     if (error) { setMessage(error.message); return; }
     setSales((current) => current.filter((sale) => sale.id !== id));
     if (selectedSaleId === id) setSelectedSaleId(null);
+    if (saleToDelete?.inventory_order_id != null) {
+      await syncOrderFromSales(saleToDelete.inventory_order_id);
+    }
     setMessage("Sale moved to Deleted — switch to Deleted tab to restore.");
   }
 
@@ -342,6 +346,9 @@ export default function SalesClient() {
     if (error) { setMessage(error.message); return; }
     setSales((current) => current.filter((s) => s.id !== sale.id));
     if (selectedSaleId === sale.id) setSelectedSaleId(null);
+    if (sale.inventory_order_id != null) {
+      await syncOrderFromSales(sale.inventory_order_id);
+    }
     setMessage("Sale restored to Active.");
   }
 
@@ -402,7 +409,8 @@ export default function SalesClient() {
       supabase
         .from("sales")
         .select("sale_total, payout_total, qty_sold")
-        .eq("inventory_order_id", orderId),
+        .eq("inventory_order_id", orderId)
+        .neq("sale_status", "Deleted"),
       supabase
         .from("orders")
         .select("qty_bought")
