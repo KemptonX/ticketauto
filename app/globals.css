@@ -1303,7 +1303,17 @@ select {
 
 /* ─── Mobile (phone) ≤ 768px ─────────────────────────── */
 @media (max-width: 768px) {
-  /* Sidebar → fixed bottom tab bar */
+
+  /* ── Remove tap flash on mobile ── */
+  * { -webkit-tap-highlight-color: transparent; }
+
+  /* ── Shell ── */
+  .orders-shell,
+  .orders-shell-drawer-open {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* ── Sidebar → fixed bottom tab bar ── */
   .orders-sidebar {
     position: fixed !important;
     top: auto !important;
@@ -1314,23 +1324,22 @@ select {
     height: auto;
     max-height: none;
     border-right: none;
-    border-top: 1px solid var(--border);
-    background: rgba(10, 10, 16, 0.98);
-    backdrop-filter: blur(20px);
+    border-top: 1px solid rgba(35,35,42,0.9);
+    background: rgba(7, 7, 11, 0.97);
+    backdrop-filter: blur(28px);
+    -webkit-backdrop-filter: blur(28px);
     z-index: 50;
-    padding: 0;
+    padding: 0 0 env(safe-area-inset-bottom, 0px);
     display: flex;
     flex-direction: row;
     align-items: stretch;
     overflow: hidden;
   }
 
-  /* Make div wrappers inside sidebar transparent so nav floats up */
-  .orders-sidebar > div {
-    display: contents;
-  }
+  .orders-sidebar > div { display: contents; }
 
-  /* Hide everything except the nav */
+  /* Hide everything that isn't the nav */
+  .sidebar-logo,
   .orders-sidebar .brand-mark,
   .orders-sidebar .sidebar-brand,
   .orders-sidebar .sidebar-kicker,
@@ -1340,134 +1349,521 @@ select {
     display: none !important;
   }
 
-  /* Nav as horizontal scrollable tab bar */
+  /* Nav as scrollable tab bar */
   .sidebar-nav {
     display: flex !important;
     flex-direction: row !important;
     align-items: stretch;
     padding: 0 !important;
     gap: 0 !important;
+    margin-top: 0 !important;
     flex: 1;
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
     scrollbar-width: none;
   }
+  .sidebar-nav::-webkit-scrollbar { display: none; }
 
-  .sidebar-nav::-webkit-scrollbar {
-    display: none;
-  }
-
-  /* Nav item as compact tab */
+  /* Tab item */
   .nav-item {
     flex: 0 0 auto;
-    min-width: 68px;
+    min-width: 62px;
+    max-width: 80px;
     flex-direction: column !important;
     align-items: center !important;
     justify-content: center !important;
-    padding: 8px 6px 10px !important;
-    font-size: 9px !important;
-    font-weight: 600 !important;
-    letter-spacing: 0.04em !important;
-    text-transform: uppercase !important;
+    padding: 5px 6px 7px !important;
     border-radius: 0 !important;
     border: none !important;
-    min-height: 54px !important;
-    text-align: center !important;
+    border-top: 2px solid transparent !important;
+    min-height: 52px !important;
+    gap: 2px !important;
+    transition: background 120ms ease, border-color 120ms ease, color 120ms ease !important;
   }
 
   .nav-item span {
     display: block;
+    font-size: 9px !important;
+    font-weight: 600 !important;
+    letter-spacing: 0.03em !important;
+    text-transform: uppercase !important;
     line-height: 1.2;
     text-align: center;
-    max-width: 64px;
-    white-space: normal;
-    word-break: break-word;
+    max-width: 70px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
-  /* Main: bottom padding so content clears the tab bar */
+  .nav-item-active {
+    background: rgba(155, 92, 255, 0.1) !important;
+    border-top-color: var(--accent-purple) !important;
+    color: #c4b5fd !important;
+    box-shadow: none !important;
+  }
+
+  .nav-item-active .nav-item-icon { color: #c4b5fd; opacity: 1; }
+
+  /* ── Main content ── */
   .orders-main {
-    padding-bottom: calc(66px + env(safe-area-inset-bottom, 0px)) !important;
+    padding: 16px 16px calc(58px + env(safe-area-inset-bottom, 12px)) !important;
+    gap: 14px !important;
   }
 
-  /* Drawer: full-screen overlay above tab bar */
+  /* ── Topbar ── */
+  .topbar {
+    padding: 0 !important;
+    gap: 8px !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    flex-wrap: wrap;
+  }
+
+  .topbar > div:first-child { flex: 1 1 auto; min-width: 0; }
+
+  .topbar h2 {
+    font-size: 20px !important;
+    letter-spacing: -0.04em !important;
+  }
+
+  .topbar .eyebrow {
+    font-size: 9px !important;
+    margin-bottom: 1px !important;
+  }
+
+  .topbar-actions {
+    gap: 8px !important;
+    flex-wrap: nowrap !important;
+    width: auto !important;
+  }
+
+  .topbar-actions > * { flex: 0 0 auto !important; }
+
+  .month-select {
+    height: 34px !important;
+    font-size: 12px !important;
+    padding: 0 8px !important;
+    max-width: 130px;
+  }
+
+  /* ── Buttons — thumb-friendly ── */
+  .primary-button,
+  .secondary-button {
+    min-height: 42px;
+    padding: 10px 14px !important;
+    font-size: 13px !important;
+  }
+
+  /* ── Fields — 16px prevents iOS zoom ── */
+  .field {
+    font-size: 16px !important;
+    padding: 12px 14px !important;
+    border-radius: 10px !important;
+  }
+
+  /* ── Goal cards ── */
+  .goal-card {
+    padding: 16px !important;
+    gap: 12px !important;
+    border-radius: 16px !important;
+  }
+
+  .goal-card-top { gap: 10px !important; align-items: center !important; }
+
+  .goal-card-profit { font-size: 28px !important; }
+  .goal-card-divider { font-size: 18px !important; }
+  .goal-card-target { font-size: 18px !important; }
+
+  .goal-progress-footer {
+    font-size: 10px !important;
+    gap: 2px;
+    flex-wrap: wrap;
+    row-gap: 4px;
+  }
+
+  /* ── KPI grid ── */
+  .kpi-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 10px !important;
+  }
+
+  .kpi-card {
+    padding: 14px 12px !important;
+    border-radius: 16px !important;
+  }
+
+  .kpi-card p { font-size: 10px !important; }
+
+  .kpi-card strong {
+    font-size: 24px !important;
+    margin: 6px 0 4px !important;
+    letter-spacing: -0.04em !important;
+  }
+
+  .kpi-card span { font-size: 10px !important; }
+
+  .kpi-accent {
+    width: 28px !important; height: 28px !important;
+    top: 8px !important; right: 8px !important;
+  }
+
+  /* ── Table cards ── */
+  .table-card {
+    padding: 14px !important;
+    border-radius: 16px !important;
+  }
+
+  .table-card-header {
+    gap: 8px !important;
+    flex-wrap: wrap;
+    padding-bottom: 12px !important;
+  }
+
+  .table-card-header h4,
+  .command-header h4 {
+    font-size: 17px !important;
+    letter-spacing: -0.03em !important;
+  }
+
+  .table-count { font-size: 10px !important; }
+
+  /* ── Table → Card layout (no horizontal scroll) ── */
+  .table-scroll {
+    overflow: visible !important;
+    max-height: none !important;
+    margin-top: 10px !important;
+    -webkit-overflow-scrolling: auto;
+  }
+
+  .premium-table {
+    min-width: 0 !important;
+    display: block;
+  }
+
+  .premium-table thead { display: none !important; }
+
+  .premium-table tbody {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .premium-table tbody tr {
+    display: block !important;
+    border: 1px solid rgba(35,35,42,0.9) !important;
+    border-radius: 13px;
+    overflow: hidden;
+    background: rgba(17,17,22,0.98) !important;
+    box-shadow: 0 1px 0 rgba(255,255,255,0.02) inset !important;
+    cursor: pointer;
+    transition: border-color 150ms ease, background 150ms ease !important;
+  }
+
+  .premium-table tbody tr:hover,
+  .premium-table tbody tr.row-active {
+    border-color: rgba(255,79,163,0.28) !important;
+    background: rgba(255,79,163,0.03) !important;
+    box-shadow: 0 0 0 1px rgba(255,79,163,0.12) inset !important;
+  }
+
+  .premium-table tbody tr.row-active::before { display: none; }
+
+  /* First td: full-width event header */
+  .premium-table tbody td:first-child {
+    display: block !important;
+    width: 100%;
+    padding: 13px 14px !important;
+    border-bottom: 1px solid rgba(35,35,42,0.55) !important;
+    white-space: normal !important;
+    font-size: 14px !important;
+  }
+
+  /* Checkbox column: hide on mobile */
+  .premium-table tbody td.col-check { display: none !important; }
+
+  /* All other cells: inline data strip */
+  .premium-table tbody td:not(:first-child):not(.col-check) {
+    display: inline-flex !important;
+    align-items: center;
+    padding: 7px 10px !important;
+    font-size: 12px !important;
+    white-space: normal !important;
+    border-bottom: none !important;
+    border-right: 1px solid rgba(35,35,42,0.3);
+    color: var(--text-secondary) !important;
+    vertical-align: middle;
+  }
+
+  .premium-table tbody td:not(:first-child):last-child {
+    border-right: none !important;
+  }
+
+  .premium-table .status-badge {
+    font-size: 10px !important;
+    padding: 4px 8px !important;
+    min-width: 0 !important;
+  }
+
+  /* ── State cards ── */
+  .state-card {
+    padding: 32px 16px !important;
+    gap: 12px !important;
+  }
+
+  .state-card h5 { font-size: 17px !important; }
+  .state-orb { width: 36px !important; height: 36px !important; }
+
+  /* ── Drawer: full-screen ── */
   .details-drawer,
   .details-drawer.details-drawer-open {
     position: fixed !important;
     top: 0 !important;
     left: 0 !important;
     right: 0 !important;
-    bottom: 54px !important;
+    bottom: calc(52px + env(safe-area-inset-bottom, 0px)) !important;
     width: 100% !important;
     max-width: 100% !important;
     border-radius: 0 !important;
+    border-left: none !important;
     z-index: 45;
+    padding: 16px !important;
   }
 
-  /* Tables: horizontal scroll */
-  .table-scroll {
+  .drawer-grid,
+  .drawer-summary {
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+  }
+
+  .drawer-summary strong { font-size: 20px !important; }
+
+  .drawer-hero {
+    flex-direction: column !important;
+    gap: 12px !important;
+  }
+
+  .drawer-hero-meta {
+    align-items: flex-start !important;
+    flex-direction: row !important;
+    gap: 20px !important;
+  }
+
+  .drawer-profit { font-size: 20px !important; }
+
+  .drawer-header { padding-bottom: 14px !important; }
+
+  /* ── Hero card ── */
+  .hero-card {
+    padding: 18px 14px !important;
+    gap: 14px !important;
+    border-radius: 16px !important;
+    flex-direction: column !important;
+  }
+
+  .hero-card h3 { font-size: 17px !important; }
+
+  .hero-meta {
+    min-width: 0 !important;
+    width: 100%;
+    flex-direction: row !important;
+    flex-wrap: wrap !important;
+    gap: 12px !important;
+  }
+
+  .hero-meta strong { font-size: 18px !important; }
+
+  /* ── Command / filter card ── */
+  .command-card {
+    padding: 14px !important;
+    border-radius: 16px !important;
+  }
+
+  .command-grid { grid-template-columns: 1fr !important; }
+
+  /* Filter grids: search full-width, rest 2-col */
+  .inventory-filter-grid {
+    grid-template-columns: 1fr 1fr !important;
+    gap: 8px !important;
+    margin-top: 10px !important;
+  }
+
+  .inventory-filter-grid > *:first-child { grid-column: 1 / -1; }
+
+  .sales-filter-grid {
+    grid-template-columns: 1fr 1fr !important;
+    gap: 8px !important;
+    margin-top: 10px !important;
+  }
+
+  .sales-filter-grid > *:first-child { grid-column: 1 / -1; }
+
+  .filter-grid {
+    grid-template-columns: 1fr 1fr !important;
+    gap: 8px !important;
+  }
+
+  .filter-grid > *:first-child { grid-column: 1 / -1; }
+
+  /* ── View toggle ── */
+  .view-toggle {
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
   }
 
-  .premium-table th,
-  .premium-table td {
-    padding: 10px 8px;
-    font-size: 13px;
+  .toggle-btn {
+    padding: 6px 12px !important;
+    font-size: 12px !important;
     white-space: nowrap;
+    min-height: 34px;
   }
 
-  /* Topbar */
-  .topbar {
-    padding: 16px !important;
+  /* ── Inventory group cards ── */
+  .inventory-group-card { border-radius: 16px !important; }
+
+  .inventory-group-toggle {
+    padding: 14px 14px !important;
+    flex-direction: column !important;
     gap: 10px !important;
   }
 
-  .topbar h2 {
-    font-size: 22px !important;
+  .inventory-group-main {
+    flex-direction: column !important;
+    gap: 10px !important;
   }
 
-  /* Hero */
-  .hero-card h3 {
-    font-size: 18px !important;
-  }
+  .inventory-group-title { min-width: 0 !important; }
 
-  /* Inventory group side panel — hide on small screens */
-  .inventory-group-side {
-    display: none;
-  }
+  .inventory-group-title strong { font-size: 15px !important; }
 
   .inventory-group-metrics {
-    flex-wrap: wrap;
-    gap: 6px;
+    flex-wrap: wrap !important;
+    gap: 6px !important;
+    justify-content: flex-start !important;
   }
 
-  /* Filter grids → single column */
-  .inventory-filter-grid,
-  .filter-grid {
+  .inventory-metric-chip {
+    min-width: 76px !important;
+    padding: 8px 10px !important;
+    border-radius: 10px !important;
+  }
+
+  .inventory-metric-chip span { font-size: 9px !important; }
+  .inventory-metric-chip strong { font-size: 14px !important; margin-top: 3px !important; }
+
+  .inventory-group-side { display: none !important; }
+
+  .inventory-chevron {
+    width: 28px !important; height: 28px !important; font-size: 18px !important;
+  }
+
+  .inventory-ticket-stack { padding: 0 10px 12px !important; }
+  .inventory-ticket-header { display: none !important; }
+
+  .inventory-ticket-row {
     grid-template-columns: 1fr !important;
+    gap: 8px !important;
+    padding: 12px 0 !important;
   }
 
-  /* KPI → 2 column on mobile (overrides 720px 1-col rule) */
-  .kpi-grid {
+  .inventory-roi-strip,
+  .inventory-pl-row {
     grid-template-columns: repeat(2, 1fr) !important;
   }
 
-  /* Status badge — don't force min-width on mobile */
+  .inventory-status-row { justify-content: flex-start !important; }
+
+  /* ── Sales stats ── */
+  .sales-group-stats {
+    gap: 14px !important;
+    flex-wrap: wrap !important;
+  }
+
+  .sales-stat strong { font-size: 16px !important; }
+
+  /* ── Add Sale modal → bottom sheet ── */
+  .add-sale-overlay {
+    padding: 0 !important;
+    align-items: flex-end !important;
+  }
+
+  .add-sale-sheet {
+    max-width: 100% !important;
+    max-height: 92vh !important;
+    border-radius: 20px 20px 0 0 !important;
+  }
+
+  .add-sale-body {
+    padding: 14px !important;
+    gap: 18px !important;
+  }
+
+  .add-sale-sheet .drawer-header { padding: 14px 14px 12px !important; }
+
+  .add-sale-sheet .drawer-actions {
+    padding: 12px 14px !important;
+    padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px)) !important;
+  }
+
+  /* ── Analytics ── */
+  .analytics-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .analytics-card-wide { grid-column: span 1 !important; }
+  .analytics-card { min-height: 240px !important; }
+
+  .event-winners-grid { grid-template-columns: 1fr !important; }
+
+  .analytics-donut { width: 160px !important; height: 160px !important; }
+  .analytics-donut-center { top: 56px !important; }
+  .analytics-donut-center strong { font-size: 26px !important; }
+
+  .comparison-row,
+  .ranking-row {
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
+  }
+
+  /* ── Bulk action bar ── */
+  .bulk-action-bar {
+    padding: 8px 12px !important;
+    gap: 6px !important;
+  }
+
+  .bulk-actions { gap: 6px !important; }
+
+  /* ── Status badges ── */
   .status-badge {
     min-width: 0 !important;
-    padding: 6px 10px !important;
+    padding: 5px 9px !important;
     font-size: 11px !important;
   }
 
-  /* Command card padding */
-  .command-card {
-    padding: 16px !important;
+  /* ── Clients filter ── */
+  .clients-filter-row {
+    flex-wrap: wrap !important;
+    gap: 8px !important;
   }
 
-  /* Table card padding */
-  .table-card {
-    padding: 16px !important;
+  /* ── Connections form ── */
+  .connections-form {
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
   }
+
+  /* ── Scrollbars: hide on mobile ── */
+  ::-webkit-scrollbar { width: 0; height: 0; }
+}
+
+/* ── Very small phones (≤ 390px) ── */
+@media (max-width: 390px) {
+  .kpi-card strong { font-size: 20px !important; }
+  .goal-card-profit { font-size: 24px !important; }
+  .goal-card-target, .goal-card-divider { font-size: 16px !important; }
+  .nav-item { min-width: 56px !important; }
+  .nav-item span { font-size: 8px !important; }
+  .orders-main { padding: 12px 12px calc(56px + env(safe-area-inset-bottom, 8px)) !important; gap: 12px !important; }
+  .table-card, .command-card, .goal-card { padding: 12px !important; }
 }
 
 
