@@ -65,6 +65,25 @@ export default function DeskClient() {
   const [yearlyGoal, setYearlyGoal] = useState<number>(50000);
   const [editingYearlyGoal, setEditingYearlyGoal] = useState(false);
   const [yearlyGoalInput, setYearlyGoalInput] = useState("");
+  const [selectedMonth, setSelectedMonth] = useState<{ year: number; month: number }>(() => {
+    const n = new Date();
+    return { year: n.getFullYear(), month: n.getMonth() };
+  });
+
+  const monthOptions = useMemo(() => {
+    const n = new Date();
+    const opts: { year: number; month: number; label: string }[] = [];
+    for (let i = -12; i <= 6; i++) {
+      const d = new Date(n.getFullYear(), n.getMonth() + i, 1);
+      const isCurrent = d.getFullYear() === n.getFullYear() && d.getMonth() === n.getMonth();
+      opts.push({
+        year: d.getFullYear(),
+        month: d.getMonth(),
+        label: d.toLocaleString("en-GB", { month: "long", year: "numeric" }) + (isCurrent ? " (current)" : ""),
+      });
+    }
+    return opts.reverse();
+  }, []);
 
   useEffect(() => {
     const storedGoal = localStorage.getItem("monthly_profit_goal");
@@ -176,9 +195,8 @@ export default function DeskClient() {
   }, [orders]);
 
   const aprilUnsold = useMemo(() => {
-    const now = new Date();
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    const monthStart = new Date(selectedMonth.year, selectedMonth.month, 1);
+    const nextMonth = new Date(selectedMonth.year, selectedMonth.month + 1, 1);
     return orders
       .filter((o) => {
         if (o.listing_status === "Sold" || o.listing_status === "Archived") return false;
@@ -191,7 +209,7 @@ export default function DeskClient() {
         const db = parseDate(b.event_date);
         return da && db ? da.getTime() - db.getTime() : 0;
       });
-  }, [orders]);
+  }, [orders, selectedMonth]);
 
   const unmatchedSales = useMemo(() => {
     return sales
@@ -203,8 +221,8 @@ export default function DeskClient() {
 
   const metrics = useMemo(() => {
     const now = new Date();
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    const monthStart = new Date(selectedMonth.year, selectedMonth.month, 1);
+    const nextMonth = new Date(selectedMonth.year, selectedMonth.month + 1, 1);
 
     // Financial year: April 1 → March 31
     const fyStart = now.getMonth() >= 3
@@ -259,8 +277,10 @@ export default function DeskClient() {
       .reduce((sum, o) => sum + ((o.sold_total ?? 0) - getProportionalCost(o.total_cost, o.qty_bought, soldQtyByOrderId.get(o.id) ?? (o.qty_bought ?? 0), o.listing_status)), 0);
 
     // Projections based on daily run rate
-    const dayOfMonth = now.getDate();
-    const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    const daysInMonth = new Date(selectedMonth.year, selectedMonth.month + 1, 0).getDate();
+    const isCurrentMonth = selectedMonth.year === now.getFullYear() && selectedMonth.month === now.getMonth();
+    const isPastMonth = selectedMonth.year < now.getFullYear() || (selectedMonth.year === now.getFullYear() && selectedMonth.month < now.getMonth());
+    const dayOfMonth = isCurrentMonth ? now.getDate() : isPastMonth ? daysInMonth : 0;
     const monthlyProjected = dayOfMonth > 0 ? (monthlyProfit / dayOfMonth) * daysInMonth : 0;
 
     const fyDaysElapsed = Math.max(1, Math.floor((now.getTime() - fyStart.getTime()) / (1000 * 60 * 60 * 24)));
@@ -331,7 +351,7 @@ export default function DeskClient() {
     const soldCount = orders.filter((o) => o.listing_status === "Sold").length;
 
     return { capitalIn, closedProfit, availableCount, soldCount, monthlyRevenue, monthlyProfit, monthlyROI, openCount, bestEvent, bestProfit, thisMonthCount, thisMonthSold, thisMonthPayout, thisMonthTickets, thisMonthTicketsSold, thisMonthTicketsRemaining, yearlyProfit, fyStart, fyEnd, monthlyProjected, yearlyProjected };
-  }, [orders, sales]);
+  }, [orders, sales, selectedMonth]);
 
   const eventPnL = useMemo(() => {
     // Build payout and qty-sold maps from matched sales
@@ -428,7 +448,25 @@ export default function DeskClient() {
             <h2>Dashboard</h2>
           </div>
           <div className="topbar-actions">
-            <button className="secondary-button" type="button" onClick={() => void loadData()}>
+            <select
+              className="month-select"
+              value={`${selectedMonth.year}-${String(selectedMonth.month).padStart(2, "0")}`}
+              onChange={e => {
+                const [y, m] = e.target.value.split("-").map(Number);
+                setSelectedMonth({ year: y, month: m });
+              }}
+            >
+              {monthOptions.map(opt => (
+                <option key={`${opt.year}-${opt.month}`} value={`${opt.year}-${String(opt.month).padStart(2, "0")}`}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+            <button className="secondary-button" type="button" onClick={() => {
+              const n = new Date();
+              setSelectedMonth({ year: n.getFullYear(), month: n.getMonth() });
+              void loadData();
+            }}>
               Refresh
             </button>
           </div>
@@ -440,7 +478,7 @@ export default function DeskClient() {
           const projected = metrics.monthlyProjected;
           const pct = goal > 0 ? Math.min((profit / goal) * 100, 100) : 0;
           const over = profit > goal;
-          const monthName = new Date().toLocaleString("en-GB", { month: "long" });
+          const monthName = new Date(selectedMonth.year, selectedMonth.month, 1).toLocaleString("en-GB", { month: "long" });
           return (
             <section className="goal-card">
               <div className="goal-card-top">
@@ -551,13 +589,13 @@ export default function DeskClient() {
             <span className="kpi-accent" />
             <p>Revenue this month</p>
             <strong>{formatCurrency(metrics.monthlyRevenue)}</strong>
-            <span>gross income in {new Date().toLocaleString("en-GB", { month: "long" })}</span>
+            <span>gross income in {new Date(selectedMonth.year, selectedMonth.month, 1).toLocaleString("en-GB", { month: "long" })}</span>
           </article>
           <article className={`kpi-card${metrics.monthlyROI != null && metrics.monthlyROI >= 0 ? " analytics-kpi-profit" : ""}`}>
             <span className="kpi-accent" />
             <p>ROI this month</p>
             <strong>{metrics.monthlyROI != null ? `${metrics.monthlyROI.toFixed(1)}%` : "—"}</strong>
-            <span>return on sold {new Date().toLocaleString("en-GB", { month: "long" })} tickets</span>
+            <span>return on sold {new Date(selectedMonth.year, selectedMonth.month, 1).toLocaleString("en-GB", { month: "long" })} tickets</span>
           </article>
           <article className="kpi-card">
             <span className="kpi-accent" />
@@ -708,7 +746,7 @@ export default function DeskClient() {
         <section className="table-card">
           <div className="table-card-header">
             <div>
-              <p className="section-tag">{new Date().toLocaleString("en-GB", { month: "long" })} events</p>
+              <p className="section-tag">{new Date(selectedMonth.year, selectedMonth.month, 1).toLocaleString("en-GB", { month: "long" })} events</p>
               <h4>Unsold this month</h4>
             </div>
             <span className="table-count">{aprilUnsold.length} remaining</span>
@@ -717,7 +755,7 @@ export default function DeskClient() {
           {loading ? null : aprilUnsold.length === 0 ? (
             <div className="state-card">
               <div className="state-orb state-orb-muted" />
-              <h5>All {new Date().toLocaleString("en-GB", { month: "long" })} events sold</h5>
+              <h5>All {new Date(selectedMonth.year, selectedMonth.month, 1).toLocaleString("en-GB", { month: "long" })} events sold</h5>
               <p>Nothing left to shift this month.</p>
             </div>
           ) : (

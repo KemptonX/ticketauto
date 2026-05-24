@@ -338,6 +338,20 @@ select {
   align-items: center;
 }
 
+.month-select {
+  height: 36px;
+  padding: 0 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-primary);
+  font-size: 13px;
+  cursor: pointer;
+  outline: none;
+}
+.month-select:hover { border-color: var(--accent-purple); }
+.month-select:focus { border-color: var(--accent-purple); box-shadow: 0 0 0 2px rgba(155,92,255,0.18); }
+
 .hero-card {
   border-radius: 28px;
   padding: 28px;
