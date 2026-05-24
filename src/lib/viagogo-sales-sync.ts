@@ -78,6 +78,7 @@ type SaleInsert = {
   sale_status: string;
   inventory_order_id: number | null;
   match_confidence: number | null;
+  split_of_sale_id?: number | null;
   user_id: string;
 };
 
@@ -188,7 +189,7 @@ export async function syncViagogoSalesInbox({
       sourceMessageId,
     });
 
-    const match = existingSale?.inventory_order_id
+    const strictMatch = existingSale?.inventory_order_id
       ? null
       : findBestInventoryMatch({
           orders: candidateOrders,
@@ -196,10 +197,10 @@ export async function syncViagogoSalesInbox({
           sale: parsed,
         });
 
-    const saleData: SaleInsert = {
+    const baseSaleData = {
       external_sale_id: parsed.externalSaleId,
       gmail_account_id: gmailAccount.id,
-      source: "viagogo",
+      source: "viagogo" as const,
       source_message_id: sourceMessageId,
       subject: parsed.subject,
       event_name: parsed.eventName,
@@ -208,52 +209,134 @@ export async function syncViagogoSalesInbox({
       sold_at: parsed.soldAt,
       account_email: gmailAccount.email,
       buyer_email: parsed.buyerEmail,
-      qty_sold: parsed.qtySold,
       price_per_ticket: parsed.pricePerTicket,
-      sale_total: parsed.saleTotal,
-      payout_total: parsed.payoutTotal,
       currency: "GBP",
       section: parsed.section,
       row: parsed.row,
       seat_from: parsed.seatFrom,
       seat_to: parsed.seatTo,
       sale_status: "Sold",
-      inventory_order_id: existingSale?.inventory_order_id ?? match?.order.id ?? null,
-      match_confidence:
-        existingSale?.match_confidence ?? (match ? Number(match.score.toFixed(2)) : null),
       user_id: userId,
     };
 
-    const mutation = existingSale
-      ? supabase
-          .from("sales")
-          .update({
-            ...saleData,
-            source_message_id: existingSale.source_message_id || sourceMessageId,
-          })
-          .eq("id", existingSale.id)
-      : supabase.from("sales").insert(saleData);
+    // Try to split the sale across orders if no single order can hold the full qty
+    const tryingSplit = !existingSale && !strictMatch && (parsed.qtySold ?? 1) > 1;
+    const partialMatch = tryingSplit
+      ? findBestInventoryMatch({ orders: candidateOrders, orderUsage, sale: parsed, allowPartial: true })
+      : null;
 
-    const { error } = await mutation;
-    if (error) {
-      throw new Error(error.message);
-    }
+    if (tryingSplit && partialMatch && partialMatch.availableQty > 0) {
+      // SPLIT: portion the sale across the best partial order and then find the remainder's match
+      const totalQty = parsed.qtySold ?? 1;
+      const mainQty = partialMatch.availableQty;
+      const overflowQty = totalQty - mainQty;
+      const mainFraction = mainQty / totalQty;
+      const overflowFraction = overflowQty / totalQty;
+      const round2 = (n: number) => Math.round(n * 100) / 100;
 
-    if (!existingSale) {
+      const { data: mainData, error: mainError } = await supabase
+        .from("sales")
+        .insert({
+          ...baseSaleData,
+          qty_sold: mainQty,
+          sale_total: parsed.saleTotal != null ? round2(parsed.saleTotal * mainFraction) : null,
+          payout_total: parsed.payoutTotal != null ? round2(parsed.payoutTotal * mainFraction) : null,
+          inventory_order_id: partialMatch.order.id,
+          match_confidence: Number(partialMatch.score.toFixed(2)),
+        })
+        .select("id")
+        .single();
+
+      if (mainError) throw new Error(mainError.message);
       inserted += 1;
-    }
 
-    if (match) {
-      const currentUsed = orderUsage.get(match.order.id) ?? 0;
-      const newQtySold = currentUsed + (parsed.qtySold ?? 1);
-      orderUsage.set(match.order.id, newQtySold);
+      const mainCurrentUsed = orderUsage.get(partialMatch.order.id) ?? 0;
+      const mainNewQtySold = mainCurrentUsed + mainQty;
+      orderUsage.set(partialMatch.order.id, mainNewQtySold);
       matched += 1;
       await updateMatchedOrder(supabase, {
         userId,
-        order: match.order,
-        payoutTotal: parsed.payoutTotal,
-        totalQtySold: newQtySold,
+        order: partialMatch.order,
+        payoutTotal: parsed.payoutTotal != null ? round2(parsed.payoutTotal * mainFraction) : null,
+        totalQtySold: mainNewQtySold,
       });
+
+      if (mainData) {
+        const overflowMatch = findBestInventoryMatch({
+          orders: candidateOrders,
+          orderUsage,
+          sale: { ...parsed, qtySold: overflowQty },
+        });
+
+        const { error: overflowError } = await supabase
+          .from("sales")
+          .insert({
+            ...baseSaleData,
+            external_sale_id: null,
+            source_message_id: sourceMessageId + "-overflow",
+            qty_sold: overflowQty,
+            sale_total: parsed.saleTotal != null ? round2(parsed.saleTotal * overflowFraction) : null,
+            payout_total: parsed.payoutTotal != null ? round2(parsed.payoutTotal * overflowFraction) : null,
+            inventory_order_id: overflowMatch?.order.id ?? null,
+            match_confidence: overflowMatch ? Number(overflowMatch.score.toFixed(2)) : null,
+            split_of_sale_id: mainData.id,
+          });
+
+        if (overflowError) throw new Error(overflowError.message);
+
+        if (overflowMatch) {
+          const overflowCurrentUsed = orderUsage.get(overflowMatch.order.id) ?? 0;
+          const overflowNewQtySold = overflowCurrentUsed + overflowQty;
+          orderUsage.set(overflowMatch.order.id, overflowNewQtySold);
+          matched += 1;
+          await updateMatchedOrder(supabase, {
+            userId,
+            order: overflowMatch.order,
+            payoutTotal: parsed.payoutTotal != null ? round2(parsed.payoutTotal * overflowFraction) : null,
+            totalQtySold: overflowNewQtySold,
+          });
+        }
+      }
+    } else {
+      // NORMAL PATH: single-order match or unmatched
+      const match = strictMatch;
+      const saleData: SaleInsert = {
+        ...baseSaleData,
+        qty_sold: parsed.qtySold,
+        sale_total: parsed.saleTotal,
+        payout_total: parsed.payoutTotal,
+        inventory_order_id: existingSale?.inventory_order_id ?? match?.order.id ?? null,
+        match_confidence:
+          existingSale?.match_confidence ?? (match ? Number(match.score.toFixed(2)) : null),
+      };
+
+      const mutation = existingSale
+        ? supabase
+            .from("sales")
+            .update({
+              ...saleData,
+              source_message_id: existingSale.source_message_id || sourceMessageId,
+            })
+            .eq("id", existingSale.id)
+        : supabase.from("sales").insert(saleData);
+
+      const { error } = await mutation;
+      if (error) throw new Error(error.message);
+
+      if (!existingSale) inserted += 1;
+
+      if (match) {
+        const currentUsed = orderUsage.get(match.order.id) ?? 0;
+        const newQtySold = currentUsed + (parsed.qtySold ?? 1);
+        orderUsage.set(match.order.id, newQtySold);
+        matched += 1;
+        await updateMatchedOrder(supabase, {
+          userId,
+          order: match.order,
+          payoutTotal: parsed.payoutTotal,
+          totalQtySold: newQtySold,
+        });
+      }
     }
 
     await markMessageProcessed(accessToken, message.id, labelId);
@@ -579,6 +662,7 @@ async function loadUnmatchedSales(supabase: SupabaseClient, userId: string) {
     .select("id, event_name, venue, event_date, qty_sold, payout_total, sale_total, section, row, seat_from, seat_to")
     .eq("user_id", userId)
     .is("inventory_order_id", null)
+    .is("split_of_sale_id", null)
     .order("sold_at", { ascending: true })
     .order("created_at", { ascending: true });
 
@@ -606,12 +690,14 @@ function findBestInventoryMatch({
   orders,
   orderUsage,
   sale,
+  allowPartial = false,
 }: {
   orders: CandidateOrder[];
   orderUsage: Map<number, number>;
   sale: ParsedSale;
-}) {
-  let best: { order: CandidateOrder; score: number } | null = null;
+  allowPartial?: boolean;
+}): { order: CandidateOrder; score: number; availableQty: number } | null {
+  let best: { order: CandidateOrder; score: number; availableQty: number } | null = null;
   const sameShowCandidates = orders.filter((order) => {
     return (
       compareText(order.event_name, sale.eventName) >= 0.75 &&
@@ -644,9 +730,12 @@ function findBestInventoryMatch({
     const soldQty = orderUsage.get(order.id) ?? 0;
     const orderQty = order.qty_bought ?? 1;
     const requestedQty = sale.qtySold ?? 1;
+    const availableQty = orderQty - soldQty;
 
-    if (soldQty + requestedQty > orderQty && !strongExactSeatMatch) {
-      continue;
+    if (allowPartial) {
+      if (availableQty <= 0) continue;
+    } else {
+      if (soldQty + requestedQty > orderQty) continue;
     }
 
     let score = eventScore * 0.4;
@@ -668,7 +757,7 @@ function findBestInventoryMatch({
     }
 
     if (!best || score > best.score) {
-      best = { order, score };
+      best = { order, score, availableQty };
     }
   }
 

@@ -33,6 +33,7 @@ type Sale = {
   sale_status: string | null;
   inventory_order_id: number | null;
   match_confidence: number | null;
+  split_of_sale_id: number | null;
   created_at: string | null;
 };
 
@@ -712,17 +713,19 @@ export default function SalesClient() {
         const soldDate = new Date(sale.sold_at);
         if (!group.latestSoldAt || soldDate > group.latestSoldAt) group.latestSoldAt = soldDate;
       }
-      group.salesCount += 1;
-      if (sale.created_at && new Date(sale.created_at).getTime() > Date.now() - 86400000) group.hasNew = true;
+      // Don't count overflow/split records as separate sales in the header counts
+      if (sale.split_of_sale_id == null) {
+        group.salesCount += 1;
+        if (sale.created_at && new Date(sale.created_at).getTime() > Date.now() - 86400000) group.hasNew = true;
+        if (sale.inventory_order_id != null) group.matchedCount += 1;
+        else group.unmatchedCount += 1;
+      }
+      // But always count tickets, revenue, and cost (overflows contribute real qty and revenue)
       group.ticketsSold += ticketsSold;
       group.soldFor += soldFor;
+      group.cost += cost ?? 0;
       if (sale.inventory_order_id != null) {
-        group.matchedCount += 1;
         group.profit += profit ?? 0;
-        group.cost += cost ?? 0;
-      } else {
-        group.unmatchedCount += 1;
-        group.cost += cost ?? 0;
       }
     }
 
@@ -1076,6 +1079,7 @@ export default function SalesClient() {
                                     <strong>{sale.section || "Section —"}</strong>
                                     <span>{formatSeatLabel(sale.row, sale.seat_from, sale.seat_to)}</span>
                                     {isNew && <span className="new-badge new-badge-inline">New</span>}
+                                    {sale.split_of_sale_id != null && <span className="new-badge new-badge-inline" style={{ background: "rgba(255,180,0,0.15)", color: "#f5c842", borderColor: "rgba(255,180,0,0.3)" }}>↳ Split</span>}
                                   </div>
                                 </div>
                                 <span className="truncate-text" title={sale.account_email || ""}>
