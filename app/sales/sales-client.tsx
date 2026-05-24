@@ -59,6 +59,10 @@ type AddSaleForm = {
   payout_total: string;
   buyer_email: string;
   sold_at: string;
+  event_name: string;
+  venue: string;
+  event_date: string;
+  section: string;
 };
 
 type SaleGroup = {
@@ -127,7 +131,7 @@ export default function SalesClient() {
   const [showAddSale, setShowAddSale] = useState(false);
   const [addSaleOrderId, setAddSaleOrderId] = useState<number | null>(null);
   const [addSaleSearch, setAddSaleSearch] = useState("");
-  const [addSaleForm, setAddSaleForm] = useState<AddSaleForm>({ qty_sold: "1", payout_total: "", buyer_email: "", sold_at: "" });
+  const [addSaleForm, setAddSaleForm] = useState<AddSaleForm>({ qty_sold: "1", payout_total: "", buyer_email: "", sold_at: "", event_name: "", venue: "", event_date: "", section: "" });
   const [savingNewSale, setSavingNewSale] = useState(false);
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [emailSubject, setEmailSubject] = useState("");
@@ -678,7 +682,7 @@ export default function SalesClient() {
   function openAddSale() {
     setAddSaleOrderId(null);
     setAddSaleSearch("");
-    setAddSaleForm({ qty_sold: "1", payout_total: "", buyer_email: "", sold_at: new Date().toISOString().slice(0, 10) });
+    setAddSaleForm({ qty_sold: "1", payout_total: "", buyer_email: "", sold_at: new Date().toISOString().slice(0, 10), event_name: "", venue: "", event_date: "", section: "" });
     setShowAddSale(true);
   }
 
@@ -696,9 +700,9 @@ export default function SalesClient() {
     const newSale = {
       source: "manual" as const,
       source_message_id: `manual-${Date.now()}`,
-      event_name: order?.event_name ?? null,
-      venue: order?.venue ?? null,
-      event_date: order?.event_date ?? null,
+      event_name: addSaleForm.event_name || order?.event_name || null,
+      venue: addSaleForm.venue || order?.venue || null,
+      event_date: addSaleForm.event_date || order?.event_date || null,
       sold_at: addSaleForm.sold_at ? new Date(addSaleForm.sold_at).toISOString() : new Date().toISOString(),
       account_email: order?.account_email ?? null,
       buyer_email: addSaleForm.buyer_email || null,
@@ -707,7 +711,7 @@ export default function SalesClient() {
       sale_total: payout,
       price_per_ticket: qty && payout ? payout / qty : payout,
       currency: "GBP",
-      section: order?.section ?? null,
+      section: addSaleForm.section || order?.section || null,
       row: order?.row ?? null,
       seat_from: order?.seat_from ?? null,
       seat_to: order?.seat_to ?? null,
@@ -941,18 +945,15 @@ export default function SalesClient() {
     [selectedSale, allOrders],
   );
 
-  const unsoldOrdersForAdd = useMemo(() => {
-    return allOrders.filter((o) => o.listing_status !== "Sold" && o.listing_status !== "Archived");
-  }, [allOrders]);
-
   const filteredOrdersForAdd = useMemo(() => {
     const q = addSaleSearch.trim().toLowerCase();
-    if (!q) return unsoldOrdersForAdd;
-    return unsoldOrdersForAdd.filter((o) =>
+    const base = allOrders.filter((o) => o.listing_status !== "Archived");
+    if (!q) return base;
+    return base.filter((o) =>
       [o.booking_ref, o.event_name, o.venue, o.section, o.row, o.account_email]
         .some((f) => f?.toLowerCase().includes(q)),
     );
-  }, [unsoldOrdersForAdd, addSaleSearch]);
+  }, [allOrders, addSaleSearch]);
 
   const selectedOrderForAdd = useMemo(
     () => (addSaleOrderId != null ? allOrders.find((o) => o.id === addSaleOrderId) ?? null : null),
@@ -1998,7 +1999,21 @@ export default function SalesClient() {
                           key={order.id}
                           type="button"
                           className={`add-sale-order-row${selected ? " add-sale-order-selected" : ""}`}
-                          onClick={() => setAddSaleOrderId(selected ? null : order.id)}
+                          onClick={() => {
+                            if (selected) {
+                              setAddSaleOrderId(null);
+                              setAddSaleForm((f) => ({ ...f, event_name: "", venue: "", event_date: "", section: "" }));
+                            } else {
+                              setAddSaleOrderId(order.id);
+                              setAddSaleForm((f) => ({
+                                ...f,
+                                event_name: order.event_name || "",
+                                venue: order.venue || "",
+                                event_date: order.event_date || "",
+                                section: order.section || "",
+                              }));
+                            }
+                          }}
                         >
                           <div className="add-sale-order-info">
                             <strong>{order.event_name || "Untitled"}</strong>
@@ -2024,6 +2039,29 @@ export default function SalesClient() {
                     {selectedOrderForAdd.row ? ` Row ${selectedOrderForAdd.row}` : ""}
                   </div>
                 )}
+              </div>
+
+              {/* Event details */}
+              <div className="add-sale-section">
+                <p className="add-sale-section-title">Event details <span className="add-sale-optional">(auto-filled when ticket selected)</span></p>
+                <div className="drawer-grid">
+                  <label style={{ gridColumn: "1 / -1" }}>
+                    <span>Event name</span>
+                    <input className="field" placeholder="e.g. BBC Radio 1's Big Weekend" value={addSaleForm.event_name} onChange={(e) => setAddSaleForm((f) => ({ ...f, event_name: e.target.value }))} />
+                  </label>
+                  <label>
+                    <span>Venue</span>
+                    <input className="field" placeholder="e.g. Herrington Country Park" value={addSaleForm.venue} onChange={(e) => setAddSaleForm((f) => ({ ...f, venue: e.target.value }))} />
+                  </label>
+                  <label>
+                    <span>Event date</span>
+                    <input className="field" type="date" value={addSaleForm.event_date} onChange={(e) => setAddSaleForm((f) => ({ ...f, event_date: e.target.value }))} />
+                  </label>
+                  <label>
+                    <span>Section <span className="add-sale-optional">(optional)</span></span>
+                    <input className="field" placeholder="e.g. General Admission" value={addSaleForm.section} onChange={(e) => setAddSaleForm((f) => ({ ...f, section: e.target.value }))} />
+                  </label>
+                </div>
               </div>
 
               {/* Sale details */}
