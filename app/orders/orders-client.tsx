@@ -671,6 +671,8 @@ export default function OrdersClient() {
   const [expandedGroups, setExpandedGroups] = useState<string[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [bulkStatus, setBulkStatus] = useState("Listed");
+  const [mergingGroupKey, setMergingGroupKey] = useState<string | null>(null);
+  const [merging, setMerging] = useState(false);
 
   function toggleSelect(id: number) {
     setSelectedIds((prev) => {
@@ -790,6 +792,40 @@ export default function OrdersClient() {
     );
     clearSelection();
     setMessage(`${ids.length} ticket${ids.length !== 1 ? "s" : ""} set to ${status}`);
+  }
+
+  async function mergeGroups(primaryKey: string, secondaryKey: string) {
+    const primary = groupedOrders.find((g) => g.key === primaryKey);
+    const secondary = groupedOrders.find((g) => g.key === secondaryKey);
+    if (!primary || !secondary) return;
+
+    setMerging(true);
+    const ids = secondary.orders.map((o) => o.id);
+    const { error } = await supabase
+      .from("orders")
+      .update({
+        event_name: primary.eventName,
+        venue: primary.venue,
+        event_date: primary.eventDate,
+      })
+      .in("id", ids);
+
+    if (error) {
+      setMessage(error.message);
+      setMerging(false);
+      return;
+    }
+
+    setOrders((current) =>
+      current.map((o) =>
+        ids.includes(o.id)
+          ? { ...o, event_name: primary.eventName, venue: primary.venue, event_date: primary.eventDate }
+          : o,
+      ),
+    );
+    setMergingGroupKey(null);
+    setMerging(false);
+    setMessage(`Merged "${secondary.eventName}" into "${primary.eventName}"`);
   }
 
   function toggleGroup(key: string) {
@@ -1176,10 +1212,13 @@ export default function OrdersClient() {
                 const allGroupSelected = groupIds.length > 0 && groupIds.every((id) => selectedIds.has(id));
                 const someGroupSelected = groupIds.some((id) => selectedIds.has(id));
 
+                const isMergePrimary = mergingGroupKey === group.key;
+                const isMergeTarget = mergingGroupKey !== null && mergingGroupKey !== group.key;
+
                 return (
                   <article
                     key={group.key}
-                    className={`inventory-group-card${expanded ? " inventory-group-open" : ""}`}
+                    className={`inventory-group-card${expanded ? " inventory-group-open" : ""}${isMergePrimary ? " merge-primary" : ""}${isMergeTarget ? " merge-target" : ""}`}
                   >
                     <div className="inventory-group-header-row">
                     <label
@@ -1193,6 +1232,26 @@ export default function OrdersClient() {
                         onChange={() => toggleSelectGroup(groupIds)}
                       />
                     </label>
+                    {viewMode === "active" && (
+                      <button
+                        className={`merge-btn${isMergePrimary ? " merge-btn-active" : isMergeTarget ? " merge-btn-target" : ""}`}
+                        type="button"
+                        disabled={merging}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (isMergePrimary) {
+                            setMergingGroupKey(null);
+                          } else if (mergingGroupKey !== null) {
+                            void mergeGroups(mergingGroupKey, group.key);
+                          } else {
+                            setMergingGroupKey(group.key);
+                          }
+                        }}
+                        title={isMergePrimary ? "Cancel merge" : isMergeTarget ? `Merge into "${groupedOrders.find(g => g.key === mergingGroupKey)?.eventName}"` : "Merge this group with another"}
+                      >
+                        {isMergePrimary ? "Cancel" : isMergeTarget ? "Merge here" : "Merge"}
+                      </button>
+                    )}
                     <button
                       className="inventory-group-toggle"
                       type="button"
