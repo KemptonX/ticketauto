@@ -680,7 +680,6 @@ export default function OrdersClient() {
   const [expandedGroups, setExpandedGroups] = useState<string[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [bulkStatus, setBulkStatus] = useState("Listed");
-  const [mergingGroupKey, setMergingGroupKey] = useState<string | null>(null);
   const [merging, setMerging] = useState(false);
   const [copiedGroupId, setCopiedGroupId] = useState<string | null>(null);
 
@@ -804,13 +803,17 @@ export default function OrdersClient() {
     setMessage(`${ids.length} ticket${ids.length !== 1 ? "s" : ""} set to ${status}`);
   }
 
-  async function mergeGroups(primaryKey: string, secondaryKey: string) {
-    const primary = groupedOrders.find((g) => g.key === primaryKey);
-    const secondary = groupedOrders.find((g) => g.key === secondaryKey);
-    if (!primary || !secondary) return;
+  async function bulkMerge() {
+    const groupsWithSelection = groupedOrders.filter((g) =>
+      g.orders.some((o) => selectedIds.has(o.id)),
+    );
+    if (groupsWithSelection.length < 2) return;
+
+    const primary = groupsWithSelection[0];
+    const secondaries = groupsWithSelection.slice(1);
+    const idsToUpdate = secondaries.flatMap((g) => g.orders.map((o) => o.id));
 
     setMerging(true);
-    const ids = secondary.orders.map((o) => o.id);
     const { error } = await supabase
       .from("orders")
       .update({
@@ -818,7 +821,7 @@ export default function OrdersClient() {
         venue: primary.venue,
         event_date: primary.eventDate,
       })
-      .in("id", ids);
+      .in("id", idsToUpdate);
 
     if (error) {
       setMessage(error.message);
@@ -828,14 +831,14 @@ export default function OrdersClient() {
 
     setOrders((current) =>
       current.map((o) =>
-        ids.includes(o.id)
+        idsToUpdate.includes(o.id)
           ? { ...o, event_name: primary.eventName, venue: primary.venue, event_date: primary.eventDate }
           : o,
       ),
     );
-    setMergingGroupKey(null);
+    clearSelection();
     setMerging(false);
-    setMessage(`Merged "${secondary.eventName}" into "${primary.eventName}"`);
+    setMessage(`Merged ${secondaries.length} group${secondaries.length !== 1 ? "s" : ""} into "${primary.eventName}"`);
   }
 
   function toggleGroup(key: string) {
@@ -1175,6 +1178,11 @@ export default function OrdersClient() {
                     Archive selected
                   </button>
                 )}
+                {viewMode === "active" && groupedOrders.filter((g) => g.orders.some((o) => selectedIds.has(o.id))).length >= 2 && (
+                  <button className="secondary-button" type="button" onClick={() => void bulkMerge()} disabled={merging}>
+                    {merging ? "Merging..." : "Merge"}
+                  </button>
+                )}
                 {viewMode === "active" && (
                   <button className="secondary-button" type="button" onClick={() => void bulkMarkPersonal()}>
                     Mark personal
@@ -1222,13 +1230,10 @@ export default function OrdersClient() {
                 const allGroupSelected = groupIds.length > 0 && groupIds.every((id) => selectedIds.has(id));
                 const someGroupSelected = groupIds.some((id) => selectedIds.has(id));
 
-                const isMergePrimary = mergingGroupKey === group.key;
-                const isMergeTarget = mergingGroupKey !== null && mergingGroupKey !== group.key;
-
                 return (
                   <article
                     key={group.key}
-                    className={`inventory-group-card${expanded ? " inventory-group-open" : ""}${isMergePrimary ? " merge-primary" : ""}${isMergeTarget ? " merge-target" : ""}`}
+                    className={`inventory-group-card${expanded ? " inventory-group-open" : ""}`}
                   >
                     <div className="inventory-group-header-row">
                     <label
@@ -1242,26 +1247,6 @@ export default function OrdersClient() {
                         onChange={() => toggleSelectGroup(groupIds)}
                       />
                     </label>
-                    {viewMode === "active" && (
-                      <button
-                        className={`merge-btn${isMergePrimary ? " merge-btn-active" : isMergeTarget ? " merge-btn-target" : ""}`}
-                        type="button"
-                        disabled={merging}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (isMergePrimary) {
-                            setMergingGroupKey(null);
-                          } else if (mergingGroupKey !== null) {
-                            void mergeGroups(mergingGroupKey, group.key);
-                          } else {
-                            setMergingGroupKey(group.key);
-                          }
-                        }}
-                        title={isMergePrimary ? "Cancel merge" : isMergeTarget ? `Merge into "${groupedOrders.find(g => g.key === mergingGroupKey)?.eventName}"` : "Merge this group with another"}
-                      >
-                        {isMergePrimary ? "Cancel" : isMergeTarget ? "Merge here" : "Merge"}
-                      </button>
-                    )}
                     <button
                       className="inventory-group-toggle"
                       type="button"

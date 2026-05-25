@@ -189,20 +189,8 @@ export function NavIcon({ href }: { href: string }) {
 export function SidebarLogo() {
   return (
     <div className="sidebar-logo">
-      <svg className="sidebar-logo-mark" width="28" height="28" viewBox="0 0 24 24" fill="none" aria-hidden>
-        <defs>
-          <linearGradient id="tx-logo-grad" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#9B5CFF" />
-            <stop offset="100%" stopColor="#FF4FA3" />
-          </linearGradient>
-        </defs>
-        <path d="M4.5 4.5L19.5 19.5" stroke="url(#tx-logo-grad)" strokeWidth="3.5" strokeLinecap="round" />
-        <path d="M19.5 4.5L4.5 19.5" stroke="url(#tx-logo-grad)" strokeWidth="3.5" strokeLinecap="round" />
-      </svg>
-      <span className="sidebar-logo-text">
-        Ticket<span className="sidebar-logo-x">X</span>
-      </span>
-      <span className="sidebar-version">v0.26</span>
+      <img src="/logo.png" alt="TicketX" style={{ height: "26px", width: "auto" }} />
+      <span className="sidebar-version">v0.27</span>
     </div>
   );
 }

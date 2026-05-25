@@ -4,6 +4,7 @@ import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { supabase } from "@/src/lib/supabase";
+import { SidebarLogo } from "@/app/components/nav-icons";
 
 type GmailAccount = {
   id: string;
@@ -240,10 +241,7 @@ export default function ConnectionsClient() {
     <div className="orders-shell connections-shell">
       <aside className="orders-sidebar">
         <div>
-          <div className="brand-mark">TX</div>
-          <div className="sidebar-brand">
-            <h1>TicketX</h1>
-          </div>
+          <SidebarLogo />
 
           <nav className="sidebar-nav">
             {navItems.map((item) => (

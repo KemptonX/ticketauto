@@ -81,11 +81,7 @@ export default function LoginForm() {
   return (
     <div className="auth-card">
       <div className="auth-brand">
-        <div className="brand-mark">TX</div>
-        <div>
-          <p className="auth-eyebrow">Member access</p>
-          <h1>TicketX</h1>
-        </div>
+        <img src="/logo.png" alt="TicketX" style={{ height: "40px", width: "auto" }} />
       </div>
 
       <div className="auth-toggle">
