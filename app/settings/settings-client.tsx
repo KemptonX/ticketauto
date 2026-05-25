@@ -52,7 +52,7 @@ const navItems = [
   { label: "Calculator", href: "/viagogo-calculator", active: false },
   { label: "Scans", href: "/scans", active: false },
   { label: "Clients", href: "/clients", active: false },
-  { label: "Guides", href: "/guides", active: false },
+  { label: "FAQ", href: "/faq", active: false, target: "_blank", rel: "noopener noreferrer" },
 ];
 
 // ─── Import field definitions ─────────────────────────────────────────────────

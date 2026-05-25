@@ -14,7 +14,7 @@ const navItems = [
   { label: "Calculator", href: "/viagogo-calculator", active: false },
   { label: "Scans", href: "/scans", active: false },
   { label: "Clients", href: "/clients", active: false },
-  { label: "Guides", href: "/guides", active: true },
+  { label: "FAQ", href: "/faq", active: true, target: "_blank", rel: "noopener noreferrer" },
 ];
 
 async function handleLogout() {
@@ -36,6 +36,8 @@ export default function GuidesClient() {
                 key={item.label}
                 href={item.href}
                 className={`nav-item${item.active ? " nav-item-active" : ""}`}
+                target={item.target}
+                rel={item.rel}
               >
                 <NavIcon href={item.href} />
                 <span>{item.label}</span>

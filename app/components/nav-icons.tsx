@@ -183,6 +183,7 @@ const ICON_MAP: Record<string, (p: IconProps) => React.JSX.Element> = {
   "/scans": IconScans,
   "/clients": IconClients,
   "/guides": IconGuides,
+  "/faq": IconGuides,
   "/inventory": IconInventory,
   "/archived-orders": IconArchive,
   "/archived-sales": IconArchive,

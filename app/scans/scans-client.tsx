@@ -15,7 +15,7 @@ const navItems = [
   { label: "Calculator", href: "/viagogo-calculator", active: false },
   { label: "Scans", href: "/scans", active: true },
   { label: "Clients", href: "/clients", active: false },
-  { label: "Guides", href: "/guides", active: false },
+  { label: "FAQ", href: "/faq", active: false, target: "_blank", rel: "noopener noreferrer" },
 ];
 
 const PROVIDER_LABELS: Record<string, string> = {

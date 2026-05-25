@@ -61,7 +61,7 @@ const navItems = [
   { label: "Calculator", href: "/viagogo-calculator", active: false },
   { label: "Scans", href: "/scans", active: false },
   { label: "Clients", href: "/clients", active: false },
-  { label: "Guides", href: "/guides", active: false },
+  { label: "FAQ", href: "/faq", active: false, target: "_blank", rel: "noopener noreferrer" },
 ];
 
 const accentColors = ["#FF4FA3", "#9B5CFF", "#4FC3FF", "#67F0A5", "#FFB84F", "#FF7D7D"];
@@ -383,6 +383,8 @@ export default function AnalyticsClient() {
                 key={item.label}
                 href={item.href}
                 className={`nav-item${item.active ? " nav-item-active" : ""}`}
+                target={item.target}
+                rel={item.rel}
               >
                 <NavIcon href={item.href} />
                 <span>{item.label}</span>
