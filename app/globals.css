@@ -104,43 +104,32 @@ select {
   justify-content: space-between;
 }
 
-/* ─── Logo ─────────────────────────────────────────────────────────────────── */
+/* ─── Brand area ────────────────────────────────────────────────────────────── */
 
-.sidebar-logo {
+.sidebar-brand-wrap {
+  padding: 4px 2px 22px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  margin-bottom: 4px;
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: 10px;
-  padding: 8px 6px;
 }
 
-.sidebar-logo-mark {
-  flex-shrink: 0;
-  filter: drop-shadow(0 0 10px rgba(155, 92, 255, 0.55));
-}
-
-.sidebar-logo-text {
-  font-size: 21px;
-  font-weight: 700;
-  color: #fff;
-  letter-spacing: -0.035em;
-  line-height: 1;
-}
-
-.sidebar-logo-x {
-  background: linear-gradient(135deg, #9B5CFF, #FF4FA3);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+.sidebar-brand-img {
+  display: block;
+  width: 100%;
+  max-width: 196px;
+  height: auto;
+  mix-blend-mode: screen;
+  filter: brightness(1.12) contrast(1.04);
 }
 
 .sidebar-version {
   font-size: 10px;
   font-weight: 500;
-  color: rgba(255, 255, 255, 0.25);
-  letter-spacing: 0.04em;
-  margin-left: 2px;
-  align-self: flex-end;
-  padding-bottom: 2px;
+  color: rgba(255, 255, 255, 0.2);
+  letter-spacing: 0.06em;
+  padding-left: 2px;
 }
 
 /* keep old brand-mark hidden if it still appears anywhere */
@@ -192,8 +181,8 @@ select {
 .sidebar-nav {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  margin-top: 32px;
+  gap: 3px;
+  margin-top: 18px;
 }
 
 .nav-item {
@@ -215,15 +204,18 @@ select {
 }
 
 .nav-item:hover {
-  background: rgba(255, 255, 255, 0.05);
-  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.045);
+  color: rgba(255, 255, 255, 0.88);
+  border-color: rgba(255, 255, 255, 0.05);
 }
 
 .nav-item-active {
-  background: linear-gradient(135deg, rgba(155, 92, 255, 0.18), rgba(255, 79, 163, 0.12));
-  border-color: rgba(155, 92, 255, 0.2);
+  background: linear-gradient(135deg, rgba(155, 92, 255, 0.14), rgba(255, 79, 163, 0.08));
+  border-color: rgba(155, 92, 255, 0.18);
   color: var(--text-primary);
-  box-shadow: 0 2px 16px rgba(155, 92, 255, 0.1);
+  box-shadow:
+    0 2px 20px rgba(155, 92, 255, 0.1),
+    inset 2px 0 0 rgba(155, 92, 255, 0.6);
 }
 
 .nav-item-active .nav-item-icon {
@@ -1339,7 +1331,7 @@ select {
   .orders-sidebar > div { display: contents; }
 
   /* Hide everything that isn't the nav */
-  .sidebar-logo,
+  .sidebar-brand-wrap,
   .orders-sidebar .brand-mark,
   .orders-sidebar .sidebar-brand,
   .orders-sidebar .sidebar-kicker,
