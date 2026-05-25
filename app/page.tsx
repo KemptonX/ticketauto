@@ -146,20 +146,6 @@ export default async function HomePage() {
         </div>
       </section>
 
-      {/* ── Stats ── */}
-      <section className="lp-stats-section">
-        {[
-          { v: "500K+", l: "Tickets tracked" },
-          { v: "£12M+", l: "Profit tracked" },
-          { v: "50K+", l: "Sales synced" },
-          { v: "9", l: "Platforms supported" },
-        ].map(s => (
-          <div key={s.l} className="lp-stat-card">
-            <strong className="lp-stat-value">{s.v}</strong>
-            <span className="lp-stat-label">{s.l}</span>
-          </div>
-        ))}
-      </section>
 
       {/* ── Features ── */}
       <section className="lp-features" id="features">
