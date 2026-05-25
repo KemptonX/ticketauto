@@ -251,9 +251,15 @@ export default function OrdersClient() {
     setRefreshing(false);
   }
 
-  function exportOrdersCSV() {
+  async function exportOrdersCSV() {
+    const { data, error } = await supabase
+      .from("orders")
+      .select("*")
+      .not("listing_status", "in", '("Ignored","Personal")')
+      .order("created_at", { ascending: false });
+    if (error || !data) { setMessage("Export failed"); return; }
     const headers = ["Booking Ref", "Event", "Venue", "Event Date", "Purchased At", "Account", "Section", "Row", "Seat From", "Seat To", "Qty", "Cost", "Sold Total", "Status", "Source"];
-    const rows = orders.map((o) => [
+    const rows = (data as typeof orders).map((o) => [
       o.booking_ref ?? "",
       o.event_name ?? "",
       o.venue ?? "",
@@ -1010,11 +1016,11 @@ export default function OrdersClient() {
             <button className="secondary-button" onClick={() => loadOrders(true)} disabled={refreshing} type="button">
               {refreshing ? "Refreshing..." : "Refresh"}
             </button>
+            <button className="secondary-button" onClick={() => void exportOrdersCSV()} type="button">
+              Export CSV
+            </button>
             {(viewMode === "active" || viewMode === "personal") && (
               <>
-                <button className="secondary-button" onClick={exportOrdersCSV} type="button">
-                  Export CSV
-                </button>
                 <button className="secondary-button" onClick={scanMailNow} disabled={scanning} type="button">
                   {scanning ? "Scanning..." : "Scan Mail"}
                 </button>
