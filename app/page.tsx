@@ -61,7 +61,7 @@ export default async function HomePage() {
               Explore Features
             </a>
           </div>
-          <p className="lp-cta-footnote">Built for serious ticket resellers</p>
+          <p className="lp-cta-footnote">Built for ticket resellers</p>
         </div>
       </section>
 
@@ -173,9 +173,10 @@ export default async function HomePage() {
       <section className="lp-platforms">
         <p className="lp-platforms-label">Works with every major ticketing platform</p>
         <div className="lp-platforms-row">
-          {["Ticketmaster","AXS","Viagogo","StubHub","Lysted"].map(p => (
+          {["Ticketmaster","AXS","Viagogo","StubHub"].map(p => (
             <span key={p} className="lp-platform-chip">{p}</span>
           ))}
+          <span className="lp-platform-chip lp-platform-soon">Lysted <span className="lp-soon-badge">Soon</span></span>
         </div>
       </section>
 
@@ -239,7 +240,7 @@ export default async function HomePage() {
                 </svg>
               ),
               title: "Lysted Integration",
-              desc: "Lysted sales sync directly into your book. No manual entry, no missed payouts.",
+              desc: "Lysted support coming soon — sales will sync directly into your book automatically.",
             },
             {
               icon: (
@@ -299,7 +300,7 @@ export default async function HomePage() {
       <section className="lp-final-cta">
         <div className="lp-final-glow" />
         <h2 className="lp-final-title">Ready to run your book properly?</h2>
-        <p className="lp-final-sub">Join serious resellers already using TixTracker.</p>
+        <p className="lp-final-sub">Join resellers already using TixTracker.</p>
         <Link href="/login" className="lp-cta-primary">
           Get Early Access
         </Link>

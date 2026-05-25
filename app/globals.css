@@ -4215,6 +4215,19 @@ select {
   cursor: default;
 }
 .lp-platform-chip:hover { color: rgba(255, 255, 255, 0.5); }
+.lp-platform-soon { display: inline-flex; align-items: center; gap: 7px; }
+.lp-soon-badge {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(155, 92, 255, 0.85);
+  background: rgba(155, 92, 255, 0.1);
+  border: 1px solid rgba(155, 92, 255, 0.25);
+  padding: 2px 7px;
+  border-radius: 999px;
+  vertical-align: middle;
+}
 
 /* Stats */
 .lp-stats-section {
