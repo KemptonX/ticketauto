@@ -78,58 +78,91 @@ export default async function HomePage() {
           <div className="lp-preview-body">
             {/* Sidebar */}
             <div className="lp-prev-sidebar">
-              <div className="lp-prev-logo-mark">Tx</div>
-              {["Dashboard","Tickets","Sales","Analytics","Cash Flow","Costs","Clients"].map((n, i) => (
+              <div className="lp-prev-brand">
+                <div className="lp-prev-logo-mark">Tt</div>
+                <span className="lp-prev-logo-name">TixTracker</span>
+              </div>
+              {["Dashboard","Tickets","Sales","Analytics","Cash Flow","Costs","Calculator","Scans","Clients","Guides"].map((n, i) => (
                 <div key={n} className={`lp-prev-nav-item${i === 0 ? " lp-prev-nav-active" : ""}`}>{n}</div>
               ))}
             </div>
-            {/* Main area */}
+
+            {/* Main */}
             <div className="lp-prev-main">
-              {/* KPI row */}
+              {/* Topbar */}
+              <div className="lp-prev-topbar">
+                <div>
+                  <div className="lp-prev-eyebrow">Overview</div>
+                  <div className="lp-prev-pagetitle">Dashboard</div>
+                </div>
+                <div className="lp-prev-topbar-right">
+                  <div className="lp-prev-select">May 2025 ▾</div>
+                  <div className="lp-prev-ghost-btn">Refresh</div>
+                </div>
+              </div>
+
+              {/* Monthly goal */}
+              <div className="lp-prev-goal">
+                <div className="lp-prev-goal-top">
+                  <div>
+                    <div className="lp-prev-tag">May goal</div>
+                    <div className="lp-prev-goal-nums">
+                      <span className="lp-up">£3,240</span>
+                      <span className="lp-prev-muted"> / £5,000</span>
+                    </div>
+                  </div>
+                  <div className="lp-prev-ghost-btn" style={{ marginLeft: "auto" }}>Edit goal</div>
+                </div>
+                <div className="lp-prev-track"><div className="lp-prev-fill" style={{ width: "64.8%" }} /></div>
+                <div className="lp-prev-goal-foot">
+                  <span>64.8% of target</span><span>Projected: £5,180</span><span>£1,760 to go</span>
+                </div>
+              </div>
+
+              {/* KPIs */}
               <div className="lp-prev-kpi-row">
                 {[
-                  { l: "Capital In", v: "£48,200" },
-                  { l: "Revenue", v: "£61,840" },
-                  { l: "Net Profit", v: "£13,640", up: true },
-                  { l: "ROI", v: "28.3%", up: true },
+                  { l: "Revenue this month", v: "£9,840", s: "gross income in May", up: true },
+                  { l: "ROI this month", v: "49.2%", s: "return on sold tickets", up: true },
+                  { l: "Open positions", v: "14", s: "actively listed" },
+                  { l: "Tickets this month", v: "38", s: "11 sold · 27 to sell" },
                 ].map(k => (
                   <div key={k.l} className="lp-prev-kpi">
                     <span>{k.l}</span>
                     <strong className={k.up ? "lp-up" : ""}>{k.v}</strong>
+                    <small>{k.s}</small>
                   </div>
                 ))}
               </div>
-              {/* Two col */}
-              <div className="lp-prev-cols">
-                <div className="lp-prev-col">
-                  <div className="lp-prev-col-label">Active Events</div>
-                  {[
-                    { name: "Coldplay · Wembley", s: "Listed" },
-                    { name: "Taylor Swift · O2", s: "Part Sold" },
-                    { name: "Oasis · Heaton Park", s: "Sold" },
-                    { name: "Man Utd · Old Trafford", s: "Listed" },
-                  ].map(e => (
-                    <div key={e.name} className="lp-prev-row">
-                      <span className="lp-prev-event">{e.name}</span>
-                      <span className={`lp-prev-badge lp-badge-${e.s === "Sold" ? "sold" : e.s === "Part Sold" ? "partial" : "listed"}`}>{e.s}</span>
-                    </div>
-                  ))}
+
+              {/* Tickets left table */}
+              <div className="lp-prev-card">
+                <div className="lp-prev-card-hd">
+                  <div>
+                    <div className="lp-prev-tag">May</div>
+                    <div className="lp-prev-card-title">Tickets left to sell</div>
+                  </div>
+                  <span className="lp-prev-count">27 tickets left</span>
                 </div>
-                <div className="lp-prev-col">
-                  <div className="lp-prev-col-label">Recent Sales</div>
-                  {[
-                    { event: "Coldplay ×2", amt: "£480", p: "+£192" },
-                    { event: "Taylor Swift ×4", amt: "£1,880", p: "+£640" },
-                    { event: "Oasis ×2", amt: "£620", p: "+£210" },
-                    { event: "Man Utd ×4", amt: "£360", p: "+£88" },
-                  ].map(s => (
-                    <div key={s.event} className="lp-prev-row">
-                      <span className="lp-prev-event">{s.event}</span>
-                      <span className="lp-prev-amt">{s.amt}</span>
-                      <span className="lp-up lp-prev-profit">{s.p}</span>
-                    </div>
-                  ))}
+                <div className="lp-prev-tbl-hd">
+                  <span style={{ flex: 2 }}>Event</span>
+                  <span>Section</span><span>Qty</span><span>Left</span><span>Status</span><span>Date</span>
                 </div>
+                {[
+                  { e: "Coldplay · Wembley", sec: "Block A2", q: 4, l: 2, st: "listed", d: "3 May" },
+                  { e: "Oasis · Heaton Park", sec: "Pitch GA", q: 6, l: 6, st: "listed", d: "8 May" },
+                  { e: "Taylor Swift · O2", sec: "Floor", q: 4, l: 0, st: "sold", d: "10 May" },
+                  { e: "Man Utd v Arsenal", sec: "East Stand", q: 4, l: 3, st: "listed", d: "11 May" },
+                ].map(r => (
+                  <div key={r.e} className="lp-prev-tbl-row">
+                    <span style={{ flex: 2 }} className="lp-prev-tbl-event">{r.e}</span>
+                    <span>{r.sec}</span>
+                    <span>{r.q}</span>
+                    <span className={r.l > 0 ? "lp-up" : "lp-prev-muted"}>{r.l || "—"}</span>
+                    <span className={`lp-prev-badge lp-badge-${r.st}`}>{r.st === "sold" ? "Sold" : "Listed"}</span>
+                    <span className="lp-prev-muted">{r.d}</span>
+                  </div>
+                ))}
               </div>
             </div>
           </div>
