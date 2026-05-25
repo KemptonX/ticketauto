@@ -155,6 +155,7 @@ const navItems = [
   { label: "Calculator", href: "/viagogo-calculator", active: false },
   { label: "Scans", href: "/scans", active: false },
   { label: "Clients", href: "/clients", active: false },
+  { label: "Guides", href: "/guides", active: false },
 ];
 
 function computeGroupId(key: string): string {
