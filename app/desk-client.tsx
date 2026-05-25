@@ -646,60 +646,52 @@ export default function DeskClient() {
           )}
         </section>
 
+        {(!loading && unmatchedSales.length > 0) && (
         <section className="table-card">
           <div className="table-card-header">
             <div>
               <p className="section-tag">Sales</p>
               <h4>Unmatched sales</h4>
             </div>
-            {unmatchedSales.length > 0 && (
-              <Link href="/sales" className="ghost-button">Review in Sales →</Link>
-            )}
+            <Link href="/sales" className="ghost-button">Review in Sales →</Link>
           </div>
 
-          {loading ? null : unmatchedSales.length === 0 ? (
-            <div className="state-card">
-              <div className="state-orb state-orb-muted" />
-              <h5>All sales matched</h5>
-              <p>Every sale is linked to a ticket.</p>
-            </div>
-          ) : (
-            <div className="table-scroll">
-              <table className="premium-table">
-                <thead>
-                  <tr>
-                    <th>Sale</th>
-                    <th>Account</th>
-                    <th>Qty</th>
-                    <th>Sale total</th>
-                    <th>Sold</th>
+          <div className="table-scroll">
+            <table className="premium-table">
+              <thead>
+                <tr>
+                  <th>Sale</th>
+                  <th>Account</th>
+                  <th>Qty</th>
+                  <th>Sale total</th>
+                  <th>Sold</th>
+                </tr>
+              </thead>
+              <tbody>
+                {unmatchedSales.map((sale) => (
+                  <tr key={sale.id}>
+                    <td>
+                      <div className="event-cell">
+                        <strong>{sale.event_name || "Untitled sale"}</strong>
+                        <span>{sale.venue || "—"}</span>
+                        <small>{sale.event_date || "—"}</small>
+                      </div>
+                    </td>
+                    <td>
+                      <span className="truncate-text" title={sale.account_email || ""}>
+                        {sale.account_email || "—"}
+                      </span>
+                    </td>
+                    <td>{sale.qty_sold ?? "—"}</td>
+                    <td>{formatCurrency(sale.sale_total)}</td>
+                    <td>{sale.sold_at ? formatShortDate(sale.sold_at) : "—"}</td>
                   </tr>
-                </thead>
-                <tbody>
-                  {unmatchedSales.map((sale) => (
-                    <tr key={sale.id}>
-                      <td>
-                        <div className="event-cell">
-                          <strong>{sale.event_name || "Untitled sale"}</strong>
-                          <span>{sale.venue || "—"}</span>
-                          <small>{sale.event_date || "—"}</small>
-                        </div>
-                      </td>
-                      <td>
-                        <span className="truncate-text" title={sale.account_email || ""}>
-                          {sale.account_email || "—"}
-                        </span>
-                      </td>
-                      <td>{sale.qty_sold ?? "—"}</td>
-                      <td>{formatCurrency(sale.sale_total)}</td>
-                      <td>{sale.sold_at ? formatShortDate(sale.sold_at) : "—"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+                ))}
+              </tbody>
+            </table>
+          </div>
         </section>
+        )}
 
 
         <section className="table-card">
