@@ -189,7 +189,7 @@ export function NavIcon({ href }: { href: string }) {
 export function SidebarLogo() {
   return (
     <div className="sidebar-logo">
-      <img src="/logo.png" alt="TixTracker" style={{ height: "40px", width: "auto" }} />
+      <img src="/logo.png" alt="TixTracker" style={{ height: "auto", width: "100%", maxWidth: "220px" }} />
       <span className="sidebar-version">v0.27</span>
     </div>
   );
