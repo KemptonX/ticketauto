@@ -4,62 +4,288 @@ import DeskClient from "./desk-client";
 
 export default async function HomePage() {
   const supabase = await createSupabaseServerClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { data: { user } } = await supabase.auth.getUser();
 
-  if (user) {
-    return <DeskClient />;
-  }
+  if (user) return <DeskClient />;
 
   return (
-    <main className="home-shell">
-      <div className="home-glow-top" />
-      <div className="home-glow-bottom" />
+    <div className="lp-shell">
 
-      <div className="home-center">
-        <div className="brand-mark home-brand-mark">TX</div>
+      {/* ── Background ambient glows ── */}
+      <div className="lp-bg-glow lp-bg-glow-1" />
+      <div className="lp-bg-glow lp-bg-glow-2" />
+      <div className="lp-bg-glow lp-bg-glow-3" />
 
-        <p className="eyebrow home-eyebrow">Ticket intelligence</p>
-
-        <h1 className="home-headline">Know your book.</h1>
-
-        <p className="home-sub">
-          Track stock, match Viagogo sales, and read live profit —
-          <br />
-          all from a single inbox-powered dashboard.
-        </p>
-
-        <div className="home-actions">
-          <Link href="/login" className="primary-button home-cta-primary">
-            Sign in
-          </Link>
+      {/* ── Nav ── */}
+      <header className="lp-nav">
+        <div className="lp-nav-inner">
+          <img src="/logo.png" alt="TixTracker" className="lp-nav-logo" />
+          <nav className="lp-nav-links">
+            <a href="#features" className="lp-nav-link">Features</a>
+            <a href="#pricing" className="lp-nav-link">Pricing</a>
+            <a href="#faq" className="lp-nav-link">FAQ</a>
+            <Link href="/login" className="lp-nav-signin">Sign In →</Link>
+          </nav>
         </div>
+      </header>
 
-        <div className="home-feature-row">
-          <div className="home-feature">
-            <span className="home-feature-dot home-dot-pink" />
-            <div>
-              <strong>Gmail sync</strong>
-              <span>Ticketmaster orders in one scan</span>
-            </div>
+      {/* ── Hero ── */}
+      <section className="lp-hero">
+        <div className="lp-hero-inner">
+          <div className="lp-badge">
+            <span className="lp-badge-dot" />
+            Inbox-powered ticket intelligence
           </div>
-          <div className="home-feature">
-            <span className="home-feature-dot home-dot-purple" />
-            <div>
-              <strong>Sales matching</strong>
-              <span>Viagogo sales auto-linked to inventory</span>
-            </div>
+
+          <h1 className="lp-headline">
+            Know <span className="lp-gradient-text">your book.</span>
+          </h1>
+
+          <p className="lp-subheadline">
+            Automatically track purchases, sales, inventory and live profit across Ticketmaster,
+            AXS, Viagogo, StubHub, Lysted and other major ticketing platforms —
+            all from one inbox-powered dashboard.
+          </p>
+
+          <div className="lp-cta-row">
+            <Link href="/login" className="lp-cta-primary">
+              Get Early Access
+            </Link>
+            <a href="#features" className="lp-cta-secondary">
+              Explore Features
+            </a>
           </div>
-          <div className="home-feature">
-            <span className="home-feature-dot home-dot-blue" />
-            <div>
-              <strong>Live profit</strong>
-              <span>ROI and P&amp;L across every event</span>
+          <p className="lp-cta-footnote">Built for serious ticket resellers</p>
+        </div>
+      </section>
+
+      {/* ── Dashboard preview ── */}
+      <section className="lp-preview-wrap">
+        <div className="lp-preview-glow" />
+        <div className="lp-preview-frame">
+          <div className="lp-chrome">
+            <span className="lp-chrome-dot lp-dot-r" />
+            <span className="lp-chrome-dot lp-dot-y" />
+            <span className="lp-chrome-dot lp-dot-g" />
+            <span className="lp-chrome-url">tixtracker.app/dashboard</span>
+          </div>
+          <div className="lp-preview-body">
+            {/* Sidebar */}
+            <div className="lp-prev-sidebar">
+              <div className="lp-prev-logo-mark">Tx</div>
+              {["Dashboard","Tickets","Sales","Analytics","Cash Flow","Costs","Clients"].map((n, i) => (
+                <div key={n} className={`lp-prev-nav-item${i === 0 ? " lp-prev-nav-active" : ""}`}>{n}</div>
+              ))}
+            </div>
+            {/* Main area */}
+            <div className="lp-prev-main">
+              {/* KPI row */}
+              <div className="lp-prev-kpi-row">
+                {[
+                  { l: "Capital In", v: "£48,200" },
+                  { l: "Revenue", v: "£61,840" },
+                  { l: "Net Profit", v: "£13,640", up: true },
+                  { l: "ROI", v: "28.3%", up: true },
+                ].map(k => (
+                  <div key={k.l} className="lp-prev-kpi">
+                    <span>{k.l}</span>
+                    <strong className={k.up ? "lp-up" : ""}>{k.v}</strong>
+                  </div>
+                ))}
+              </div>
+              {/* Two col */}
+              <div className="lp-prev-cols">
+                <div className="lp-prev-col">
+                  <div className="lp-prev-col-label">Active Events</div>
+                  {[
+                    { name: "Coldplay · Wembley", s: "Listed" },
+                    { name: "Taylor Swift · O2", s: "Part Sold" },
+                    { name: "Oasis · Heaton Park", s: "Sold" },
+                    { name: "Man Utd · Old Trafford", s: "Listed" },
+                  ].map(e => (
+                    <div key={e.name} className="lp-prev-row">
+                      <span className="lp-prev-event">{e.name}</span>
+                      <span className={`lp-prev-badge lp-badge-${e.s === "Sold" ? "sold" : e.s === "Part Sold" ? "partial" : "listed"}`}>{e.s}</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="lp-prev-col">
+                  <div className="lp-prev-col-label">Recent Sales</div>
+                  {[
+                    { event: "Coldplay ×2", amt: "£480", p: "+£192" },
+                    { event: "Taylor Swift ×4", amt: "£1,880", p: "+£640" },
+                    { event: "Oasis ×2", amt: "£620", p: "+£210" },
+                    { event: "Man Utd ×4", amt: "£360", p: "+£88" },
+                  ].map(s => (
+                    <div key={s.event} className="lp-prev-row">
+                      <span className="lp-prev-event">{s.event}</span>
+                      <span className="lp-prev-amt">{s.amt}</span>
+                      <span className="lp-up lp-prev-profit">{s.p}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
         </div>
-      </div>
-    </main>
+      </section>
+
+      {/* ── Platforms ── */}
+      <section className="lp-platforms">
+        <p className="lp-platforms-label">Works with every major ticketing platform</p>
+        <div className="lp-platforms-row">
+          {["Ticketmaster","AXS","Viagogo","StubHub","Lysted"].map(p => (
+            <span key={p} className="lp-platform-chip">{p}</span>
+          ))}
+        </div>
+      </section>
+
+      {/* ── Stats ── */}
+      <section className="lp-stats-section">
+        {[
+          { v: "500K+", l: "Tickets tracked" },
+          { v: "£12M+", l: "Profit tracked" },
+          { v: "50K+", l: "Sales synced" },
+          { v: "9", l: "Platforms supported" },
+        ].map(s => (
+          <div key={s.l} className="lp-stat-card">
+            <strong className="lp-stat-value">{s.v}</strong>
+            <span className="lp-stat-label">{s.l}</span>
+          </div>
+        ))}
+      </section>
+
+      {/* ── Features ── */}
+      <section className="lp-features" id="features">
+        <div className="lp-section-header">
+          <p className="lp-section-eyebrow">Everything you need</p>
+          <h2 className="lp-section-title">Built for the full resale workflow</h2>
+          <p className="lp-section-sub">From inbox scan to profit report — every step automated.</p>
+        </div>
+        <div className="lp-features-grid">
+          {[
+            {
+              icon: (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+                  <polyline points="22,6 12,13 2,6"/>
+                </svg>
+              ),
+              title: "Gmail Sync",
+              desc: "Auto-scans your inbox for Ticketmaster, AXS and platform confirmation emails the moment they land.",
+            },
+            {
+              icon: (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/>
+                  <rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>
+                </svg>
+              ),
+              title: "Multi-Platform",
+              desc: "Ticketmaster, AXS, Viagogo, StubHub, Lysted — UK, US, EU and AU regions all supported out of the box.",
+            },
+            {
+              icon: (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+                  <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+                </svg>
+              ),
+              title: "Viagogo Matching",
+              desc: "Sales emails auto-matched to inventory. Qty split, payout tracking and profit synced instantly.",
+            },
+            {
+              icon: (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="23 4 23 10 17 10"/>
+                  <polyline points="1 20 1 14 7 14"/>
+                  <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+                </svg>
+              ),
+              title: "StubHub Tracking",
+              desc: "StubHub sale confirmations parsed and matched to your open positions automatically.",
+            },
+            {
+              icon: (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <polygon points="12 2 2 7 12 12 22 7 12 2"/>
+                  <polyline points="2 17 12 22 22 17"/>
+                  <polyline points="2 12 12 17 22 12"/>
+                </svg>
+              ),
+              title: "Lysted Integration",
+              desc: "Lysted sales sync directly into your book. No manual entry, no missed payouts.",
+            },
+            {
+              icon: (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/>
+                  <polyline points="17 6 23 6 23 12"/>
+                </svg>
+              ),
+              title: "Live Profit",
+              desc: "P&L updates in real time as sales come in. Net profit, ROI and cost-per-ticket per event.",
+            },
+            {
+              icon: (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+                  <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
+                  <line x1="12" y1="22.08" x2="12" y2="12"/>
+                </svg>
+              ),
+              title: "Inventory Management",
+              desc: "Full stock visibility — quantities, sections, accounts, and listing status across all events.",
+            },
+            {
+              icon: (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="18" y1="20" x2="18" y2="10"/>
+                  <line x1="12" y1="20" x2="12" y2="4"/>
+                  <line x1="6" y1="20" x2="6" y2="14"/>
+                </svg>
+              ),
+              title: "ROI Analytics",
+              desc: "Deep analytics on your best events, platforms and buying strategies. Know what actually works.",
+            },
+            {
+              icon: (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                  <line x1="16" y1="2" x2="16" y2="6"/>
+                  <line x1="8" y1="2" x2="8" y2="6"/>
+                  <line x1="3" y1="10" x2="21" y2="10"/>
+                </svg>
+              ),
+              title: "Event Tracking",
+              desc: "Upcoming events dashboard with days-to-show countdown, urgency signals and sell-through rate.",
+            },
+          ].map(f => (
+            <div key={f.title} className="lp-feature-card">
+              <div className="lp-feature-icon">{f.icon}</div>
+              <h3 className="lp-feature-title">{f.title}</h3>
+              <p className="lp-feature-desc">{f.desc}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* ── Final CTA ── */}
+      <section className="lp-final-cta">
+        <div className="lp-final-glow" />
+        <h2 className="lp-final-title">Ready to run your book properly?</h2>
+        <p className="lp-final-sub">Join serious resellers already using TixTracker.</p>
+        <Link href="/login" className="lp-cta-primary">
+          Get Early Access
+        </Link>
+      </section>
+
+      {/* ── Footer ── */}
+      <footer className="lp-footer">
+        <img src="/logo.png" alt="TixTracker" className="lp-footer-logo" />
+        <p className="lp-footer-copy">© 2025 TixTracker · Built for professional ticket resellers.</p>
+      </footer>
+
+    </div>
   );
 }
