@@ -4359,6 +4359,118 @@ select {
   margin: 0;
 }
 
+/* Pricing */
+.lp-pricing {
+  position: relative;
+  z-index: 1;
+  padding: 100px 32px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+.lp-pricing-card-wrap {
+  display: flex;
+  justify-content: center;
+  margin-top: 48px;
+}
+.lp-pricing-card {
+  position: relative;
+  width: 100%;
+  max-width: 480px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(155, 92, 255, 0.3);
+  border-radius: 20px;
+  padding: 40px 40px 36px;
+  box-shadow:
+    0 0 0 1px rgba(155, 92, 255, 0.08),
+    0 24px 60px rgba(0, 0, 0, 0.4),
+    0 0 80px rgba(155, 92, 255, 0.08);
+  overflow: hidden;
+}
+.lp-pricing-glow {
+  position: absolute;
+  top: -60px; left: 50%;
+  transform: translateX(-50%);
+  width: 360px; height: 200px;
+  background: radial-gradient(ellipse, rgba(155, 92, 255, 0.18) 0%, transparent 70%);
+  pointer-events: none;
+}
+.lp-pricing-badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(192, 132, 252, 0.9);
+  background: rgba(155, 92, 255, 0.12);
+  border: 1px solid rgba(155, 92, 255, 0.25);
+  padding: 4px 12px;
+  border-radius: 999px;
+  margin-bottom: 24px;
+}
+.lp-pricing-price {
+  display: flex;
+  align-items: flex-start;
+  gap: 2px;
+  margin-bottom: 6px;
+  line-height: 1;
+}
+.lp-pricing-currency {
+  font-size: 24px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.7);
+  margin-top: 8px;
+}
+.lp-pricing-amount {
+  font-size: 64px;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  color: #fff;
+  line-height: 1;
+}
+.lp-pricing-period {
+  font-size: 16px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.35);
+  align-self: flex-end;
+  margin-bottom: 6px;
+  margin-left: 4px;
+}
+.lp-pricing-sub {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.3);
+  margin-bottom: 28px;
+}
+.lp-pricing-features {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  padding-top: 24px;
+}
+.lp-pricing-feature {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 13.5px;
+  color: rgba(255, 255, 255, 0.65);
+  line-height: 1.4;
+}
+.lp-pricing-check {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  background: rgba(155, 92, 255, 0.15);
+  border: 1px solid rgba(155, 92, 255, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #c084fc;
+  margin-top: 1px;
+}
+
 /* Final CTA */
 .lp-final-cta {
   position: relative;

@@ -296,6 +296,52 @@ export default async function HomePage() {
         </div>
       </section>
 
+      {/* ── Pricing ── */}
+      <section className="lp-pricing" id="pricing">
+        <div className="lp-section-header">
+          <p className="lp-section-eyebrow">Simple pricing</p>
+          <h2 className="lp-section-title">One plan. Everything included.</h2>
+          <p className="lp-section-sub">No tiers, no add-ons, no surprises — just the full platform.</p>
+        </div>
+        <div className="lp-pricing-card-wrap">
+          <div className="lp-pricing-card">
+            <div className="lp-pricing-glow" />
+            <div className="lp-pricing-badge">Full access</div>
+            <div className="lp-pricing-price">
+              <span className="lp-pricing-currency">€</span>
+              <span className="lp-pricing-amount">19.99</span>
+              <span className="lp-pricing-period">/ month</span>
+            </div>
+            <p className="lp-pricing-sub">Cancel anytime. No contracts.</p>
+            <ul className="lp-pricing-features">
+              {[
+                "Gmail inbox sync — all platforms auto-detected",
+                "Ticketmaster, AXS, Viagogo & StubHub tracking",
+                "Live P&L per event — profit, ROI, cost-per-ticket",
+                "Full inventory management & listing status",
+                "Cash flow & cost tracking",
+                "ROI analytics & event performance reports",
+                "Upcoming events dashboard with countdown",
+                "Unlimited events, tickets & sales",
+                "Lysted integration (coming soon)",
+              ].map(f => (
+                <li key={f} className="lp-pricing-feature">
+                  <span className="lp-pricing-check">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                      <polyline points="20 6 9 17 4 12"/>
+                    </svg>
+                  </span>
+                  {f}
+                </li>
+              ))}
+            </ul>
+            <Link href="/login" className="lp-cta-primary" style={{ display: "block", textAlign: "center", marginTop: "8px" }}>
+              Get Early Access
+            </Link>
+          </div>
+        </div>
+      </section>
+
       {/* ── Final CTA ── */}
       <section className="lp-final-cta">
         <div className="lp-final-glow" />
