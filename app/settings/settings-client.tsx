@@ -1029,7 +1029,7 @@ export default function SettingsClient() {
                 </div>
                 <div style={{ padding: "1.5rem" }}>
                   <p style={{ marginBottom: "1rem", color: "var(--muted)", fontSize: "0.875rem" }}>
-                    Export your spreadsheet or Google Sheet as CSV, XLSX, or TSV. TicketX will read your column headers and auto-map them — even if they don't match exactly.
+                    Export your spreadsheet or Google Sheet as CSV, XLSX, or TSV. TixTracker will read your column headers and auto-map them — even if they don't match exactly.
                   </p>
                   <div
                     className={`import-dropzone${dragOver ? " import-dropzone-active" : ""}`}
@@ -1072,7 +1072,7 @@ export default function SettingsClient() {
                 </div>
                 <div style={{ padding: "0 1.5rem 0.5rem" }}>
                   <p style={{ color: "var(--muted)", fontSize: "0.875rem", marginBottom: "1rem" }}>
-                    TicketX has auto-matched your columns. Check each one is mapped correctly — set to "Skip" for columns you don't need.
+                    TixTracker has auto-matched your columns. Check each one is mapped correctly — set to "Skip" for columns you don't need.
                   </p>
                 </div>
                 <div className="import-map-grid">

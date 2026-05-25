@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "TicketX",
+  title: "TixTracker",
   description: "Ticket reseller dashboard — track stock, match sales, read profit.",
 };
 

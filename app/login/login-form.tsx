@@ -81,7 +81,7 @@ export default function LoginForm() {
   return (
     <div className="auth-card">
       <div className="auth-brand">
-        <img src="/logo.png" alt="TicketX" style={{ height: "40px", width: "auto" }} />
+        <img src="/logo.png" alt="TixTracker" style={{ height: "40px", width: "auto" }} />
       </div>
 
       <div className="auth-toggle">
