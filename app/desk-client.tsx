@@ -194,23 +194,6 @@ export default function DeskClient() {
       });
   }, [orders]);
 
-  const aprilUnsold = useMemo(() => {
-    const monthStart = new Date(selectedMonth.year, selectedMonth.month, 1);
-    const nextMonth = new Date(selectedMonth.year, selectedMonth.month + 1, 1);
-    return orders
-      .filter((o) => {
-        if (o.listing_status === "Sold" || o.listing_status === "Archived") return false;
-        const d = parseDate(o.event_date);
-        if (!d) return false;
-        return d >= monthStart && d < nextMonth;
-      })
-      .sort((a, b) => {
-        const da = parseDate(a.event_date);
-        const db = parseDate(b.event_date);
-        return da && db ? da.getTime() - db.getTime() : 0;
-      });
-  }, [orders, selectedMonth]);
-
   const unmatchedSales = useMemo(() => {
     return sales
       .filter((s) => s.inventory_order_id == null)
@@ -693,74 +676,6 @@ export default function DeskClient() {
         </section>
         )}
 
-
-        <section className="table-card">
-          <div className="table-card-header">
-            <div>
-              <p className="section-tag">{new Date(selectedMonth.year, selectedMonth.month, 1).toLocaleString("en-GB", { month: "long" })} events</p>
-              <h4>Unsold this month</h4>
-            </div>
-            <span className="table-count">{aprilUnsold.length} remaining</span>
-          </div>
-
-          {loading ? null : aprilUnsold.length === 0 ? (
-            <div className="state-card">
-              <div className="state-orb state-orb-muted" />
-              <h5>All {new Date(selectedMonth.year, selectedMonth.month, 1).toLocaleString("en-GB", { month: "long" })} events sold</h5>
-              <p>Nothing left to shift this month.</p>
-            </div>
-          ) : (
-            <div className="table-scroll">
-              <table className="premium-table">
-                <thead>
-                  <tr>
-                    <th>Event</th>
-                    <th>Account</th>
-                    <th>Section</th>
-                    <th>Qty</th>
-                    <th>Cost</th>
-                    <th>Status</th>
-                    <th>Date</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {aprilUnsold.map((order) => {
-                    const date = parseDate(order.event_date);
-                    const daysAway = getDaysAway(date);
-                    return (
-                      <tr key={order.id}>
-                        <td>
-                          <div className="event-cell">
-                            <strong>{order.event_name || "Untitled"}</strong>
-                            <span>{order.venue || "—"}</span>
-                          </div>
-                        </td>
-                        <td>
-                          <span className="truncate-text" title={order.account_email || ""}>
-                            {order.account_email || "—"}
-                          </span>
-                        </td>
-                        <td>{order.section || "—"}</td>
-                        <td>{order.qty_bought ?? "—"}</td>
-                        <td>{formatCurrency(order.total_cost)}</td>
-                        <td>
-                          <span className={`status-badge status-static ${getStatusTone(order.listing_status)}`}>
-                            {order.listing_status || "Unlisted"}
-                          </span>
-                        </td>
-                        <td>
-                          <strong className={daysAway != null && daysAway <= 3 ? "delta-down" : ""}>
-                            {formatEventDate(order.event_date)}
-                          </strong>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
 
         <section className="table-card">
           <div className="table-card-header">
