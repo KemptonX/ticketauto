@@ -353,72 +353,31 @@ export default function DeskClient() {
     return { capitalIn, closedProfit, availableCount, soldCount, monthlyRevenue, monthlyProfit, monthlyROI, openCount, bestEvent, bestProfit, thisMonthCount, thisMonthSold, thisMonthPayout, thisMonthTickets, thisMonthTicketsSold, thisMonthTicketsRemaining, yearlyProfit, fyStart, fyEnd, monthlyProjected, yearlyProjected };
   }, [orders, sales, selectedMonth]);
 
-  const eventPnL = useMemo(() => {
-    // Build payout and qty-sold maps from matched sales
-    const payoutByOrder = new Map<number, number>();
-    const soldQtyByOrderId = new Map<number, number>();
-    for (const sale of sales) {
-      if (sale.inventory_order_id == null) continue;
-      const payout = sale.payout_total ?? sale.sale_total ?? 0;
-      payoutByOrder.set(sale.inventory_order_id, (payoutByOrder.get(sale.inventory_order_id) ?? 0) + payout);
-      soldQtyByOrderId.set(sale.inventory_order_id, (soldQtyByOrderId.get(sale.inventory_order_id) ?? 0) + (sale.qty_sold ?? 0));
+  const ticketsLeftThisMonth = useMemo(() => {
+    const monthStart = new Date(selectedMonth.year, selectedMonth.month, 1);
+    const nextMonth = new Date(selectedMonth.year, selectedMonth.month + 1, 1);
+    const soldQtyMap = new Map<number, number>();
+    for (const s of sales) {
+      if (s.inventory_order_id == null) continue;
+      soldQtyMap.set(s.inventory_order_id, (soldQtyMap.get(s.inventory_order_id) ?? 0) + (s.qty_sold ?? 0));
     }
-
-    // Group orders by event
-    const map = new Map<string, {
-      eventName: string;
-      venue: string;
-      eventDate: string | null;
-      dateValue: Date | null;
-      totalCost: number;
-      totalEffectiveCost: number;
-      totalPayout: number;
-      totalQty: number;
-      soldQty: number;
-    }>();
-
-    for (const order of orders) {
-      if (order.listing_status === "Archived") continue;
-      const key = `${order.event_name ?? ""}__${order.venue ?? ""}__${order.event_date ?? ""}`;
-      if (!map.has(key)) {
-        map.set(key, {
-          eventName: order.event_name ?? "Untitled event",
-          venue: order.venue ?? "",
-          eventDate: order.event_date ?? null,
-          dateValue: parseDate(order.event_date),
-          totalCost: 0,
-          totalEffectiveCost: 0,
-          totalPayout: 0,
-          totalQty: 0,
-          soldQty: 0,
-        });
-      }
-      const group = map.get(key)!;
-      const orderPayout = payoutByOrder.get(order.id) ?? 0;
-      group.totalCost += order.total_cost ?? 0;
-      group.totalPayout += orderPayout;
-      group.totalQty += order.qty_bought ?? 1;
-      if (order.listing_status === "Sold") group.soldQty += order.qty_bought ?? 1;
-      if (orderPayout > 0) {
-        const qtySold = soldQtyByOrderId.get(order.id) ?? (order.qty_bought ?? 0);
-        group.totalEffectiveCost += getProportionalCost(order.total_cost, order.qty_bought, qtySold, order.listing_status);
-      }
-    }
-
-    return Array.from(map.values())
-      .filter((g) => g.totalCost > 0 || g.totalPayout > 0)
-      .map((g) => ({
-        ...g,
-        profit: g.totalPayout - g.totalEffectiveCost,
-        roi: g.totalEffectiveCost > 0 ? ((g.totalPayout - g.totalEffectiveCost) / g.totalEffectiveCost) * 100 : null,
-      }))
+    return orders
+      .filter((o) => {
+        if (o.listing_status === "Sold" || o.listing_status === "Archived") return false;
+        const d = parseDate(o.event_date);
+        if (!d) return false;
+        return d >= monthStart && d < nextMonth;
+      })
+      .map((o) => {
+        const bought = o.qty_bought ?? 1;
+        const sold = soldQtyMap.get(o.id) ?? 0;
+        return { ...o, qtySold: sold, qtyLeft: Math.max(0, bought - sold), dateValue: parseDate(o.event_date) };
+      })
       .sort((a, b) => {
         if (a.dateValue && b.dateValue) return a.dateValue.getTime() - b.dateValue.getTime();
-        if (a.dateValue) return -1;
-        if (b.dateValue) return 1;
         return 0;
       });
-  }, [orders, sales]);
+  }, [orders, sales, selectedMonth]);
 
   return (
     <div className="orders-shell">
@@ -814,17 +773,21 @@ export default function DeskClient() {
         <section className="table-card">
           <div className="table-card-header">
             <div>
-              <p className="section-tag">P&amp;L</p>
-              <h4>Event breakdown</h4>
+              <p className="section-tag">{new Date(selectedMonth.year, selectedMonth.month, 1).toLocaleString("en-GB", { month: "long" })}</p>
+              <h4>Tickets left to sell</h4>
             </div>
-            <span className="table-count">{eventPnL.length} events</span>
+            {ticketsLeftThisMonth.length > 0 && (
+              <span className="table-count">
+                {ticketsLeftThisMonth.reduce((s, o) => s + o.qtyLeft, 0)} tickets left
+              </span>
+            )}
           </div>
 
-          {loading ? null : eventPnL.length === 0 ? (
+          {loading ? null : ticketsLeftThisMonth.length === 0 ? (
             <div className="state-card">
               <div className="state-orb state-orb-muted" />
-              <h5>No data yet</h5>
-              <p>Scan your inbox and match sales to see P&amp;L per event.</p>
+              <h5>All sold</h5>
+              <p>No tickets left to sell in {new Date(selectedMonth.year, selectedMonth.month, 1).toLocaleString("en-GB", { month: "long" })}.</p>
             </div>
           ) : (
             <div className="table-scroll">
@@ -832,42 +795,46 @@ export default function DeskClient() {
                 <thead>
                   <tr>
                     <th>Event</th>
-                    <th>Qty</th>
-                    <th>Cost In</th>
-                    <th>Payout</th>
-                    <th>Profit</th>
-                    <th>ROI</th>
+                    <th>Section</th>
+                    <th>Bought</th>
+                    <th>Sold</th>
+                    <th>Left</th>
+                    <th>Status</th>
+                    <th>Date</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {eventPnL.map((row) => (
-                    <tr key={`${row.eventName}__${row.eventDate}`}>
-                      <td>
-                        <div className="event-cell">
-                          <strong>{row.eventName}</strong>
-                          <span>{row.venue || "—"}</span>
-                          <small>{formatEventDate(row.eventDate)}</small>
-                        </div>
-                      </td>
-                      <td>{row.soldQty}/{row.totalQty}</td>
-                      <td>{formatCurrency(row.totalCost)}</td>
-                      <td>{row.totalPayout > 0 ? formatCurrency(row.totalPayout) : <span className="text-muted">—</span>}</td>
-                      <td>
-                        {row.totalPayout > 0 ? (
-                          <strong className={row.profit >= 0 ? "value-up" : "value-down"}>
-                            {row.profit >= 0 ? "+" : ""}{formatCurrency(row.profit)}
+                  {ticketsLeftThisMonth.map((order) => {
+                    const daysAway = getDaysAway(order.dateValue);
+                    return (
+                      <tr key={order.id}>
+                        <td>
+                          <div className="event-cell">
+                            <strong>{order.event_name || "Untitled"}</strong>
+                            <span>{order.venue || "—"}</span>
+                          </div>
+                        </td>
+                        <td>{order.section || "—"}</td>
+                        <td>{order.qty_bought ?? "—"}</td>
+                        <td>{order.qtySold > 0 ? order.qtySold : <span className="text-muted">—</span>}</td>
+                        <td>
+                          <strong className={daysAway != null && daysAway <= 3 ? "delta-down" : "delta-up"}>
+                            {order.qtyLeft}
                           </strong>
-                        ) : <span className="text-muted">—</span>}
-                      </td>
-                      <td>
-                        {row.roi != null && row.totalPayout > 0 ? (
-                          <strong className={row.roi >= 0 ? "value-up" : "value-down"}>
-                            {row.roi >= 0 ? "+" : ""}{row.roi.toFixed(1)}%
+                        </td>
+                        <td>
+                          <span className={`status-badge status-static ${getStatusTone(order.listing_status)}`}>
+                            {order.listing_status || "Unlisted"}
+                          </span>
+                        </td>
+                        <td>
+                          <strong className={daysAway != null && daysAway <= 3 ? "delta-down" : ""}>
+                            {formatEventDate(order.event_date)}
                           </strong>
-                        ) : <span className="text-muted">—</span>}
-                      </td>
-                    </tr>
-                  ))}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

@@ -202,7 +202,7 @@ export function SidebarLogo() {
       <span className="sidebar-logo-text">
         Ticket<span className="sidebar-logo-x">X</span>
       </span>
-      <span className="sidebar-version">v0.23</span>
+      <span className="sidebar-version">v0.24</span>
     </div>
   );
 }
