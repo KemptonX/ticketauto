@@ -3712,13 +3712,13 @@ select {
   max-width: 1160px;
   margin: 0 auto;
   padding: 0 32px;
-  height: 72px;
+  height: 96px;
   display: flex;
   align-items: center;
   justify-content: space-between;
 }
 .lp-nav-logo {
-  height: 52px;
+  height: 104px;
   width: auto;
   mix-blend-mode: screen;
   filter: brightness(1.2) contrast(1.05) drop-shadow(0 0 14px rgba(155, 92, 255, 0.55)) drop-shadow(0 0 4px rgba(255, 79, 163, 0.3));
