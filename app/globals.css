@@ -95,7 +95,7 @@ select {
   position: sticky;
   top: 0;
   height: 100vh;
-  padding: 28px 20px;
+  padding: 28px 22px 28px 24px;
   border-right: 1px solid var(--border);
   background: rgba(5, 5, 5, 0.97);
   backdrop-filter: blur(18px);
@@ -107,9 +107,9 @@ select {
 /* ─── Brand area ────────────────────────────────────────────────────────────── */
 
 .sidebar-brand-wrap {
-  padding: 4px 2px 22px;
+  padding: 8px 0 26px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-  margin-bottom: 4px;
+  margin-bottom: 6px;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -118,18 +118,17 @@ select {
 .sidebar-brand-img {
   display: block;
   width: 100%;
-  max-width: 196px;
+  max-width: 210px;
   height: auto;
   mix-blend-mode: screen;
-  filter: brightness(1.12) contrast(1.04);
+  filter: brightness(1.15) contrast(1.05);
 }
 
 .sidebar-version {
   font-size: 10px;
   font-weight: 500;
-  color: rgba(255, 255, 255, 0.2);
-  letter-spacing: 0.06em;
-  padding-left: 2px;
+  color: rgba(255, 255, 255, 0.18);
+  letter-spacing: 0.07em;
 }
 
 /* keep old brand-mark hidden if it still appears anywhere */
@@ -182,7 +181,7 @@ select {
   display: flex;
   flex-direction: column;
   gap: 3px;
-  margin-top: 18px;
+  margin-top: 14px;
 }
 
 .nav-item {
