@@ -386,33 +386,64 @@ export default function SettingsClient() {
   });
 
   // ── Discord notifications state ──
-  const [discordWebhookUrl, setDiscordWebhookUrl] = useState<string>(() => {
-    if (typeof window !== "undefined") return localStorage.getItem("discord_webhook_url") ?? "";
-    return "";
-  });
+  const [discordWebhookUrl, setDiscordWebhookUrl] = useState("");
+  const [discordSaved, setDiscordSaved] = useState(false);
+  const [discordSaving, setDiscordSaving] = useState(false);
   const [discordTesting, setDiscordTesting] = useState(false);
-  const [discordTestResult, setDiscordTestResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [discordMessage, setDiscordMessage] = useState<{ ok: boolean; text: string } | null>(null);
+
+  useEffect(() => {
+    void (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const { data } = await supabase
+        .from("user_settings")
+        .select("discord_webhook_url")
+        .eq("user_id", user.id)
+        .maybeSingle();
+      if (data) setDiscordWebhookUrl((data as { discord_webhook_url?: string }).discord_webhook_url ?? "");
+    })();
+  }, []);
+
+  async function saveDiscordWebhook() {
+    const url = discordWebhookUrl.trim();
+    setDiscordSaving(true);
+    setDiscordMessage(null);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { setDiscordMessage({ ok: false, text: "Not signed in" }); return; }
+      const { error } = await supabase
+        .from("user_settings")
+        .upsert({ user_id: user.id, discord_webhook_url: url || null, updated_at: new Date().toISOString() }, { onConflict: "user_id" });
+      if (error) {
+        setDiscordMessage({ ok: false, text: error.message });
+      } else {
+        setDiscordSaved(true);
+        setDiscordMessage({ ok: true, text: url ? "Webhook URL saved." : "Webhook URL cleared." });
+        setTimeout(() => setDiscordSaved(false), 2500);
+      }
+    } finally {
+      setDiscordSaving(false);
+    }
+  }
 
   async function testDiscordWebhook() {
-    const url = discordWebhookUrl.trim();
-    if (!url) return;
     setDiscordTesting(true);
-    setDiscordTestResult(null);
+    setDiscordMessage(null);
     try {
       const res = await fetch("/api/test-discord", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ webhookUrl: url }),
+        body: JSON.stringify({ webhookUrl: discordWebhookUrl.trim() }),
       });
       const data = await res.json() as { ok?: boolean; error?: string };
       if (data.ok) {
-        localStorage.setItem("discord_webhook_url", url);
-        setDiscordTestResult({ ok: true, message: "Test message sent! Check your Discord channel." });
+        setDiscordMessage({ ok: true, text: "Test ping sent! Check your Discord channel." });
       } else {
-        setDiscordTestResult({ ok: false, message: data.error ?? "Test failed" });
+        setDiscordMessage({ ok: false, text: data.error ?? "Test failed" });
       }
     } catch {
-      setDiscordTestResult({ ok: false, message: "Network error — check your connection" });
+      setDiscordMessage({ ok: false, text: "Network error — check your connection" });
     } finally {
       setDiscordTesting(false);
     }
@@ -1467,17 +1498,15 @@ export default function SettingsClient() {
               <div style={{ padding: "0 1.5rem 1.5rem", display: "flex", flexDirection: "column", gap: "1rem" }}>
                 <p style={{ color: "var(--text-2)", fontSize: "0.875rem", lineHeight: 1.6, margin: 0 }}>
                   Every day at 09:00 UTC, TixTracker checks for unsold tickets and pings your Discord channel
-                  at four urgency levels: <strong>7 days</strong>, <strong>3 days</strong>, <strong>2 days</strong>,
-                  and <strong>1 day</strong> before the event. Only tickets that are still unsold (not Sold or Archived)
-                  trigger a notification.
+                  at four urgency levels. Only tickets still unsold (not Sold or Archived) trigger a notification.
                 </p>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10 }}>
-                  {[
+                  {([
                     { emoji: "⚠️", days: "7 days", color: "#FFB84F" },
                     { emoji: "🔶", days: "3 days", color: "#FF7D2C" },
                     { emoji: "🚨", days: "2 days", color: "#FF4500" },
                     { emoji: "🔴", days: "1 day",  color: "#FF2244" },
-                  ].map(({ emoji, days, color }) => (
+                  ] as const).map(({ emoji, days, color }) => (
                     <div key={days} style={{ padding: "10px 12px", borderRadius: 8, background: "rgba(255,255,255,0.04)", border: `1px solid ${color}40`, textAlign: "center" }}>
                       <div style={{ fontSize: 20, marginBottom: 4 }}>{emoji}</div>
                       <strong style={{ fontSize: "0.8rem", color }}>{days}</strong>
@@ -1490,55 +1519,65 @@ export default function SettingsClient() {
             <section className="table-card">
               <div className="table-card-header">
                 <div>
-                  <p className="section-tag">Setup</p>
-                  <h4>Connect your Discord webhook</h4>
+                  <p className="section-tag">Discord webhook</p>
+                  <h4>Connect your channel</h4>
                 </div>
+                {discordSaved && (
+                  <span className="status-badge status-static status-sold">Saved ✓</span>
+                )}
               </div>
               <div style={{ padding: "0 1.5rem 1.5rem", display: "flex", flexDirection: "column", gap: "1.25rem" }}>
                 <ol style={{ color: "var(--text-2)", fontSize: "0.875rem", lineHeight: 1.7, margin: 0, paddingLeft: "1.2rem" }}>
-                  <li>In Discord, go to <strong>Server Settings → Integrations → Webhooks</strong></li>
-                  <li>Click <strong>New Webhook</strong>, choose a channel, copy the URL</li>
-                  <li>In Vercel, go to <strong>Project → Settings → Environment Variables</strong></li>
-                  <li>Add <code style={{ background: "rgba(255,255,255,0.08)", padding: "1px 6px", borderRadius: 4, fontFamily: "var(--font-geist-mono, monospace)" }}>DISCORD_WEBHOOK_URL</code> with your webhook URL</li>
-                  <li>Redeploy to apply the new variable</li>
+                  <li>In Discord, open your server → <strong>Server Settings → Integrations → Webhooks</strong></li>
+                  <li>Click <strong>New Webhook</strong>, choose a channel, then click <strong>Copy Webhook URL</strong></li>
+                  <li>Paste the URL below and click <strong>Save</strong></li>
                 </ol>
 
-                <div style={{ background: "rgba(155,92,255,0.07)", border: "1px solid rgba(155,92,255,0.2)", borderRadius: 10, padding: "1rem 1.25rem" }}>
-                  <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", margin: "0 0 8px", textTransform: "uppercase", letterSpacing: "0.12em" }}>Test with a webhook URL</p>
-                  <p style={{ fontSize: "0.8rem", color: "var(--text-2)", margin: "0 0 12px", lineHeight: 1.5 }}>
-                    Paste your webhook URL below to send a test ping before adding it to Vercel.
-                  </p>
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                    <input
-                      className="field"
-                      type="url"
-                      placeholder="https://discord.com/api/webhooks/..."
-                      value={discordWebhookUrl}
-                      onChange={(e) => setDiscordWebhookUrl(e.target.value)}
-                      style={{ flex: "1 1 300px", fontFamily: "var(--font-geist-mono, monospace)", fontSize: "0.8rem" }}
-                    />
-                    <button
-                      type="button"
-                      className="primary-button"
-                      disabled={discordTesting || !discordWebhookUrl.trim().startsWith("https://discord.com/api/webhooks/")}
-                      onClick={() => void testDiscordWebhook()}
-                    >
-                      {discordTesting ? "Sending…" : "Send test ping"}
-                    </button>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <input
+                    className="field"
+                    type="url"
+                    placeholder="https://discord.com/api/webhooks/..."
+                    value={discordWebhookUrl}
+                    onChange={(e) => { setDiscordWebhookUrl(e.target.value); setDiscordMessage(null); }}
+                    style={{ flex: "1 1 320px", fontFamily: "var(--font-geist-mono, monospace)", fontSize: "0.8rem" }}
+                  />
+                  <button
+                    type="button"
+                    className="primary-button"
+                    disabled={discordSaving}
+                    onClick={() => void saveDiscordWebhook()}
+                  >
+                    {discordSaving ? "Saving…" : "Save"}
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    disabled={discordTesting || !discordWebhookUrl.trim().startsWith("https://discord.com/api/webhooks/")}
+                    onClick={() => void testDiscordWebhook()}
+                  >
+                    {discordTesting ? "Sending…" : "Send test ping"}
+                  </button>
+                </div>
+
+                {discordMessage && (
+                  <div style={{
+                    padding: "8px 14px",
+                    borderRadius: 8,
+                    fontSize: "0.82rem",
+                    background: discordMessage.ok ? "rgba(103,240,165,0.1)" : "rgba(255,80,80,0.1)",
+                    border: `1px solid ${discordMessage.ok ? "rgba(103,240,165,0.3)" : "rgba(255,80,80,0.3)"}`,
+                    color: discordMessage.ok ? "#67F0A5" : "#ff8080",
+                  }}>
+                    {discordMessage.ok ? "✓ " : "✗ "}{discordMessage.text}
                   </div>
-                  {discordTestResult && (
-                    <div style={{
-                      marginTop: 10,
-                      padding: "8px 12px",
-                      borderRadius: 7,
-                      fontSize: "0.82rem",
-                      background: discordTestResult.ok ? "rgba(103,240,165,0.1)" : "rgba(255,80,80,0.1)",
-                      border: `1px solid ${discordTestResult.ok ? "rgba(103,240,165,0.3)" : "rgba(255,80,80,0.3)"}`,
-                      color: discordTestResult.ok ? "#67F0A5" : "#ff8080",
-                    }}>
-                      {discordTestResult.ok ? "✓ " : "✗ "}{discordTestResult.message}
-                    </div>
-                  )}
+                )}
+
+                <div style={{ padding: "12px 14px", borderRadius: 8, background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)" }}>
+                  <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--text-muted)", lineHeight: 1.5 }}>
+                    Your webhook URL is stored securely per account. Each TixTracker user can configure their own Discord channel independently.
+                    To disable alerts, clear the field and save.
+                  </p>
                 </div>
               </div>
             </section>
