@@ -374,15 +374,49 @@ export default function SettingsClient() {
   const searchParams = useSearchParams();
 
   // Tab
-  const [activeTab, setActiveTab] = useState<"connections" | "import" | "currency" | "clients">(() => {
+  const [activeTab, setActiveTab] = useState<"connections" | "import" | "currency" | "clients" | "notifications">(() => {
     if (typeof window !== "undefined") {
       const t = new URLSearchParams(window.location.search).get("tab");
       if (t === "import") return "import";
       if (t === "currency") return "currency";
       if (t === "clients") return "clients";
+      if (t === "notifications") return "notifications";
     }
     return "connections";
   });
+
+  // ── Discord notifications state ──
+  const [discordWebhookUrl, setDiscordWebhookUrl] = useState<string>(() => {
+    if (typeof window !== "undefined") return localStorage.getItem("discord_webhook_url") ?? "";
+    return "";
+  });
+  const [discordTesting, setDiscordTesting] = useState(false);
+  const [discordTestResult, setDiscordTestResult] = useState<{ ok: boolean; message: string } | null>(null);
+
+  async function testDiscordWebhook() {
+    const url = discordWebhookUrl.trim();
+    if (!url) return;
+    setDiscordTesting(true);
+    setDiscordTestResult(null);
+    try {
+      const res = await fetch("/api/test-discord", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ webhookUrl: url }),
+      });
+      const data = await res.json() as { ok?: boolean; error?: string };
+      if (data.ok) {
+        localStorage.setItem("discord_webhook_url", url);
+        setDiscordTestResult({ ok: true, message: "Test message sent! Check your Discord channel." });
+      } else {
+        setDiscordTestResult({ ok: false, message: data.error ?? "Test failed" });
+      }
+    } catch {
+      setDiscordTestResult({ ok: false, message: "Network error — check your connection" });
+    } finally {
+      setDiscordTesting(false);
+    }
+  }
 
   // ── Currency state ──
   const [selectedCurrency, setSelectedCurrency] = useState<string>(() => getCurrencyCode());
@@ -867,6 +901,9 @@ export default function SettingsClient() {
             </button>
             <button type="button" className={`toggle-btn${activeTab === "clients" ? " toggle-btn-active" : ""}`} onClick={() => setActiveTab("clients")}>
               Clients
+            </button>
+            <button type="button" className={`toggle-btn${activeTab === "notifications" ? " toggle-btn-active" : ""}`} onClick={() => setActiveTab("notifications")}>
+              Notifications
             </button>
           </div>
         </section>
@@ -1395,6 +1432,114 @@ export default function SettingsClient() {
                 <p style={{ fontSize: "12px", color: "var(--muted)" }}>
                   Sample data only — real emails use the buyer&apos;s actual ticket details.
                 </p>
+              </div>
+            </section>
+          </>
+        )}
+
+        {/* ── Notifications tab ── */}
+        {activeTab === "notifications" && (
+          <>
+            <section className="hero-card connections-hero">
+              <div>
+                <p className="section-tag">Notifications</p>
+                <h3>Discord unsold ticket alerts</h3>
+              </div>
+              <div className="hero-meta">
+                <div>
+                  <span className="hero-meta-label">Alerts</span>
+                  <strong>7 · 3 · 2 · 1 day</strong>
+                </div>
+                <div>
+                  <span className="hero-meta-label">Schedule</span>
+                  <strong>Daily 09:00</strong>
+                </div>
+              </div>
+            </section>
+
+            <section className="table-card">
+              <div className="table-card-header">
+                <div>
+                  <p className="section-tag">How it works</p>
+                  <h4>Unsold ticket pings</h4>
+                </div>
+              </div>
+              <div style={{ padding: "0 1.5rem 1.5rem", display: "flex", flexDirection: "column", gap: "1rem" }}>
+                <p style={{ color: "var(--text-2)", fontSize: "0.875rem", lineHeight: 1.6, margin: 0 }}>
+                  Every day at 09:00 UTC, TixTracker checks for unsold tickets and pings your Discord channel
+                  at four urgency levels: <strong>7 days</strong>, <strong>3 days</strong>, <strong>2 days</strong>,
+                  and <strong>1 day</strong> before the event. Only tickets that are still unsold (not Sold or Archived)
+                  trigger a notification.
+                </p>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10 }}>
+                  {[
+                    { emoji: "⚠️", days: "7 days", color: "#FFB84F" },
+                    { emoji: "🔶", days: "3 days", color: "#FF7D2C" },
+                    { emoji: "🚨", days: "2 days", color: "#FF4500" },
+                    { emoji: "🔴", days: "1 day",  color: "#FF2244" },
+                  ].map(({ emoji, days, color }) => (
+                    <div key={days} style={{ padding: "10px 12px", borderRadius: 8, background: "rgba(255,255,255,0.04)", border: `1px solid ${color}40`, textAlign: "center" }}>
+                      <div style={{ fontSize: 20, marginBottom: 4 }}>{emoji}</div>
+                      <strong style={{ fontSize: "0.8rem", color }}>{days}</strong>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </section>
+
+            <section className="table-card">
+              <div className="table-card-header">
+                <div>
+                  <p className="section-tag">Setup</p>
+                  <h4>Connect your Discord webhook</h4>
+                </div>
+              </div>
+              <div style={{ padding: "0 1.5rem 1.5rem", display: "flex", flexDirection: "column", gap: "1.25rem" }}>
+                <ol style={{ color: "var(--text-2)", fontSize: "0.875rem", lineHeight: 1.7, margin: 0, paddingLeft: "1.2rem" }}>
+                  <li>In Discord, go to <strong>Server Settings → Integrations → Webhooks</strong></li>
+                  <li>Click <strong>New Webhook</strong>, choose a channel, copy the URL</li>
+                  <li>In Vercel, go to <strong>Project → Settings → Environment Variables</strong></li>
+                  <li>Add <code style={{ background: "rgba(255,255,255,0.08)", padding: "1px 6px", borderRadius: 4, fontFamily: "var(--font-geist-mono, monospace)" }}>DISCORD_WEBHOOK_URL</code> with your webhook URL</li>
+                  <li>Redeploy to apply the new variable</li>
+                </ol>
+
+                <div style={{ background: "rgba(155,92,255,0.07)", border: "1px solid rgba(155,92,255,0.2)", borderRadius: 10, padding: "1rem 1.25rem" }}>
+                  <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", margin: "0 0 8px", textTransform: "uppercase", letterSpacing: "0.12em" }}>Test with a webhook URL</p>
+                  <p style={{ fontSize: "0.8rem", color: "var(--text-2)", margin: "0 0 12px", lineHeight: 1.5 }}>
+                    Paste your webhook URL below to send a test ping before adding it to Vercel.
+                  </p>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <input
+                      className="field"
+                      type="url"
+                      placeholder="https://discord.com/api/webhooks/..."
+                      value={discordWebhookUrl}
+                      onChange={(e) => setDiscordWebhookUrl(e.target.value)}
+                      style={{ flex: "1 1 300px", fontFamily: "var(--font-geist-mono, monospace)", fontSize: "0.8rem" }}
+                    />
+                    <button
+                      type="button"
+                      className="primary-button"
+                      disabled={discordTesting || !discordWebhookUrl.trim().startsWith("https://discord.com/api/webhooks/")}
+                      onClick={() => void testDiscordWebhook()}
+                    >
+                      {discordTesting ? "Sending…" : "Send test ping"}
+                    </button>
+                  </div>
+                  {discordTestResult && (
+                    <div style={{
+                      marginTop: 10,
+                      padding: "8px 12px",
+                      borderRadius: 7,
+                      fontSize: "0.82rem",
+                      background: discordTestResult.ok ? "rgba(103,240,165,0.1)" : "rgba(255,80,80,0.1)",
+                      border: `1px solid ${discordTestResult.ok ? "rgba(103,240,165,0.3)" : "rgba(255,80,80,0.3)"}`,
+                      color: discordTestResult.ok ? "#67F0A5" : "#ff8080",
+                    }}>
+                      {discordTestResult.ok ? "✓ " : "✗ "}{discordTestResult.message}
+                    </div>
+                  )}
+                </div>
               </div>
             </section>
           </>
