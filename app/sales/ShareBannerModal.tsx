@@ -186,7 +186,7 @@ export function SaleBanner({ sale, order, animated, hideDetails = false }: Banne
 
       {/* ── Top bar ── */}
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"22px 24px 0", flexShrink:0 }}>
-        <img src="/logo.png" style={{ height:48, width:"auto" }} alt="TixTracker" />
+        <img src="/logo.png" style={{ height:96, width:"auto", filter:"drop-shadow(0 0 10px rgba(155,92,255,0.28)) drop-shadow(0 0 22px rgba(155,92,255,0.10))" }} alt="TixTracker" />
         <div style={{ display:"flex", alignItems:"center", gap:6, background:"rgba(74,222,128,0.11)", border:"1px solid rgba(74,222,128,0.25)", borderRadius:999, padding:"5px 12px", flexShrink:0 }}>
           <div style={{ width:6, height:6, borderRadius:"50%", background:"#4ade80", boxShadow:"0 0 6px #4ade80", flexShrink:0 }} />
           <span style={{ fontSize:11, fontWeight:700, letterSpacing:"0.09em", textTransform:"uppercase", color:"#4ade80", whiteSpace:"nowrap" }}>Sale Completed</span>
@@ -245,8 +245,8 @@ export function SaleBanner({ sale, order, animated, hideDetails = false }: Banne
       {/* ── Footer ── */}
       <div style={{ padding:"10px 24px 16px", borderTop:"1px solid rgba(255,255,255,0.06)", display:"flex", justifyContent:"space-between", alignItems:"center", flexShrink:0 }}>
         <div style={{ display:"flex", alignItems:"center", gap:7 }}>
-          <img src="/logo.png" style={{ height:22, width:"auto" }} alt="" />
-          <span style={{ fontSize:12, fontWeight:600, letterSpacing:"0.04em", color:"rgba(255,255,255,0.26)" }}>www.tixtracker.app</span>
+          <img src="/logo.png" style={{ height:32, width:"auto" }} alt="" />
+          <span style={{ fontSize:17, fontWeight:600, letterSpacing:"0.04em", color:"rgba(255,255,255,0.42)" }}>www.tixtracker.app</span>
         </div>
         {s.section && (
           <span style={{ fontSize:11, color:"rgba(255,255,255,0.24)", letterSpacing:"0.02em" }}>
@@ -299,7 +299,7 @@ export function MultiSaleBanner({ stats, animated }: { stats: MultiSaleStats; an
 
       {/* Top bar */}
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"22px 24px 0", flexShrink:0 }}>
-        <img src="/logo.png" style={{ height:48, width:"auto" }} alt="TixTracker" />
+        <img src="/logo.png" style={{ height:96, width:"auto", filter:"drop-shadow(0 0 10px rgba(155,92,255,0.28)) drop-shadow(0 0 22px rgba(155,92,255,0.10))" }} alt="TixTracker" />
         <div style={{ display:"flex", alignItems:"center", gap:6, background:"rgba(74,222,128,0.11)", border:"1px solid rgba(74,222,128,0.25)", borderRadius:999, padding:"5px 12px", flexShrink:0 }}>
           <div style={{ width:6, height:6, borderRadius:"50%", background:"#4ade80", boxShadow:"0 0 6px #4ade80", flexShrink:0 }} />
           <span style={{ fontSize:11, fontWeight:700, letterSpacing:"0.09em", textTransform:"uppercase", color:"#4ade80", whiteSpace:"nowrap" }}>{salesCount} Sales Completed</span>
@@ -359,8 +359,8 @@ export function MultiSaleBanner({ stats, animated }: { stats: MultiSaleStats; an
       {/* Footer */}
       <div style={{ padding:"10px 24px 16px", borderTop:"1px solid rgba(255,255,255,0.06)", display:"flex", justifyContent:"space-between", alignItems:"center", flexShrink:0 }}>
         <div style={{ display:"flex", alignItems:"center", gap:7 }}>
-          <img src="/logo.png" style={{ height:22, width:"auto" }} alt="" />
-          <span style={{ fontSize:12, fontWeight:600, letterSpacing:"0.04em", color:"rgba(255,255,255,0.26)" }}>www.tixtracker.app</span>
+          <img src="/logo.png" style={{ height:32, width:"auto" }} alt="" />
+          <span style={{ fontSize:17, fontWeight:600, letterSpacing:"0.04em", color:"rgba(255,255,255,0.42)" }}>www.tixtracker.app</span>
         </div>
         <span style={{ fontSize:11, color:"rgba(255,255,255,0.24)" }}>{salesCount} combined sales</span>
       </div>
@@ -517,7 +517,7 @@ function _bannerFooter(
   ctx.beginPath(); ctx.moveTo(0, footerTop); ctx.lineTo(W, footerTop); ctx.stroke();
   ctx.restore();
   const fY    = footerTop + 10 * sc;
-  const logoH = 22 * sc;
+  const logoH = 32 * sc;
   let textX   = spad;
   if (logo) {
     const logoW = logo.naturalWidth * (logoH / logo.naturalHeight);
@@ -525,8 +525,8 @@ function _bannerFooter(
     textX = spad + logoW + 7 * sc;
   }
   ctx.save();
-  ctx.font = `600 ${12 * sc}px ${_F}`; ctx.textBaseline = "top"; ctx.textAlign = "left";
-  ctx.fillStyle = "rgba(255,255,255,0.26)"; ctx.fillText("www.tixtracker.app", textX, fY);
+  ctx.font = `600 ${17 * sc}px ${_F}`; ctx.textBaseline = "top"; ctx.textAlign = "left";
+  ctx.fillStyle = "rgba(255,255,255,0.42)"; ctx.fillText("www.tixtracker.app", textX, fY);
   ctx.restore();
   if (rightText) {
     ctx.save();
@@ -567,12 +567,16 @@ function _drawSaleBanner(
   _bannerBg(ctx, W, H, isPos, sc);
 
   const spad = 24 * sc, topY = 22 * sc;
-  const logoH = 48 * sc;
+  const logoH = 96 * sc;
   const logoCY = topY + logoH / 2;
 
   if (logo) {
     const logoW = logo.naturalWidth * (logoH / logo.naturalHeight);
+    ctx.save();
+    ctx.shadowBlur = 18 * sc;
+    ctx.shadowColor = "rgba(155,92,255,0.28)";
     ctx.drawImage(logo, spad, topY, logoW, logoH);
+    ctx.restore();
   }
   _badge(ctx, W - spad, logoCY, "Sale Completed", sc);
 
@@ -602,7 +606,7 @@ function _drawSaleBanner(
   const divY = venueY + 12.5 * sc * 1.3 + 12 * sc;
   ctx.fillStyle = "rgba(255,255,255,0.06)"; ctx.fillRect(spad, divY, W - spad * 2, sc);
 
-  const footerH  = 48 * sc, footerTop = H - footerH;
+  const footerH  = 58 * sc, footerTop = H - footerH;
   const boxH     = 76 * sc, boxGap = 12 * sc, boxPadB = 15 * sc;
   const boxTop   = footerTop - boxPadB - boxH;
   const bOL      = 20 * sc, bW = (W - 2 * bOL - boxGap) / 2;
@@ -634,8 +638,15 @@ function _drawMultiBanner(
   _bannerBg(ctx, W, H, isPos, sc);
 
   const spad = 24 * sc, topY = 22 * sc;
-  const logoH = 48 * sc, logoCY = topY + logoH / 2;
-  if (logo) { const lw = logo.naturalWidth * (logoH / logo.naturalHeight); ctx.drawImage(logo, spad, topY, lw, logoH); }
+  const logoH = 96 * sc, logoCY = topY + logoH / 2;
+  if (logo) {
+    const lw = logo.naturalWidth * (logoH / logo.naturalHeight);
+    ctx.save();
+    ctx.shadowBlur = 18 * sc;
+    ctx.shadowColor = "rgba(155,92,255,0.28)";
+    ctx.drawImage(logo, spad, topY, lw, logoH);
+    ctx.restore();
+  }
   _badge(ctx, W - spad, logoCY, `${salesCount} Sales Completed`, sc);
 
   let eventBottom = topY + logoH + 12 * sc;
@@ -677,7 +688,7 @@ function _drawMultiBanner(
   const divY = subY + 12.5 * sc * 1.3 + 12 * sc;
   ctx.fillStyle = "rgba(255,255,255,0.06)"; ctx.fillRect(spad, divY, W - spad * 2, sc);
 
-  const footerH = 48 * sc, footerTop = H - footerH;
+  const footerH = 58 * sc, footerTop = H - footerH;
   const boxH    = 76 * sc, boxGap = 12 * sc, boxPadB = 15 * sc;
   const boxTop  = footerTop - boxPadB - boxH;
   const bOL     = 20 * sc, bW = (W - 2 * bOL - boxGap) / 2;
