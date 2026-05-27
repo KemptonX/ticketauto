@@ -185,6 +185,7 @@ export default function OrdersClient() {
 
   const [viewMode, setViewMode] = useState<"active" | "archived" | "ignored" | "personal">("active");
   const [sortBy, setSortBy] = useState<"event-date" | "added-newest" | "added-oldest">("event-date");
+  const [privacyMode, setPrivacyMode] = useState(false);
 
   const [search, setSearch] = useState("");
   const [eventFilters, setEventFilters] = useState<string[]>([]);
@@ -1013,6 +1014,14 @@ export default function OrdersClient() {
             <h2>Tickets</h2>
           </div>
           <div className="topbar-actions">
+            <button
+              className={`secondary-button${privacyMode ? " toggle-btn-active" : ""}`}
+              onClick={() => { setPrivacyMode(v => !v); setSearch(""); }}
+              type="button"
+              title={privacyMode ? "Show event details" : "Hide event details"}
+            >
+              {privacyMode ? "Show Details" : "Hide Details"}
+            </button>
             <button className="secondary-button" onClick={() => loadOrders(true)} disabled={refreshing} type="button">
               {refreshing ? "Refreshing..." : "Refresh"}
             </button>
@@ -1263,9 +1272,9 @@ export default function OrdersClient() {
                     >
                       <div className="inventory-group-main">
                         <div className="inventory-group-title">
-                          <strong>{group.eventName}</strong>
-                          <span>{group.venue}</span>
-                          <small>{formatEventDate(group.eventDate)}</small>
+                          <strong>{privacyMode ? "••••••••••••" : group.eventName}</strong>
+                          <span>{privacyMode ? "••••••••" : group.venue}</span>
+                          <small>{privacyMode ? "•• ••• ••••" : formatEventDate(group.eventDate)}</small>
                           <div className="title-chips">
                             {group.hasNew && <span className="new-badge">New</span>}
                             {(() => { const d = formatDaysAway(group.dateValue); return d ? <span className={`days-chip ${d.tone}`}>{d.label}</span> : null; })()}
