@@ -211,7 +211,7 @@ export function SaleBanner({ sale, order, animated, hideDetails = false }: Banne
         padding: "24px 28px 0",
       }}>
         <div style={{ display: "flex", alignItems: "center" }}>
-          <img src="/logo.png" style={{ height: 28, width: "auto" }} alt="TixTracker" />
+          <img src="/logo.png" style={{ height: 112, width: "auto" }} alt="TixTracker" />
         </div>
         <div style={{
           display: "flex", alignItems: "center", gap: 7,
@@ -332,7 +332,7 @@ export function SaleBanner({ sale, order, animated, hideDetails = false }: Banne
         display: "flex", justifyContent: "space-between", alignItems: "center",
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <img src="/logo.png" style={{ height: 16, width: "auto" }} alt="" />
+          <img src="/logo.png" style={{ height: 64, width: "auto" }} alt="" />
           <span style={{ fontSize: 12, fontWeight: 600, letterSpacing: "0.05em", color: "rgba(255,255,255,0.25)" }}>
             www.tixtracker.app
           </span>
@@ -396,7 +396,7 @@ export function MultiSaleBanner({ stats, animated }: { stats: MultiSaleStats; an
 
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "24px 28px 0" }}>
         <div style={{ display: "flex", alignItems: "center" }}>
-          <img src="/logo.png" style={{ height: 28, width: "auto" }} alt="TixTracker" />
+          <img src="/logo.png" style={{ height: 112, width: "auto" }} alt="TixTracker" />
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 7, background: "rgba(74,222,128,0.12)", border: "1px solid rgba(74,222,128,0.3)", borderRadius: 999, padding: "5px 12px" }}>
           <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#4ade80", boxShadow: "0 0 6px #4ade80" }} />
@@ -460,7 +460,7 @@ export function MultiSaleBanner({ stats, animated }: { stats: MultiSaleStats; an
 
       <div style={{ padding: "12px 28px 22px", borderTop: "1px solid rgba(255,255,255,0.05)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <img src="/logo.png" style={{ height: 16, width: "auto" }} alt="" />
+          <img src="/logo.png" style={{ height: 64, width: "auto" }} alt="" />
           <span style={{ fontSize: 12, fontWeight: 600, letterSpacing: "0.05em", color: "rgba(255,255,255,0.25)" }}>www.tixtracker.app</span>
         </div>
         <span style={{ fontSize: 11, color: "rgba(255,255,255,0.22)" }}>{salesCount} combined sales</span>
@@ -706,7 +706,7 @@ function _bannerFooter(
   const fIconSz = 14, fY = footerTop + 12 * sc;
   let textX = spad;
   if (logo) {
-    const logoH = fIconSz * sc;
+    const logoH = 56 * sc;
     const logoW = logo.naturalWidth * (logoH / logo.naturalHeight);
     ctx.drawImage(logo, spad, fY, logoW, logoH);
     textX = spad + logoW + 6 * sc;
@@ -757,7 +757,7 @@ function _drawSaleBanner(
   const spad = 28 * sc, topY = 24 * sc, iconSz = 20;
   const iconCY = topY + (iconSz * sc) / 2;
   if (logo) {
-    const logoH = iconSz * sc;
+    const logoH = 80 * sc;
     const logoW = logo.naturalWidth * (logoH / logo.naturalHeight);
     ctx.drawImage(logo, spad, topY, logoW, logoH);
   } else {
@@ -855,7 +855,7 @@ function _drawMultiBanner(
   const spad = 28 * sc, topY = 24 * sc, iconSz = 20;
   const iconCY = topY + (iconSz * sc) / 2;
   if (logo) {
-    const logoH = iconSz * sc;
+    const logoH = 80 * sc;
     const logoW = logo.naturalWidth * (logoH / logo.naturalHeight);
     ctx.drawImage(logo, spad, topY, logoW, logoH);
   } else {
