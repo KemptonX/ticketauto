@@ -20,14 +20,6 @@ export default function LoginForm() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
-  // Detect password recovery token in URL hash on mount
-  useEffect(() => {
-    const hash = window.location.hash;
-    if (hash.includes("type=recovery")) {
-      setMode("update-password");
-      // Supabase SSR client picks up the session from the hash automatically
-    }
-  }, []);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -65,7 +57,7 @@ export default function LoginForm() {
 
       if (mode === "reset") {
         const { error: resetError } = await supabase.auth.resetPasswordForEmail(trimmedEmail, {
-          redirectTo: `${window.location.origin}/login`,
+          redirectTo: `${window.location.origin}/update-password`,
         });
         if (resetError) {
           setError(resetError.message);
