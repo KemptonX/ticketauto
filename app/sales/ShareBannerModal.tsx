@@ -210,11 +210,8 @@ export function SaleBanner({ sale, order, animated, hideDetails = false }: Banne
         display: "flex", justifyContent: "space-between", alignItems: "center",
         padding: "24px 28px 0",
       }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <TxMark size={20} />
-          <span style={{ fontSize: 15, fontWeight: 700, letterSpacing: "-0.02em", color: "rgba(255,255,255,0.9)" }}>
-            Tix<span style={{ color: "#b87bff" }}>Tracker</span>
-          </span>
+        <div style={{ display: "flex", alignItems: "center" }}>
+          <img src="/logo.png" style={{ height: 28, width: "auto" }} alt="TixTracker" />
         </div>
         <div style={{
           display: "flex", alignItems: "center", gap: 7,
@@ -335,9 +332,9 @@ export function SaleBanner({ sale, order, animated, hideDetails = false }: Banne
         display: "flex", justifyContent: "space-between", alignItems: "center",
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <TxMark size={14} />
+          <img src="/logo.png" style={{ height: 16, width: "auto" }} alt="" />
           <span style={{ fontSize: 12, fontWeight: 600, letterSpacing: "0.05em", color: "rgba(255,255,255,0.25)" }}>
-            ticketx.app
+            www.tixtracker.app
           </span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -398,11 +395,8 @@ export function MultiSaleBanner({ stats, animated }: { stats: MultiSaleStats; an
       </div>
 
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "24px 28px 0" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <TxMark size={20} />
-          <span style={{ fontSize: 15, fontWeight: 700, letterSpacing: "-0.02em", color: "rgba(255,255,255,0.9)" }}>
-            Tix<span style={{ color: "#b87bff" }}>Tracker</span>
-          </span>
+        <div style={{ display: "flex", alignItems: "center" }}>
+          <img src="/logo.png" style={{ height: 28, width: "auto" }} alt="TixTracker" />
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 7, background: "rgba(74,222,128,0.12)", border: "1px solid rgba(74,222,128,0.3)", borderRadius: 999, padding: "5px 12px" }}>
           <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#4ade80", boxShadow: "0 0 6px #4ade80" }} />
@@ -466,8 +460,8 @@ export function MultiSaleBanner({ stats, animated }: { stats: MultiSaleStats; an
 
       <div style={{ padding: "12px 28px 22px", borderTop: "1px solid rgba(255,255,255,0.05)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <TxMark size={14} />
-          <span style={{ fontSize: 12, fontWeight: 600, letterSpacing: "0.05em", color: "rgba(255,255,255,0.25)" }}>ticketx.app</span>
+          <img src="/logo.png" style={{ height: 16, width: "auto" }} alt="" />
+          <span style={{ fontSize: 12, fontWeight: 600, letterSpacing: "0.05em", color: "rgba(255,255,255,0.25)" }}>www.tixtracker.app</span>
         </div>
         <span style={{ fontSize: 11, color: "rgba(255,255,255,0.22)" }}>{salesCount} combined sales</span>
       </div>
@@ -476,6 +470,16 @@ export function MultiSaleBanner({ stats, animated }: { stats: MultiSaleStats; an
 }
 
 // ─── Canvas drawing ───────────────────────────────────────────────────────────
+
+function _loadImage(src: string): Promise<HTMLImageElement | null> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => resolve(img);
+    img.onerror = () => resolve(null);
+    img.src = src;
+  });
+}
 
 function _rr(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
   ctx.beginPath();
@@ -689,6 +693,7 @@ function _heroSection(
 function _bannerFooter(
   ctx: CanvasRenderingContext2D,
   W: number, footerTop: number, spad: number, sc: number, rightText: string,
+  logo: HTMLImageElement | null = null,
 ) {
   ctx.save();
   ctx.strokeStyle = "rgba(255,255,255,0.05)";
@@ -699,13 +704,22 @@ function _bannerFooter(
   ctx.stroke();
   ctx.restore();
   const fIconSz = 14, fY = footerTop + 12 * sc;
-  _txMark(ctx, spad, fY, fIconSz, sc);
+  let textX = spad;
+  if (logo) {
+    const logoH = fIconSz * sc;
+    const logoW = logo.naturalWidth * (logoH / logo.naturalHeight);
+    ctx.drawImage(logo, spad, fY, logoW, logoH);
+    textX = spad + logoW + 6 * sc;
+  } else {
+    _txMark(ctx, spad, fY, fIconSz, sc);
+    textX = spad + fIconSz * sc + 6 * sc;
+  }
   ctx.save();
   ctx.font = `600 ${12 * sc}px ${_F}`;
   ctx.textBaseline = "top";
   ctx.textAlign = "left";
   ctx.fillStyle = "rgba(255,255,255,0.25)";
-  ctx.fillText("ticketx.app", spad + fIconSz * sc + 6 * sc, fY);
+  ctx.fillText("www.tixtracker.app", textX, fY);
   ctx.restore();
   if (rightText) {
     ctx.save();
@@ -724,6 +738,7 @@ function _drawSaleBanner(
   ctx: CanvasRenderingContext2D,
   W: number, H: number,
   sale: Sale, order: MatchedOrder | null,
+  logo: HTMLImageElement | null = null,
 ): void {
   const sc = W / 540;
   const revenue = sale.payout_total ?? sale.sale_total ?? 0;
@@ -741,19 +756,24 @@ function _drawSaleBanner(
 
   const spad = 28 * sc, topY = 24 * sc, iconSz = 20;
   const iconCY = topY + (iconSz * sc) / 2;
-  _txMark(ctx, spad, topY, iconSz, sc);
-
-  ctx.save();
-  ctx.font = `700 ${15 * sc}px ${_F}`;
-  ctx.textBaseline = "middle";
-  ctx.textAlign = "left";
-  ctx.fillStyle = "rgba(255,255,255,0.9)";
-  const txStart = spad + iconSz * sc + 8 * sc;
-  ctx.fillText("Ticket", txStart, iconCY);
-  const tW = ctx.measureText("Ticket").width;
-  ctx.fillStyle = "#b87bff";
-  ctx.fillText("X", txStart + tW, iconCY);
-  ctx.restore();
+  if (logo) {
+    const logoH = iconSz * sc;
+    const logoW = logo.naturalWidth * (logoH / logo.naturalHeight);
+    ctx.drawImage(logo, spad, topY, logoW, logoH);
+  } else {
+    _txMark(ctx, spad, topY, iconSz, sc);
+    ctx.save();
+    ctx.font = `700 ${15 * sc}px ${_F}`;
+    ctx.textBaseline = "middle";
+    ctx.textAlign = "left";
+    ctx.fillStyle = "rgba(255,255,255,0.9)";
+    const txStart = spad + iconSz * sc + 8 * sc;
+    ctx.fillText("Tix", txStart, iconCY);
+    const tW = ctx.measureText("Tix").width;
+    ctx.fillStyle = "#b87bff";
+    ctx.fillText("Tracker", txStart + tW, iconCY);
+    ctx.restore();
+  }
 
   _badge(ctx, W - spad, iconCY, "Sale Completed", sc);
 
@@ -811,7 +831,7 @@ function _drawSaleBanner(
   const rightFooter = sale.section
     ? sale.section + (sale.row ? ` · Row ${sale.row}` : "")
     : "";
-  _bannerFooter(ctx, W, footerTop, spad, sc, rightFooter);
+  _bannerFooter(ctx, W, footerTop, spad, sc, rightFooter, logo);
 
   _heroSection(ctx, W, divY + sc, boxTop,
     (isPos ? "" : "−") + formatCurrency(Math.abs(profit)),
@@ -823,6 +843,7 @@ function _drawMultiBanner(
   ctx: CanvasRenderingContext2D,
   W: number, H: number,
   stats: MultiSaleStats,
+  logo: HTMLImageElement | null = null,
 ): void {
   const { totalRevenue, totalCost, totalProfit, roi, salesCount, totalTickets, eventNames } = stats;
   const sc = W / 540;
@@ -833,19 +854,24 @@ function _drawMultiBanner(
 
   const spad = 28 * sc, topY = 24 * sc, iconSz = 20;
   const iconCY = topY + (iconSz * sc) / 2;
-  _txMark(ctx, spad, topY, iconSz, sc);
-
-  ctx.save();
-  ctx.font = `700 ${15 * sc}px ${_F}`;
-  ctx.textBaseline = "middle";
-  ctx.textAlign = "left";
-  ctx.fillStyle = "rgba(255,255,255,0.9)";
-  const txStart = spad + iconSz * sc + 8 * sc;
-  ctx.fillText("Ticket", txStart, iconCY);
-  const tW = ctx.measureText("Ticket").width;
-  ctx.fillStyle = "#b87bff";
-  ctx.fillText("X", txStart + tW, iconCY);
-  ctx.restore();
+  if (logo) {
+    const logoH = iconSz * sc;
+    const logoW = logo.naturalWidth * (logoH / logo.naturalHeight);
+    ctx.drawImage(logo, spad, topY, logoW, logoH);
+  } else {
+    _txMark(ctx, spad, topY, iconSz, sc);
+    ctx.save();
+    ctx.font = `700 ${15 * sc}px ${_F}`;
+    ctx.textBaseline = "middle";
+    ctx.textAlign = "left";
+    ctx.fillStyle = "rgba(255,255,255,0.9)";
+    const txStart = spad + iconSz * sc + 8 * sc;
+    ctx.fillText("Tix", txStart, iconCY);
+    const tW = ctx.measureText("Tix").width;
+    ctx.fillStyle = "#b87bff";
+    ctx.fillText("Tracker", txStart + tW, iconCY);
+    ctx.restore();
+  }
 
   _badge(ctx, W - spad, iconCY, `${salesCount} Sales Completed`, sc);
 
@@ -919,7 +945,7 @@ function _drawMultiBanner(
     `${salesCount} sale${salesCount !== 1 ? "s" : ""}`,
     sc, true);
 
-  _bannerFooter(ctx, W, footerTop, spad, sc, `${salesCount} combined sales`);
+  _bannerFooter(ctx, W, footerTop, spad, sc, `${salesCount} combined sales`, logo);
 
   _heroSection(ctx, W, divY + sc, boxTop,
     (isPos ? "" : "−") + formatCurrency(Math.abs(totalProfit)),
@@ -937,9 +963,10 @@ function _drawMultiBanner(
 //   internal GPU createPattern path that Chrome bugs on.
 // Path 3 — direct toBlob on willReadFrequently canvas (simple last resort).
 async function renderBannerToBlob(
-  drawFn: (ctx: CanvasRenderingContext2D, W: number, H: number) => void,
+  drawFn: (ctx: CanvasRenderingContext2D, W: number, H: number, logo: HTMLImageElement | null) => void,
 ): Promise<Blob> {
   const W = 1080, H = 1080;
+  const logo = await _loadImage("/logo.png");
 
   // Path 1: OffscreenCanvas
   if (typeof OffscreenCanvas !== "undefined") {
@@ -947,7 +974,7 @@ async function renderBannerToBlob(
       const oc = new OffscreenCanvas(W, H);
       const ctx = oc.getContext("2d") as CanvasRenderingContext2D | null;
       if (ctx) {
-        drawFn(ctx, W, H);
+        drawFn(ctx, W, H, logo);
         return await oc.convertToBlob({ type: "image/jpeg", quality: 0.92 });
       }
     } catch { /* fall through */ }
@@ -961,7 +988,7 @@ async function renderBannerToBlob(
     drawCanvas.height = H;
     const drawCtx = drawCanvas.getContext("2d", { willReadFrequently: true });
     if (!drawCtx) throw new Error("no ctx");
-    drawFn(drawCtx, W, H);
+    drawFn(drawCtx, W, H, logo);
     const imageData = drawCtx.getImageData(0, 0, W, H);
     const bitmap = await createImageBitmap(imageData);
     const encCanvas = document.createElement("canvas");
@@ -982,7 +1009,7 @@ async function renderBannerToBlob(
   canvas.height = H;
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
   if (!ctx) throw new Error("Canvas 2D context unavailable");
-  drawFn(ctx, W, H);
+  drawFn(ctx, W, H, logo);
   return new Promise<Blob>((res, rej) =>
     canvas.toBlob(b => b ? res(b) : rej(new Error("toBlob returned null")), "image/jpeg", 0.92)
   );
@@ -1016,7 +1043,7 @@ export function ShareMultiBannerModal({ stats, onClose }: MultiShareProps) {
     const t1 = setTimeout(() => setVisible(true), 16);
     const t2 = setTimeout(() => setShowConfetti(true), 200);
     const t3 = setTimeout(() => setShowConfetti(false), 1400);
-    renderBannerToBlob((ctx, W, H) => _drawMultiBanner(ctx, W, H, stats))
+    renderBannerToBlob((ctx, W, H, logo) => _drawMultiBanner(ctx, W, H, stats, logo))
       .then(blob => setBannerBlob(blob))
       .catch(err => setGenError(err instanceof Error ? err.message : String(err)));
     return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
@@ -1143,7 +1170,7 @@ export default function ShareBannerModal({ sale, order, onClose }: Props) {
       : sale;
     setBannerBlob(null);
     setGenError("");
-    renderBannerToBlob((ctx, W, H) => _drawSaleBanner(ctx, W, H, saleToDraw, order))
+    renderBannerToBlob((ctx, W, H, logo) => _drawSaleBanner(ctx, W, H, saleToDraw, order, logo))
       .then(blob => setBannerBlob(blob))
       .catch(err => setGenError(err instanceof Error ? err.message : String(err)));
   }, [hideDetails]);
