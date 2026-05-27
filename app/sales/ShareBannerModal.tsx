@@ -110,7 +110,7 @@ function Confetti() {
 
 // ─── ScaledPreview ────────────────────────────────────────────────────────────
 
-function ScaledPreview({ children, w = 500, h = 410 }: { children: React.ReactNode; w?: number; h?: number }) {
+function ScaledPreview({ children, w = 500, h = 460 }: { children: React.ReactNode; w?: number; h?: number }) {
   const ref   = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1);
 
@@ -134,7 +134,7 @@ function ScaledPreview({ children, w = 500, h = 410 }: { children: React.ReactNo
   );
 }
 
-// ─── Sale banner (500 × 410) ──────────────────────────────────────────────────
+// ─── Sale banner (500 × 460) ──────────────────────────────────────────────────
 
 type BannerProps = { sale: Sale; order: MatchedOrder | null; animated: boolean; hideDetails?: boolean };
 
@@ -160,96 +160,96 @@ export function SaleBanner({ sale, order, animated, hideDetails = false }: Banne
 
   const pc   = isPos ? "#4ade80" : "#f87171";
   const glow = isPos
-    ? "0 0 28px rgba(74,222,128,0.28), 0 0 56px rgba(74,222,128,0.10)"
-    : "0 0 28px rgba(248,113,113,0.28), 0 0 56px rgba(248,113,113,0.10)";
+    ? "0 0 32px rgba(74,222,128,0.32), 0 0 60px rgba(74,222,128,0.12)"
+    : "0 0 32px rgba(248,113,113,0.32), 0 0 60px rgba(248,113,113,0.12)";
 
   return (
     <div style={{
-      width:500, height:410,
+      width:500, height:460,
       background:"linear-gradient(145deg, #0d0d1a 0%, #08080f 55%, #0f0b18 100%)",
       position:"relative", overflow:"hidden",
       fontFamily:"-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
       display:"flex", flexDirection:"column",
     }}>
-      {/* Ambient glows — original positions */}
-      <div style={{ position:"absolute", top:-60, left:-60, width:240, height:240, background:"radial-gradient(circle, rgba(155,92,255,0.10) 0%, transparent 70%)", pointerEvents:"none" }} />
-      <div style={{ position:"absolute", bottom:-50, right:-50, width:200, height:200, background:"radial-gradient(circle, rgba(255,79,163,0.08) 0%, transparent 70%)", pointerEvents:"none" }} />
-      <div style={{ position:"absolute", top:"44%", left:"50%", transform:"translate(-50%,-50%)", width:240, height:240, background:`radial-gradient(circle, ${isPos?"rgba(74,222,128,0.05)":"rgba(248,113,113,0.05)"} 0%, transparent 70%)`, pointerEvents:"none" }} />
+      {/* Ambient glows */}
+      <div style={{ position:"absolute", top:-60, left:-60, width:260, height:260, background:"radial-gradient(circle, rgba(155,92,255,0.12) 0%, transparent 70%)", pointerEvents:"none" }} />
+      <div style={{ position:"absolute", bottom:-50, right:-50, width:220, height:220, background:"radial-gradient(circle, rgba(255,79,163,0.10) 0%, transparent 70%)", pointerEvents:"none" }} />
+      <div style={{ position:"absolute", top:"44%", left:"50%", transform:"translate(-50%,-50%)", width:280, height:280, background:`radial-gradient(circle, ${isPos?"rgba(74,222,128,0.06)":"rgba(248,113,113,0.06)"} 0%, transparent 70%)`, pointerEvents:"none" }} />
 
-      {/* Watermark — bottom-right corner, partially off canvas, softened */}
+      {/* Watermark */}
       <div style={{ position:"absolute", bottom:-20, right:-20, opacity:0.025, pointerEvents:"none", lineHeight:0 }}>
-        <svg width="130" height="130" viewBox="0 0 24 24" fill="none">
+        <svg width="140" height="140" viewBox="0 0 24 24" fill="none">
           <path d="M4.5 4.5L19.5 19.5" stroke="white" strokeWidth="3.5" strokeLinecap="round" />
           <path d="M19.5 4.5L4.5 19.5" stroke="white" strokeWidth="3.5" strokeLinecap="round" />
         </svg>
       </div>
 
       {/* ── Top bar ── */}
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"20px 22px 0", flexShrink:0 }}>
-        <img src="/logo.png" style={{ height:32, width:"auto" }} alt="TixTracker" />
-        <div style={{ display:"flex", alignItems:"center", gap:5, background:"rgba(74,222,128,0.11)", border:"1px solid rgba(74,222,128,0.25)", borderRadius:999, padding:"4px 10px", flexShrink:0 }}>
-          <div style={{ width:5, height:5, borderRadius:"50%", background:"#4ade80", boxShadow:"0 0 5px #4ade80", flexShrink:0 }} />
-          <span style={{ fontSize:9.5, fontWeight:700, letterSpacing:"0.10em", textTransform:"uppercase", color:"#4ade80", whiteSpace:"nowrap" }}>Sale Completed</span>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"22px 24px 0", flexShrink:0 }}>
+        <img src="/logo.png" style={{ height:48, width:"auto" }} alt="TixTracker" />
+        <div style={{ display:"flex", alignItems:"center", gap:6, background:"rgba(74,222,128,0.11)", border:"1px solid rgba(74,222,128,0.25)", borderRadius:999, padding:"5px 12px", flexShrink:0 }}>
+          <div style={{ width:6, height:6, borderRadius:"50%", background:"#4ade80", boxShadow:"0 0 6px #4ade80", flexShrink:0 }} />
+          <span style={{ fontSize:11, fontWeight:700, letterSpacing:"0.09em", textTransform:"uppercase", color:"#4ade80", whiteSpace:"nowrap" }}>Sale Completed</span>
         </div>
       </div>
 
       {/* ── Event info ── */}
-      <div style={{ padding:"11px 22px 0", flexShrink:0 }}>
-        <div style={{ fontSize:13.5, fontWeight:700, letterSpacing:"-0.02em", color:"rgba(255,255,255,0.95)", lineHeight:1.25, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
+      <div style={{ padding:"12px 24px 0", flexShrink:0 }}>
+        <div style={{ fontSize:16, fontWeight:700, letterSpacing:"-0.02em", color:"rgba(255,255,255,0.96)", lineHeight:1.25, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
           {s.event_name || "Event"}
         </div>
-        <div style={{ marginTop:3, display:"flex", alignItems:"center", gap:5, flexWrap:"nowrap", overflow:"hidden" }}>
+        <div style={{ marginTop:4, display:"flex", alignItems:"center", gap:5, flexWrap:"nowrap", overflow:"hidden" }}>
           {s.venue && (
-            <span style={{ fontSize:11, color:"rgba(255,255,255,0.36)", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", maxWidth:210, flexShrink:1 }}>{s.venue}</span>
+            <span style={{ fontSize:12.5, color:"rgba(255,255,255,0.40)", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", maxWidth:220, flexShrink:1 }}>{s.venue}</span>
           )}
-          {s.venue && s.event_date && <span style={{ fontSize:9, color:"rgba(255,255,255,0.18)", flexShrink:0 }}>·</span>}
-          {s.event_date && <span style={{ fontSize:11, color:"rgba(255,255,255,0.28)", whiteSpace:"nowrap", flexShrink:0 }}>{formatEventDate(s.event_date)}</span>}
+          {s.venue && s.event_date && <span style={{ fontSize:10, color:"rgba(255,255,255,0.20)", flexShrink:0 }}>·</span>}
+          {s.event_date && <span style={{ fontSize:12.5, color:"rgba(255,255,255,0.32)", whiteSpace:"nowrap", flexShrink:0 }}>{formatEventDate(s.event_date)}</span>}
         </div>
       </div>
 
       {/* ── Divider ── */}
-      <div style={{ margin:"11px 22px 0", height:1, background:"linear-gradient(90deg, rgba(255,255,255,0.07), rgba(255,255,255,0.01))", flexShrink:0 }} />
+      <div style={{ margin:"12px 24px 0", height:1, background:"linear-gradient(90deg, rgba(255,255,255,0.08), rgba(255,255,255,0.01))", flexShrink:0 }} />
 
       {/* ── Hero — profit centred ── */}
-      <div style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:"0 22px" }}>
-        <div style={{ fontSize:9, fontWeight:700, letterSpacing:"0.14em", textTransform:"uppercase", color:"rgba(255,255,255,0.20)", marginBottom:8 }}>
+      <div style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:"0 24px" }}>
+        <div style={{ fontSize:10.5, fontWeight:700, letterSpacing:"0.14em", textTransform:"uppercase", color:"rgba(255,255,255,0.28)", marginBottom:10 }}>
           Total Profit
         </div>
-        <div style={{ fontSize:47, fontWeight:800, letterSpacing:"-0.04em", color:pc, textShadow:glow, lineHeight:1, fontVariantNumeric:"tabular-nums" }}>
+        <div style={{ fontSize:54, fontWeight:800, letterSpacing:"-0.04em", color:pc, textShadow:glow, lineHeight:1, fontVariantNumeric:"tabular-nums" }}>
           {isPos ? "" : "−"}{formatCurrency(Math.abs(dProfit))}
         </div>
         {roi !== null && (
-          <div style={{ marginTop:10, display:"flex", alignItems:"center", gap:6, background:isPos?"rgba(74,222,128,0.09)":"rgba(248,113,113,0.09)", border:`1px solid ${isPos?"rgba(74,222,128,0.20)":"rgba(248,113,113,0.20)"}`, borderRadius:999, padding:"5px 14px" }}>
-            <span style={{ fontSize:16, fontWeight:800, letterSpacing:"-0.02em", color:pc, fontVariantNumeric:"tabular-nums" }}>
+          <div style={{ marginTop:12, display:"flex", alignItems:"center", gap:7, background:isPos?"rgba(74,222,128,0.11)":"rgba(248,113,113,0.11)", border:`1px solid ${isPos?"rgba(74,222,128,0.26)":"rgba(248,113,113,0.26)"}`, borderRadius:999, padding:"6px 16px" }}>
+            <span style={{ fontSize:19, fontWeight:800, letterSpacing:"-0.02em", color:pc, fontVariantNumeric:"tabular-nums" }}>
               {isPos ? "+" : "−"}{Math.abs(dRoi).toFixed(1)}%
             </span>
-            <span style={{ fontSize:9.5, fontWeight:600, letterSpacing:"0.08em", textTransform:"uppercase", color:pc, opacity:0.65 }}>ROI</span>
+            <span style={{ fontSize:11, fontWeight:700, letterSpacing:"0.08em", textTransform:"uppercase", color:pc, opacity:0.70 }}>ROI</span>
           </div>
         )}
       </div>
 
       {/* ── Stat boxes ── */}
-      <div style={{ padding:"0 18px 13px", display:"flex", gap:10, flexShrink:0 }}>
-        <div style={{ flex:1, background:"rgba(255,255,255,0.04)", border:"1px solid rgba(255,255,255,0.07)", borderRadius:11, padding:"11px 14px" }}>
-          <div style={{ fontSize:8.5, fontWeight:700, letterSpacing:"0.10em", textTransform:"uppercase", color:"rgba(255,255,255,0.24)", marginBottom:5 }}>Bought For</div>
-          <div style={{ fontSize:18, fontWeight:700, letterSpacing:"-0.03em", color:"rgba(255,255,255,0.88)" }}>{cost > 0 ? formatCurrency(cost) : "—"}</div>
-          <div style={{ fontSize:10, color:"rgba(255,255,255,0.26)", marginTop:3 }}>{s.qty_sold ? `${s.qty_sold} × ticket${s.qty_sold > 1?"s":""}` : "—"}</div>
+      <div style={{ padding:"0 20px 15px", display:"flex", gap:12, flexShrink:0 }}>
+        <div style={{ flex:1, background:"rgba(255,255,255,0.045)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:12, padding:"13px 16px" }}>
+          <div style={{ fontSize:9.5, fontWeight:700, letterSpacing:"0.10em", textTransform:"uppercase", color:"rgba(255,255,255,0.32)", marginBottom:5 }}>Bought For</div>
+          <div style={{ fontSize:21, fontWeight:700, letterSpacing:"-0.03em", color:"rgba(255,255,255,0.92)" }}>{cost > 0 ? formatCurrency(cost) : "—"}</div>
+          <div style={{ fontSize:11, color:"rgba(255,255,255,0.32)", marginTop:3 }}>{s.qty_sold ? `${s.qty_sold} × ticket${s.qty_sold > 1?"s":""}` : "—"}</div>
         </div>
-        <div style={{ flex:1, background:"rgba(255,79,163,0.05)", border:"1px solid rgba(255,79,163,0.11)", borderRadius:11, padding:"11px 14px" }}>
-          <div style={{ fontSize:8.5, fontWeight:700, letterSpacing:"0.10em", textTransform:"uppercase", color:"rgba(255,79,163,0.50)", marginBottom:5 }}>Sold For</div>
-          <div style={{ fontSize:18, fontWeight:700, letterSpacing:"-0.03em", color:"rgba(255,255,255,0.88)" }}>{revenue > 0 ? formatCurrency(revenue) : "—"}</div>
-          <div style={{ fontSize:10, color:"rgba(255,255,255,0.26)", marginTop:3 }}>via {formatSource(s.source)}</div>
+        <div style={{ flex:1, background:"rgba(255,79,163,0.06)", border:"1px solid rgba(255,79,163,0.14)", borderRadius:12, padding:"13px 16px" }}>
+          <div style={{ fontSize:9.5, fontWeight:700, letterSpacing:"0.10em", textTransform:"uppercase", color:"rgba(255,79,163,0.60)", marginBottom:5 }}>Sold For</div>
+          <div style={{ fontSize:21, fontWeight:700, letterSpacing:"-0.03em", color:"rgba(255,255,255,0.92)" }}>{revenue > 0 ? formatCurrency(revenue) : "—"}</div>
+          <div style={{ fontSize:11, color:"rgba(255,255,255,0.32)", marginTop:3 }}>via {formatSource(s.source)}</div>
         </div>
       </div>
 
       {/* ── Footer ── */}
-      <div style={{ padding:"9px 22px 14px", borderTop:"1px solid rgba(255,255,255,0.05)", display:"flex", justifyContent:"space-between", alignItems:"center", flexShrink:0 }}>
-        <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-          <img src="/logo.png" style={{ height:18, width:"auto" }} alt="" />
-          <span style={{ fontSize:10.5, fontWeight:600, letterSpacing:"0.04em", color:"rgba(255,255,255,0.20)" }}>www.tixtracker.app</span>
+      <div style={{ padding:"10px 24px 16px", borderTop:"1px solid rgba(255,255,255,0.06)", display:"flex", justifyContent:"space-between", alignItems:"center", flexShrink:0 }}>
+        <div style={{ display:"flex", alignItems:"center", gap:7 }}>
+          <img src="/logo.png" style={{ height:22, width:"auto" }} alt="" />
+          <span style={{ fontSize:12, fontWeight:600, letterSpacing:"0.04em", color:"rgba(255,255,255,0.26)" }}>www.tixtracker.app</span>
         </div>
         {s.section && (
-          <span style={{ fontSize:9.5, color:"rgba(255,255,255,0.18)", letterSpacing:"0.02em" }}>
+          <span style={{ fontSize:11, color:"rgba(255,255,255,0.24)", letterSpacing:"0.02em" }}>
             {s.section}{s.row ? ` · Row ${s.row}` : ""}
           </span>
         )}
@@ -258,7 +258,7 @@ export function SaleBanner({ sale, order, animated, hideDetails = false }: Banne
   );
 }
 
-// ─── Multi-sale banner (500 × 410) ────────────────────────────────────────────
+// ─── Multi-sale banner (500 × 460) ────────────────────────────────────────────
 
 export type MultiSaleStats = {
   salesCount: number; totalTickets: number; totalRevenue: number;
@@ -276,93 +276,93 @@ export function MultiSaleBanner({ stats, animated }: { stats: MultiSaleStats; an
 
   const pc   = isPos ? "#4ade80" : "#f87171";
   const glow = isPos
-    ? "0 0 28px rgba(74,222,128,0.28), 0 0 56px rgba(74,222,128,0.10)"
-    : "0 0 28px rgba(248,113,113,0.28), 0 0 56px rgba(248,113,113,0.10)";
+    ? "0 0 32px rgba(74,222,128,0.32), 0 0 60px rgba(74,222,128,0.12)"
+    : "0 0 32px rgba(248,113,113,0.32), 0 0 60px rgba(248,113,113,0.12)";
 
   return (
     <div style={{
-      width:500, height:410,
+      width:500, height:460,
       background:"linear-gradient(145deg, #0d0d1a 0%, #08080f 55%, #0f0b18 100%)",
       position:"relative", overflow:"hidden",
       fontFamily:"-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
       display:"flex", flexDirection:"column",
     }}>
-      <div style={{ position:"absolute", top:-60, left:-60, width:240, height:240, background:"radial-gradient(circle, rgba(155,92,255,0.10) 0%, transparent 70%)", pointerEvents:"none" }} />
-      <div style={{ position:"absolute", bottom:-50, right:-50, width:200, height:200, background:"radial-gradient(circle, rgba(255,79,163,0.08) 0%, transparent 70%)", pointerEvents:"none" }} />
-      <div style={{ position:"absolute", top:"44%", left:"50%", transform:"translate(-50%,-50%)", width:240, height:240, background:`radial-gradient(circle, ${isPos?"rgba(74,222,128,0.05)":"rgba(248,113,113,0.05)"} 0%, transparent 70%)`, pointerEvents:"none" }} />
+      <div style={{ position:"absolute", top:-60, left:-60, width:260, height:260, background:"radial-gradient(circle, rgba(155,92,255,0.12) 0%, transparent 70%)", pointerEvents:"none" }} />
+      <div style={{ position:"absolute", bottom:-50, right:-50, width:220, height:220, background:"radial-gradient(circle, rgba(255,79,163,0.10) 0%, transparent 70%)", pointerEvents:"none" }} />
+      <div style={{ position:"absolute", top:"44%", left:"50%", transform:"translate(-50%,-50%)", width:280, height:280, background:`radial-gradient(circle, ${isPos?"rgba(74,222,128,0.06)":"rgba(248,113,113,0.06)"} 0%, transparent 70%)`, pointerEvents:"none" }} />
       <div style={{ position:"absolute", bottom:-20, right:-20, opacity:0.025, pointerEvents:"none", lineHeight:0 }}>
-        <svg width="130" height="130" viewBox="0 0 24 24" fill="none">
+        <svg width="140" height="140" viewBox="0 0 24 24" fill="none">
           <path d="M4.5 4.5L19.5 19.5" stroke="white" strokeWidth="3.5" strokeLinecap="round" />
           <path d="M19.5 4.5L4.5 19.5" stroke="white" strokeWidth="3.5" strokeLinecap="round" />
         </svg>
       </div>
 
       {/* Top bar */}
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"20px 22px 0", flexShrink:0 }}>
-        <img src="/logo.png" style={{ height:32, width:"auto" }} alt="TixTracker" />
-        <div style={{ display:"flex", alignItems:"center", gap:5, background:"rgba(74,222,128,0.11)", border:"1px solid rgba(74,222,128,0.25)", borderRadius:999, padding:"4px 10px", flexShrink:0 }}>
-          <div style={{ width:5, height:5, borderRadius:"50%", background:"#4ade80", boxShadow:"0 0 5px #4ade80", flexShrink:0 }} />
-          <span style={{ fontSize:9.5, fontWeight:700, letterSpacing:"0.10em", textTransform:"uppercase", color:"#4ade80", whiteSpace:"nowrap" }}>{salesCount} Sales Completed</span>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"22px 24px 0", flexShrink:0 }}>
+        <img src="/logo.png" style={{ height:48, width:"auto" }} alt="TixTracker" />
+        <div style={{ display:"flex", alignItems:"center", gap:6, background:"rgba(74,222,128,0.11)", border:"1px solid rgba(74,222,128,0.25)", borderRadius:999, padding:"5px 12px", flexShrink:0 }}>
+          <div style={{ width:6, height:6, borderRadius:"50%", background:"#4ade80", boxShadow:"0 0 6px #4ade80", flexShrink:0 }} />
+          <span style={{ fontSize:11, fontWeight:700, letterSpacing:"0.09em", textTransform:"uppercase", color:"#4ade80", whiteSpace:"nowrap" }}>{salesCount} Sales Completed</span>
         </div>
       </div>
 
       {/* Event names */}
-      <div style={{ padding:"11px 22px 0", flexShrink:0 }}>
+      <div style={{ padding:"12px 24px 0", flexShrink:0 }}>
         {eventNames.length === 1 ? (
-          <div style={{ fontSize:13.5, fontWeight:700, letterSpacing:"-0.02em", color:"rgba(255,255,255,0.95)", lineHeight:1.25, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{eventNames[0]}</div>
+          <div style={{ fontSize:16, fontWeight:700, letterSpacing:"-0.02em", color:"rgba(255,255,255,0.96)", lineHeight:1.25, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{eventNames[0]}</div>
         ) : (
           <div style={{ display:"flex", flexDirection:"column", gap:2 }}>
             {eventNames.slice(0, 3).map((n, i) => (
-              <div key={i} style={{ fontSize: eventNames.length === 2 ? 13 : 11.5, fontWeight:700, letterSpacing:"-0.02em", color:"rgba(255,255,255,0.92)", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{n}</div>
+              <div key={i} style={{ fontSize: eventNames.length === 2 ? 15 : 13, fontWeight:700, letterSpacing:"-0.02em", color:"rgba(255,255,255,0.93)", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{n}</div>
             ))}
-            {eventNames.length > 3 && <div style={{ fontSize:10.5, color:"rgba(255,255,255,0.28)" }}>+{eventNames.length - 3} more</div>}
+            {eventNames.length > 3 && <div style={{ fontSize:12, color:"rgba(255,255,255,0.32)" }}>+{eventNames.length - 3} more</div>}
           </div>
         )}
-        <div style={{ marginTop:4, fontSize:11, color:"rgba(255,255,255,0.28)" }}>
+        <div style={{ marginTop:4, fontSize:12.5, color:"rgba(255,255,255,0.32)" }}>
           {totalTickets} ticket{totalTickets !== 1 ? "s" : ""} · {salesCount} sale{salesCount !== 1 ? "s" : ""}
         </div>
       </div>
 
       {/* Divider */}
-      <div style={{ margin:"11px 22px 0", height:1, background:"linear-gradient(90deg, rgba(255,255,255,0.07), rgba(255,255,255,0.01))", flexShrink:0 }} />
+      <div style={{ margin:"12px 24px 0", height:1, background:"linear-gradient(90deg, rgba(255,255,255,0.08), rgba(255,255,255,0.01))", flexShrink:0 }} />
 
       {/* Hero */}
-      <div style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:"0 22px" }}>
-        <div style={{ fontSize:9, fontWeight:700, letterSpacing:"0.14em", textTransform:"uppercase", color:"rgba(255,255,255,0.20)", marginBottom:8 }}>Total Profit</div>
-        <div style={{ fontSize:47, fontWeight:800, letterSpacing:"-0.04em", color:pc, textShadow:glow, lineHeight:1, fontVariantNumeric:"tabular-nums" }}>
+      <div style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:"0 24px" }}>
+        <div style={{ fontSize:10.5, fontWeight:700, letterSpacing:"0.14em", textTransform:"uppercase", color:"rgba(255,255,255,0.28)", marginBottom:10 }}>Total Profit</div>
+        <div style={{ fontSize:54, fontWeight:800, letterSpacing:"-0.04em", color:pc, textShadow:glow, lineHeight:1, fontVariantNumeric:"tabular-nums" }}>
           {isPos ? "" : "−"}{formatCurrency(Math.abs(dProfit))}
         </div>
         {roi !== null && (
-          <div style={{ marginTop:10, display:"flex", alignItems:"center", gap:6, background:isPos?"rgba(74,222,128,0.09)":"rgba(248,113,113,0.09)", border:`1px solid ${isPos?"rgba(74,222,128,0.20)":"rgba(248,113,113,0.20)"}`, borderRadius:999, padding:"5px 14px" }}>
-            <span style={{ fontSize:16, fontWeight:800, letterSpacing:"-0.02em", color:pc, fontVariantNumeric:"tabular-nums" }}>
+          <div style={{ marginTop:12, display:"flex", alignItems:"center", gap:7, background:isPos?"rgba(74,222,128,0.11)":"rgba(248,113,113,0.11)", border:`1px solid ${isPos?"rgba(74,222,128,0.26)":"rgba(248,113,113,0.26)"}`, borderRadius:999, padding:"6px 16px" }}>
+            <span style={{ fontSize:19, fontWeight:800, letterSpacing:"-0.02em", color:pc, fontVariantNumeric:"tabular-nums" }}>
               {isPos ? "+" : "−"}{Math.abs(dRoi).toFixed(1)}%
             </span>
-            <span style={{ fontSize:9.5, fontWeight:600, letterSpacing:"0.08em", textTransform:"uppercase", color:pc, opacity:0.65 }}>ROI</span>
+            <span style={{ fontSize:11, fontWeight:700, letterSpacing:"0.08em", textTransform:"uppercase", color:pc, opacity:0.70 }}>ROI</span>
           </div>
         )}
       </div>
 
       {/* Stat boxes */}
-      <div style={{ padding:"0 18px 13px", display:"flex", gap:10, flexShrink:0 }}>
-        <div style={{ flex:1, background:"rgba(255,255,255,0.04)", border:"1px solid rgba(255,255,255,0.07)", borderRadius:11, padding:"11px 14px" }}>
-          <div style={{ fontSize:8.5, fontWeight:700, letterSpacing:"0.10em", textTransform:"uppercase", color:"rgba(255,255,255,0.24)", marginBottom:5 }}>Total Cost</div>
-          <div style={{ fontSize:18, fontWeight:700, letterSpacing:"-0.03em", color:"rgba(255,255,255,0.88)" }}>{totalCost > 0 ? formatCurrency(totalCost) : "—"}</div>
-          <div style={{ fontSize:10, color:"rgba(255,255,255,0.26)", marginTop:3 }}>{totalTickets} ticket{totalTickets !== 1?"s":""}</div>
+      <div style={{ padding:"0 20px 15px", display:"flex", gap:12, flexShrink:0 }}>
+        <div style={{ flex:1, background:"rgba(255,255,255,0.045)", border:"1px solid rgba(255,255,255,0.09)", borderRadius:12, padding:"13px 16px" }}>
+          <div style={{ fontSize:9.5, fontWeight:700, letterSpacing:"0.10em", textTransform:"uppercase", color:"rgba(255,255,255,0.32)", marginBottom:5 }}>Total Cost</div>
+          <div style={{ fontSize:21, fontWeight:700, letterSpacing:"-0.03em", color:"rgba(255,255,255,0.92)" }}>{totalCost > 0 ? formatCurrency(totalCost) : "—"}</div>
+          <div style={{ fontSize:11, color:"rgba(255,255,255,0.32)", marginTop:3 }}>{totalTickets} ticket{totalTickets !== 1?"s":""}</div>
         </div>
-        <div style={{ flex:1, background:"rgba(255,79,163,0.05)", border:"1px solid rgba(255,79,163,0.11)", borderRadius:11, padding:"11px 14px" }}>
-          <div style={{ fontSize:8.5, fontWeight:700, letterSpacing:"0.10em", textTransform:"uppercase", color:"rgba(255,79,163,0.50)", marginBottom:5 }}>Total Revenue</div>
-          <div style={{ fontSize:18, fontWeight:700, letterSpacing:"-0.03em", color:"rgba(255,255,255,0.88)" }}>{totalRevenue > 0 ? formatCurrency(totalRevenue) : "—"}</div>
-          <div style={{ fontSize:10, color:"rgba(255,255,255,0.26)", marginTop:3 }}>{salesCount} sale{salesCount !== 1?"s":""}</div>
+        <div style={{ flex:1, background:"rgba(255,79,163,0.06)", border:"1px solid rgba(255,79,163,0.14)", borderRadius:12, padding:"13px 16px" }}>
+          <div style={{ fontSize:9.5, fontWeight:700, letterSpacing:"0.10em", textTransform:"uppercase", color:"rgba(255,79,163,0.60)", marginBottom:5 }}>Total Revenue</div>
+          <div style={{ fontSize:21, fontWeight:700, letterSpacing:"-0.03em", color:"rgba(255,255,255,0.92)" }}>{totalRevenue > 0 ? formatCurrency(totalRevenue) : "—"}</div>
+          <div style={{ fontSize:11, color:"rgba(255,255,255,0.32)", marginTop:3 }}>{salesCount} sale{salesCount !== 1?"s":""}</div>
         </div>
       </div>
 
       {/* Footer */}
-      <div style={{ padding:"9px 22px 14px", borderTop:"1px solid rgba(255,255,255,0.05)", display:"flex", justifyContent:"space-between", alignItems:"center", flexShrink:0 }}>
-        <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-          <img src="/logo.png" style={{ height:18, width:"auto" }} alt="" />
-          <span style={{ fontSize:10.5, fontWeight:600, letterSpacing:"0.04em", color:"rgba(255,255,255,0.20)" }}>www.tixtracker.app</span>
+      <div style={{ padding:"10px 24px 16px", borderTop:"1px solid rgba(255,255,255,0.06)", display:"flex", justifyContent:"space-between", alignItems:"center", flexShrink:0 }}>
+        <div style={{ display:"flex", alignItems:"center", gap:7 }}>
+          <img src="/logo.png" style={{ height:22, width:"auto" }} alt="" />
+          <span style={{ fontSize:12, fontWeight:600, letterSpacing:"0.04em", color:"rgba(255,255,255,0.26)" }}>www.tixtracker.app</span>
         </div>
-        <span style={{ fontSize:9.5, color:"rgba(255,255,255,0.18)" }}>{salesCount} combined sales</span>
+        <span style={{ fontSize:11, color:"rgba(255,255,255,0.24)" }}>{salesCount} combined sales</span>
       </div>
     </div>
   );
@@ -389,11 +389,11 @@ function _clip(ctx: CanvasRenderingContext2D, text: string, maxW: number): strin
 }
 
 function _badge(ctx: CanvasRenderingContext2D, rightX: number, cy: number, text: string, sc: number) {
-  const fontSize = 9.5 * sc;
+  const fontSize = 11 * sc;
   ctx.save();
   ctx.font = `700 ${fontSize}px ${_F}`;
   const textW = ctx.measureText(text).width;
-  const dotR = 2.5 * sc, gap = 5 * sc, ph = 4 * sc, pw = 10 * sc;
+  const dotR = 3 * sc, gap = 6 * sc, ph = 5 * sc, pw = 12 * sc;
   const pillW = pw + dotR * 2 + gap + textW + pw;
   const pillH = fontSize + ph * 2;
   const px = rightX - pillW, py = cy - pillH / 2;
@@ -414,40 +414,37 @@ function _statBoxC(
   sc: number, pink: boolean,
 ) {
   ctx.save();
-  _rr(ctx, x, y, w, h, 11 * sc);
-  ctx.fillStyle = pink ? "rgba(255,79,163,0.05)" : "rgba(255,255,255,0.04)"; ctx.fill();
-  ctx.strokeStyle = pink ? "rgba(255,79,163,0.11)" : "rgba(255,255,255,0.07)";
+  _rr(ctx, x, y, w, h, 12 * sc);
+  ctx.fillStyle = pink ? "rgba(255,79,163,0.06)" : "rgba(255,255,255,0.045)"; ctx.fill();
+  ctx.strokeStyle = pink ? "rgba(255,79,163,0.14)" : "rgba(255,255,255,0.09)";
   ctx.lineWidth = sc; ctx.stroke();
   ctx.restore();
-  const ix = x + 14 * sc;
-  let iy = y + 11 * sc;
+  const ix = x + 16 * sc;
+  let iy = y + 13 * sc;
   ctx.save();
-  ctx.font = `700 ${8.5 * sc}px ${_F}`; ctx.fillStyle = pink ? "rgba(255,79,163,0.50)" : "rgba(255,255,255,0.24)";
-  ctx.textAlign = "left"; ctx.textBaseline = "top"; ctx.fillText(label, ix, iy); iy += (8.5 + 5) * sc;
+  ctx.font = `700 ${9.5 * sc}px ${_F}`; ctx.fillStyle = pink ? "rgba(255,79,163,0.60)" : "rgba(255,255,255,0.32)";
+  ctx.textAlign = "left"; ctx.textBaseline = "top"; ctx.fillText(label, ix, iy); iy += (9.5 + 5) * sc;
   ctx.restore();
   ctx.save();
-  ctx.font = `700 ${18 * sc}px ${_F}`; ctx.fillStyle = "rgba(255,255,255,0.88)";
-  ctx.textAlign = "left"; ctx.textBaseline = "top"; ctx.fillText(value, ix, iy); iy += (18 + 3) * sc;
+  ctx.font = `700 ${21 * sc}px ${_F}`; ctx.fillStyle = "rgba(255,255,255,0.92)";
+  ctx.textAlign = "left"; ctx.textBaseline = "top"; ctx.fillText(value, ix, iy); iy += (21 + 3) * sc;
   ctx.restore();
   ctx.save();
-  ctx.font = `400 ${10 * sc}px ${_F}`; ctx.fillStyle = "rgba(255,255,255,0.26)";
+  ctx.font = `400 ${11 * sc}px ${_F}`; ctx.fillStyle = "rgba(255,255,255,0.32)";
   ctx.textAlign = "left"; ctx.textBaseline = "top"; ctx.fillText(sub, ix, iy);
   ctx.restore();
 }
 
 function _bannerBg(ctx: CanvasRenderingContext2D, W: number, H: number, isPos: boolean, sc: number) {
   ctx.fillStyle = "#0d0d1a"; ctx.fillRect(0, 0, W, H);
-  // Purple top-left ambient
   ctx.fillStyle = "rgba(155,92,255,0.06)"; ctx.fillRect(0, 0, W * 0.5, H * 0.4);
-  // Pink bottom-right ambient
   ctx.fillStyle = "rgba(255,79,163,0.06)"; ctx.fillRect(W * 0.5, H * 0.6, W * 0.5, H * 0.4);
-  // Center profit glow
-  ctx.fillStyle = isPos ? "rgba(74,222,128,0.035)" : "rgba(248,113,113,0.035)";
+  ctx.fillStyle = isPos ? "rgba(74,222,128,0.04)" : "rgba(248,113,113,0.04)";
   ctx.fillRect(W * 0.2, H * 0.25, W * 0.6, H * 0.3);
-  // Watermark — bottom-right corner, partially off canvas (bottom:-20, right:-20 equiv)
-  const wmS = 130 * sc;
-  const wmX = W + 20 * sc - wmS;   // right edge = W + 20*sc (off canvas)
-  const wmY = H + 20 * sc - wmS;   // bottom edge = H + 20*sc (off canvas)
+  // Watermark — bottom-right corner, partially off canvas
+  const wmS = 140 * sc;
+  const wmX = W + 20 * sc - wmS;
+  const wmY = H + 20 * sc - wmS;
   const wr  = wmS / 24;
   ctx.save();
   ctx.globalAlpha = 0.025; ctx.lineCap = "round"; ctx.lineWidth = 3.5 * wr; ctx.strokeStyle = "white";
@@ -463,15 +460,15 @@ function _heroSection(
   pc: string, sc: number,
 ) {
   const heroCY   = (heroTop + heroBot) / 2;
-  const bigSz    = 47 * sc, labelSz = 9 * sc;
-  const pillH    = roi !== null ? (5 * 2 + 16) * sc : 0;
-  const gap1     = 8 * sc, gap2 = 10 * sc;
+  const bigSz    = 54 * sc, labelSz = 10.5 * sc;
+  const pillH    = roi !== null ? (6 * 2 + 19) * sc : 0;
+  const gap1     = 10 * sc, gap2 = 12 * sc;
   const contentH = labelSz + gap1 + bigSz + (roi !== null ? gap2 + pillH : 0);
   const top      = heroCY - contentH / 2;
 
   ctx.save();
   ctx.font = `700 ${labelSz}px ${_F}`; ctx.textAlign = "center"; ctx.textBaseline = "top";
-  ctx.fillStyle = "rgba(255,255,255,0.20)"; ctx.fillText("TOTAL PROFIT", W / 2, top);
+  ctx.fillStyle = "rgba(255,255,255,0.28)"; ctx.fillText("TOTAL PROFIT", W / 2, top);
   ctx.restore();
 
   const numTop = top + labelSz + gap1;
@@ -484,27 +481,27 @@ function _heroSection(
     const roiTop = numTop + bigSz + gap2;
     const roiStr = (isPos ? "+" : "−") + Math.abs(roi).toFixed(1) + "%";
     const roiLbl = "ROI";
-    const ph = 5 * sc, pw = 14 * sc, gap = 6 * sc;
+    const ph = 6 * sc, pw = 16 * sc, gap = 7 * sc;
     ctx.save();
-    ctx.font = `800 ${16 * sc}px ${_F}`; const rnW = ctx.measureText(roiStr).width;
-    ctx.font = `600 ${9.5 * sc}px ${_F}`; const rlW = ctx.measureText(roiLbl).width;
+    ctx.font = `800 ${19 * sc}px ${_F}`; const rnW = ctx.measureText(roiStr).width;
+    ctx.font = `700 ${11 * sc}px ${_F}`; const rlW = ctx.measureText(roiLbl).width;
     ctx.restore();
     const pillW = pw + rnW + gap + rlW + pw;
     const pX    = W / 2 - pillW / 2;
     ctx.save();
     _rr(ctx, pX, roiTop, pillW, pillH, pillH / 2);
-    ctx.fillStyle = isPos ? "rgba(74,222,128,0.09)" : "rgba(248,113,113,0.09)"; ctx.fill();
-    ctx.strokeStyle = isPos ? "rgba(74,222,128,0.20)" : "rgba(248,113,113,0.20)";
+    ctx.fillStyle = isPos ? "rgba(74,222,128,0.11)" : "rgba(248,113,113,0.11)"; ctx.fill();
+    ctx.strokeStyle = isPos ? "rgba(74,222,128,0.26)" : "rgba(248,113,113,0.26)";
     ctx.lineWidth = sc; ctx.stroke();
     ctx.restore();
     const pCY = roiTop + pillH / 2;
     ctx.save();
-    ctx.font = `800 ${16 * sc}px ${_F}`; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+    ctx.font = `800 ${19 * sc}px ${_F}`; ctx.textAlign = "left"; ctx.textBaseline = "middle";
     ctx.fillStyle = pc; ctx.fillText(roiStr, pX + pw, pCY);
     ctx.restore();
     ctx.save();
-    ctx.font = `600 ${9.5 * sc}px ${_F}`; ctx.textAlign = "left"; ctx.textBaseline = "middle";
-    ctx.fillStyle = pc; ctx.globalAlpha = 0.65;
+    ctx.font = `700 ${11 * sc}px ${_F}`; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+    ctx.fillStyle = pc; ctx.globalAlpha = 0.70;
     ctx.fillText(roiLbl, pX + pw + rnW + gap, pCY);
     ctx.restore();
   }
@@ -516,25 +513,25 @@ function _bannerFooter(
   rightText: string, logo: HTMLImageElement | null,
 ) {
   ctx.save();
-  ctx.strokeStyle = "rgba(255,255,255,0.05)"; ctx.lineWidth = sc;
+  ctx.strokeStyle = "rgba(255,255,255,0.06)"; ctx.lineWidth = sc;
   ctx.beginPath(); ctx.moveTo(0, footerTop); ctx.lineTo(W, footerTop); ctx.stroke();
   ctx.restore();
-  const fY    = footerTop + 9 * sc;
-  const logoH = 18 * sc;
+  const fY    = footerTop + 10 * sc;
+  const logoH = 22 * sc;
   let textX   = spad;
   if (logo) {
     const logoW = logo.naturalWidth * (logoH / logo.naturalHeight);
     ctx.drawImage(logo, spad, fY, logoW, logoH);
-    textX = spad + logoW + 6 * sc;
+    textX = spad + logoW + 7 * sc;
   }
   ctx.save();
-  ctx.font = `600 ${10.5 * sc}px ${_F}`; ctx.textBaseline = "top"; ctx.textAlign = "left";
-  ctx.fillStyle = "rgba(255,255,255,0.20)"; ctx.fillText("www.tixtracker.app", textX, fY);
+  ctx.font = `600 ${12 * sc}px ${_F}`; ctx.textBaseline = "top"; ctx.textAlign = "left";
+  ctx.fillStyle = "rgba(255,255,255,0.26)"; ctx.fillText("www.tixtracker.app", textX, fY);
   ctx.restore();
   if (rightText) {
     ctx.save();
-    ctx.font = `400 ${9.5 * sc}px ${_F}`; ctx.textBaseline = "top"; ctx.textAlign = "right";
-    ctx.fillStyle = "rgba(255,255,255,0.18)"; ctx.fillText(rightText, W - spad, fY + sc);
+    ctx.font = `400 ${11 * sc}px ${_F}`; ctx.textBaseline = "top"; ctx.textAlign = "right";
+    ctx.fillStyle = "rgba(255,255,255,0.24)"; ctx.fillText(rightText, W - spad, fY + sc);
     ctx.restore();
   }
 }
@@ -569,8 +566,8 @@ function _drawSaleBanner(
 
   _bannerBg(ctx, W, H, isPos, sc);
 
-  const spad = 22 * sc, topY = 20 * sc;
-  const logoH = 32 * sc;
+  const spad = 24 * sc, topY = 22 * sc;
+  const logoH = 48 * sc;
   const logoCY = topY + logoH / 2;
 
   if (logo) {
@@ -579,36 +576,36 @@ function _drawSaleBanner(
   }
   _badge(ctx, W - spad, logoCY, "Sale Completed", sc);
 
-  const eventY = topY + logoH + 11 * sc;
+  const eventY = topY + logoH + 12 * sc;
   ctx.save();
-  ctx.font = `700 ${13.5 * sc}px ${_F}`; ctx.fillStyle = "rgba(255,255,255,0.95)";
+  ctx.font = `700 ${16 * sc}px ${_F}`; ctx.fillStyle = "rgba(255,255,255,0.96)";
   ctx.textAlign = "left"; ctx.textBaseline = "top";
   ctx.fillText(_clip(ctx, sale.event_name || "Event", W - spad * 2), spad, eventY);
   ctx.restore();
 
-  const venueY = eventY + 13.5 * sc * 1.25 + 3 * sc;
+  const venueY = eventY + 16 * sc * 1.25 + 4 * sc;
   ctx.save();
-  ctx.font = `400 ${11 * sc}px ${_F}`; ctx.textBaseline = "top"; ctx.textAlign = "left";
+  ctx.font = `400 ${12.5 * sc}px ${_F}`; ctx.textBaseline = "top"; ctx.textAlign = "left";
   let cx = spad;
   if (sale.venue) {
-    ctx.fillStyle = "rgba(255,255,255,0.36)";
-    const vs = _clip(ctx, sale.venue, 200 * sc);
+    ctx.fillStyle = "rgba(255,255,255,0.40)";
+    const vs = _clip(ctx, sale.venue, 220 * sc);
     ctx.fillText(vs, cx, venueY); cx += ctx.measureText(vs).width;
     if (sale.event_date) {
-      ctx.fillStyle = "rgba(255,255,255,0.18)";
+      ctx.fillStyle = "rgba(255,255,255,0.20)";
       ctx.fillText(" · ", cx, venueY); cx += ctx.measureText(" · ").width;
     }
   }
-  if (sale.event_date) { ctx.fillStyle = "rgba(255,255,255,0.28)"; ctx.fillText(formatEventDate(sale.event_date), cx, venueY); }
+  if (sale.event_date) { ctx.fillStyle = "rgba(255,255,255,0.32)"; ctx.fillText(formatEventDate(sale.event_date), cx, venueY); }
   ctx.restore();
 
-  const divY = venueY + 11 * sc * 1.3 + 11 * sc;
-  ctx.fillStyle = "rgba(255,255,255,0.05)"; ctx.fillRect(spad, divY, W - spad * 2, sc);
+  const divY = venueY + 12.5 * sc * 1.3 + 12 * sc;
+  ctx.fillStyle = "rgba(255,255,255,0.06)"; ctx.fillRect(spad, divY, W - spad * 2, sc);
 
-  const footerH  = 41 * sc, footerTop = H - footerH;
-  const boxH     = 66 * sc, boxGap = 10 * sc, boxPadB = 13 * sc;
+  const footerH  = 48 * sc, footerTop = H - footerH;
+  const boxH     = 76 * sc, boxGap = 12 * sc, boxPadB = 15 * sc;
   const boxTop   = footerTop - boxPadB - boxH;
-  const bOL      = 18 * sc, bW = (W - 2 * bOL - boxGap) / 2;
+  const bOL      = 20 * sc, bW = (W - 2 * bOL - boxGap) / 2;
 
   _statBoxC(ctx, bOL, boxTop, bW, boxH, "BOUGHT FOR",
     cost > 0 ? formatCurrency(cost) : "—",
@@ -636,54 +633,54 @@ function _drawMultiBanner(
 
   _bannerBg(ctx, W, H, isPos, sc);
 
-  const spad = 22 * sc, topY = 20 * sc;
-  const logoH = 32 * sc, logoCY = topY + logoH / 2;
+  const spad = 24 * sc, topY = 22 * sc;
+  const logoH = 48 * sc, logoCY = topY + logoH / 2;
   if (logo) { const lw = logo.naturalWidth * (logoH / logo.naturalHeight); ctx.drawImage(logo, spad, topY, lw, logoH); }
   _badge(ctx, W - spad, logoCY, `${salesCount} Sales Completed`, sc);
 
-  let eventBottom = topY + logoH + 11 * sc;
+  let eventBottom = topY + logoH + 12 * sc;
   if (eventNames.length === 1) {
     ctx.save();
-    ctx.font = `700 ${13.5 * sc}px ${_F}`; ctx.fillStyle = "rgba(255,255,255,0.95)";
+    ctx.font = `700 ${16 * sc}px ${_F}`; ctx.fillStyle = "rgba(255,255,255,0.96)";
     ctx.textAlign = "left"; ctx.textBaseline = "top";
     ctx.fillText(_clip(ctx, eventNames[0], W - spad * 2), spad, eventBottom);
     ctx.restore();
-    eventBottom += 13.5 * sc * 1.25;
+    eventBottom += 16 * sc * 1.25;
   } else {
-    const nfs = eventNames.length === 2 ? 13 : 11.5;
+    const nfs = eventNames.length === 2 ? 15 : 13;
     const lh  = nfs * sc * 1.3;
     let ny    = eventBottom;
     for (const name of eventNames.slice(0, 3)) {
       ctx.save();
-      ctx.font = `700 ${nfs * sc}px ${_F}`; ctx.fillStyle = "rgba(255,255,255,0.92)";
+      ctx.font = `700 ${nfs * sc}px ${_F}`; ctx.fillStyle = "rgba(255,255,255,0.93)";
       ctx.textAlign = "left"; ctx.textBaseline = "top";
       ctx.fillText(_clip(ctx, name, W - spad * 2), spad, ny);
       ctx.restore(); ny += lh;
     }
     if (eventNames.length > 3) {
       ctx.save();
-      ctx.font = `400 ${10.5 * sc}px ${_F}`; ctx.fillStyle = "rgba(255,255,255,0.28)";
+      ctx.font = `400 ${12 * sc}px ${_F}`; ctx.fillStyle = "rgba(255,255,255,0.32)";
       ctx.textAlign = "left"; ctx.textBaseline = "top";
       ctx.fillText(`+${eventNames.length - 3} more`, spad, ny);
-      ctx.restore(); ny += 10.5 * sc * 1.3;
+      ctx.restore(); ny += 12 * sc * 1.3;
     }
     eventBottom = ny;
   }
 
   const subY = eventBottom + 4 * sc;
   ctx.save();
-  ctx.font = `400 ${11 * sc}px ${_F}`; ctx.fillStyle = "rgba(255,255,255,0.28)";
+  ctx.font = `400 ${12.5 * sc}px ${_F}`; ctx.fillStyle = "rgba(255,255,255,0.32)";
   ctx.textAlign = "left"; ctx.textBaseline = "top";
   ctx.fillText(`${totalTickets} ticket${totalTickets!==1?"s":""} · ${salesCount} sale${salesCount!==1?"s":""}`, spad, subY);
   ctx.restore();
 
-  const divY = subY + 11 * sc * 1.3 + 11 * sc;
-  ctx.fillStyle = "rgba(255,255,255,0.05)"; ctx.fillRect(spad, divY, W - spad * 2, sc);
+  const divY = subY + 12.5 * sc * 1.3 + 12 * sc;
+  ctx.fillStyle = "rgba(255,255,255,0.06)"; ctx.fillRect(spad, divY, W - spad * 2, sc);
 
-  const footerH = 41 * sc, footerTop = H - footerH;
-  const boxH    = 66 * sc, boxGap = 10 * sc, boxPadB = 13 * sc;
+  const footerH = 48 * sc, footerTop = H - footerH;
+  const boxH    = 76 * sc, boxGap = 12 * sc, boxPadB = 15 * sc;
   const boxTop  = footerTop - boxPadB - boxH;
-  const bOL     = 18 * sc, bW = (W - 2 * bOL - boxGap) / 2;
+  const bOL     = 20 * sc, bW = (W - 2 * bOL - boxGap) / 2;
 
   _statBoxC(ctx, bOL, boxTop, bW, boxH, "TOTAL COST",
     totalCost > 0 ? formatCurrency(totalCost) : "—",
@@ -699,7 +696,7 @@ function _drawMultiBanner(
 // ─── renderBannerToBlob ───────────────────────────────────────────────────────
 
 const EXPORT_W = 1080;
-const EXPORT_H = Math.round(1080 * 410 / 500); // 886 — matches 500×410 ratio
+const EXPORT_H = Math.round(1080 * 460 / 500); // 993
 
 async function renderBannerToBlob(
   drawFn: (ctx: CanvasRenderingContext2D, W: number, H: number, logo: HTMLImageElement | null) => void,
@@ -733,8 +730,8 @@ function _downloadBlob(blob: Blob, filename: string) {
 // ─── Modal button base ────────────────────────────────────────────────────────
 
 const btnBase: React.CSSProperties = {
-  height:46, border:"none", borderRadius:12,
-  fontSize:14, fontWeight:600, cursor:"pointer",
+  height:50, border:"none", borderRadius:13,
+  fontSize:15, fontWeight:600, cursor:"pointer",
   transition:"all 180ms ease", letterSpacing:"-0.01em",
   display:"flex", alignItems:"center", justifyContent:"center",
   fontFamily:"-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
@@ -796,7 +793,7 @@ export function ShareMultiBannerModal({ stats, onClose }: MultiShareProps) {
 
         {/* Preview */}
         <div style={{ borderRadius:16, overflow:"hidden", boxShadow:"0 0 0 1px rgba(255,255,255,0.08), 0 20px 50px rgba(0,0,0,0.6), 0 0 36px rgba(155,92,255,0.09)" }}>
-          <ScaledPreview w={500} h={410}><MultiSaleBanner stats={stats} animated={visible} /></ScaledPreview>
+          <ScaledPreview w={500} h={460}><MultiSaleBanner stats={stats} animated={visible} /></ScaledPreview>
         </div>
 
         {genError && <div style={{ padding:"10px 14px", background:"rgba(248,113,113,0.10)", border:"1px solid rgba(248,113,113,0.25)", borderRadius:10, fontSize:12, color:"#fca5a5" }}>{genError}</div>}
@@ -805,15 +802,16 @@ export function ShareMultiBannerModal({ stats, onClose }: MultiShareProps) {
         <div style={{ display:"flex", gap:10 }}>
           <button type="button" onClick={handleCopy} disabled={!bannerBlob||copying}
             style={{ ...btnBase, flex:1,
-              background: copied ? "rgba(74,222,128,0.14)" : !bannerBlob ? "rgba(255,255,255,0.04)" : "linear-gradient(135deg, rgba(155,92,255,0.22), rgba(255,79,163,0.22))",
-              border: copied ? "1px solid rgba(74,222,128,0.35)" : "1px solid rgba(255,79,163,0.25)",
-              color: copied ? "#4ade80" : "rgba(255,255,255,0.9)",
+              background: copied ? "rgba(74,222,128,0.14)" : !bannerBlob ? "rgba(255,255,255,0.04)" : "linear-gradient(135deg, rgba(155,92,255,0.28), rgba(255,79,163,0.28))",
+              border: copied ? "1px solid rgba(74,222,128,0.35)" : "1px solid rgba(155,92,255,0.35)",
+              color: copied ? "#4ade80" : "rgba(255,255,255,0.95)",
               cursor: (!bannerBlob||copying) ? "wait" : "pointer",
+              boxShadow: (!bannerBlob || copied) ? "none" : "0 0 20px rgba(155,92,255,0.15)",
             }}>
             {!bannerBlob && !genError ? "Generating…" : copied ? "✓ Copied!" : copying ? "Copying…" : "Copy to Clipboard"}
           </button>
           <button type="button" onClick={() => bannerBlob && _downloadBlob(bannerBlob, "sales-summary-tixtracker.jpg")} disabled={!bannerBlob}
-            style={{ ...btnBase, padding:"0 20px", background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.10)", color:"rgba(255,255,255,0.55)", cursor: !bannerBlob ? "wait" : "pointer", whiteSpace:"nowrap" }}>
+            style={{ ...btnBase, padding:"0 22px", background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.10)", color:"rgba(255,255,255,0.55)", cursor: !bannerBlob ? "wait" : "pointer", whiteSpace:"nowrap" }}>
             Download
           </button>
         </div>
@@ -898,7 +896,7 @@ export default function ShareBannerModal({ sale, order, onClose }: Props) {
 
         {/* Banner preview */}
         <div style={{ borderRadius:16, overflow:"hidden", boxShadow:"0 0 0 1px rgba(255,255,255,0.08), 0 20px 50px rgba(0,0,0,0.6), 0 0 36px rgba(155,92,255,0.09)" }}>
-          <ScaledPreview w={500} h={410}>
+          <ScaledPreview w={500} h={460}>
             <SaleBanner sale={sale} order={order} animated={visible} hideDetails={hideDetails} />
           </ScaledPreview>
         </div>
@@ -909,17 +907,18 @@ export default function ShareBannerModal({ sale, order, onClose }: Props) {
         <div style={{ display:"flex", gap:10 }}>
           <button type="button" onClick={handleCopy} disabled={!bannerBlob||copying}
             style={{ ...btnBase, flex:1,
-              background: copied ? "rgba(74,222,128,0.14)" : !bannerBlob ? "rgba(255,255,255,0.04)" : "linear-gradient(135deg, rgba(155,92,255,0.22), rgba(255,79,163,0.22))",
-              border: copied ? "1px solid rgba(74,222,128,0.35)" : "1px solid rgba(255,79,163,0.25)",
-              color: copied ? "#4ade80" : "rgba(255,255,255,0.9)",
+              background: copied ? "rgba(74,222,128,0.14)" : !bannerBlob ? "rgba(255,255,255,0.04)" : "linear-gradient(135deg, rgba(155,92,255,0.28), rgba(255,79,163,0.28))",
+              border: copied ? "1px solid rgba(74,222,128,0.35)" : "1px solid rgba(155,92,255,0.35)",
+              color: copied ? "#4ade80" : "rgba(255,255,255,0.95)",
               cursor: (!bannerBlob||copying) ? "wait" : "pointer",
+              boxShadow: (!bannerBlob || copied) ? "none" : "0 0 20px rgba(155,92,255,0.15)",
             }}>
             {!bannerBlob && !genError ? "Generating…" : copied ? "✓ Copied!" : copying ? "Copying…" : "Copy to Clipboard"}
           </button>
           <button type="button"
             onClick={() => bannerBlob && _downloadBlob(bannerBlob, `${sale.event_name ?? "sale"}-tixtracker.jpg`)}
             disabled={!bannerBlob}
-            style={{ ...btnBase, padding:"0 20px", background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.10)", color:"rgba(255,255,255,0.55)", cursor: !bannerBlob ? "wait" : "pointer", whiteSpace:"nowrap" }}>
+            style={{ ...btnBase, padding:"0 22px", background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.10)", color:"rgba(255,255,255,0.55)", cursor: !bannerBlob ? "wait" : "pointer", whiteSpace:"nowrap" }}>
             Download
           </button>
         </div>
