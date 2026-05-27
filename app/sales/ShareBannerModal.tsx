@@ -134,9 +134,12 @@ type BannerProps = {
   sale: Sale;
   order: MatchedOrder | null;
   animated: boolean;
+  hideDetails?: boolean;
 };
 
-export function SaleBanner({ sale, order, animated }: BannerProps) {
+export function SaleBanner({ sale, order, animated, hideDetails = false }: BannerProps) {
+  const maskedSale = hideDetails ? { ...sale, event_name: "••••••••••••", venue: "••••••••", event_date: null, section: null, row: null } : sale;
+  sale = maskedSale;
   const revenue = sale.payout_total ?? sale.sale_total ?? 0;
   const cost = (() => {
     if (!order?.total_cost) return 0;
@@ -1125,16 +1128,25 @@ export default function ShareBannerModal({ sale, order, onClose }: Props) {
   const [showConfetti, setShowConfetti] = useState(false);
   const [bannerBlob, setBannerBlob] = useState<Blob | null>(null);
   const [genError, setGenError] = useState("");
+  const [hideDetails, setHideDetails] = useState(false);
 
   useEffect(() => {
     const t1 = setTimeout(() => setVisible(true), 16);
     const t2 = setTimeout(() => setShowConfetti(true), 200);
     const t3 = setTimeout(() => setShowConfetti(false), 1400);
-    renderBannerToBlob((ctx, W, H) => _drawSaleBanner(ctx, W, H, sale, order))
-      .then(blob => setBannerBlob(blob))
-      .catch(err => setGenError(err instanceof Error ? err.message : String(err)));
     return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
   }, []);
+
+  useEffect(() => {
+    const saleToDraw = hideDetails
+      ? { ...sale, event_name: "••••••••••••", venue: "••••••••", event_date: null, section: null, row: null }
+      : sale;
+    setBannerBlob(null);
+    setGenError("");
+    renderBannerToBlob((ctx, W, H) => _drawSaleBanner(ctx, W, H, saleToDraw, order))
+      .then(blob => setBannerBlob(blob))
+      .catch(err => setGenError(err instanceof Error ? err.message : String(err)));
+  }, [hideDetails]);
 
   // Non-async: blob is pre-generated, so clipboard.write() is called immediately
   // within the user-gesture context with no async work in between.
@@ -1207,19 +1219,35 @@ export default function ShareBannerModal({ sale, order, onClose }: Props) {
               Copy the banner and paste it anywhere
             </div>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            style={{
-              background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.1)",
-              borderRadius: 10, width: 36, height: 36, cursor: "pointer",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              color: "rgba(255,255,255,0.55)", fontSize: 18, lineHeight: 1,
-              transition: "background 150ms ease",
-            }}
-          >
-            ×
-          </button>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <button
+              type="button"
+              onClick={() => setHideDetails(v => !v)}
+              style={{
+                background: hideDetails ? "rgba(155,92,255,0.2)" : "rgba(255,255,255,0.07)",
+                border: hideDetails ? "1px solid rgba(155,92,255,0.5)" : "1px solid rgba(255,255,255,0.1)",
+                borderRadius: 10, padding: "0 14px", height: 36, cursor: "pointer",
+                color: hideDetails ? "#b87bff" : "rgba(255,255,255,0.55)",
+                fontSize: 12, fontWeight: 600, whiteSpace: "nowrap",
+                transition: "all 150ms ease",
+              }}
+            >
+              {hideDetails ? "Show Details" : "Hide Details"}
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              style={{
+                background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.1)",
+                borderRadius: 10, width: 36, height: 36, cursor: "pointer",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                color: "rgba(255,255,255,0.55)", fontSize: 18, lineHeight: 1,
+                transition: "background 150ms ease",
+              }}
+            >
+              ×
+            </button>
+          </div>
         </div>
 
         <div style={{
@@ -1228,7 +1256,7 @@ export default function ShareBannerModal({ sale, order, onClose }: Props) {
           flexShrink: 0,
         }}>
           <div>
-            <SaleBanner sale={sale} order={order} animated={visible} />
+            <SaleBanner sale={sale} order={order} animated={visible} hideDetails={hideDetails} />
           </div>
         </div>
 
