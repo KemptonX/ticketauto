@@ -11,16 +11,19 @@ export async function POST() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return NextResponse.json({ error: "Not signed in" }, { status: 401 });
 
-    const { data: accounts, error: fetchError } = await supabase
+    const { data: rows, error: fetchError } = await supabase
       .from("imap_accounts")
-      .select("id, host, port, username, password, use_tls, mailbox, unread_only, mark_read")
+      .select("id, host, port, username, password_encrypted, use_tls, mailbox, unread_only, mark_read")
       .eq("user_id", user.id)
       .eq("is_active", true);
 
     if (fetchError) return NextResponse.json({ error: fetchError.message }, { status: 500 });
-    if (!accounts || accounts.length === 0) {
+    if (!rows || rows.length === 0) {
       return NextResponse.json({ ok: true, scanned: 0, inserted: 0, updated: 0, insertedRefs: [], updatedRefs: [], accountResults: [] });
     }
+
+    const accounts: ImapAccount[] = (rows as Array<Omit<ImapAccount, "password"> & { password_encrypted: string }>)
+      .map((r) => ({ ...r, password: r.password_encrypted }));
 
     let totalScanned = 0;
     let totalInserted = 0;
@@ -30,7 +33,7 @@ export async function POST() {
     const accountResults: { email: string; inserted: number; updated: number }[] = [];
     const errors: string[] = [];
 
-    for (const account of accounts as ImapAccount[]) {
+    for (const account of accounts) {
       try {
         const result = await syncImapInbox({ supabase, imapAccount: account, userId: user.id });
         totalScanned += result.scanned;

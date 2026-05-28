@@ -73,12 +73,15 @@ export async function POST() {
     }
 
     // IMAP accounts
-    const { data: imapAccounts } = await supabase
+    const { data: imapRows } = await supabase
       .from("imap_accounts")
-      .select("id, host, port, username, password, use_tls, mailbox, unread_only, mark_read")
+      .select("id, host, port, username, password_encrypted, use_tls, mailbox, unread_only, mark_read")
       .eq("is_active", true);
 
-    for (const account of (imapAccounts as ImapAccount[]) ?? []) {
+    const imapAccounts: ImapAccount[] = ((imapRows as Array<Omit<ImapAccount, "password"> & { password_encrypted: string }>) ?? [])
+      .map((r) => ({ ...r, password: r.password_encrypted }));
+
+    for (const account of imapAccounts) {
       try {
         const result = await syncImapInbox({ supabase, imapAccount: account, userId: user.id });
         totalScanned += result.scanned;

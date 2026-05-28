@@ -53,14 +53,16 @@ export async function GET(request: NextRequest) {
   }
 
   // Fetch all active IMAP accounts grouped by user
-  const { data: imapRows } = await supabase
+  const { data: imapRowsRaw } = await supabase
     .from("imap_accounts")
-    .select("id, user_id, host, port, username, password, use_tls, mailbox, unread_only, mark_read")
+    .select("id, user_id, host, port, username, password_encrypted, use_tls, mailbox, unread_only, mark_read")
     .eq("is_active", true);
 
   type ImapAccountWithUser = ImapAccount & { user_id: string };
   const imapByUser = new Map<string, ImapAccountWithUser[]>();
-  for (const row of (imapRows as ImapAccountWithUser[]) ?? []) {
+  const imapRows: ImapAccountWithUser[] = ((imapRowsRaw as Array<ImapAccountWithUser & { password_encrypted: string }>) ?? [])
+    .map((r) => ({ ...r, password: r.password_encrypted }));
+  for (const row of imapRows) {
     if (!imapByUser.has(row.user_id)) imapByUser.set(row.user_id, []);
     imapByUser.get(row.user_id)!.push(row);
   }
