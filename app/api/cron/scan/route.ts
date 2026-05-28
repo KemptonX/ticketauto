@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { syncGmailInbox } from "@/src/lib/gmail-sync";
 import { rematchViagogoSales, syncViagogoSalesInbox } from "@/src/lib/viagogo-sales-sync";
+import { syncImapInbox } from "@/src/lib/imap-sync";
+import type { ImapAccount } from "@/src/lib/imap-sync";
 
 export const runtime = "nodejs";
 
@@ -50,7 +52,20 @@ export async function GET(request: NextRequest) {
     byUser.get(account.user_id)!.push(account);
   }
 
-  const allUserIds = new Set([...byUser.keys()]);
+  // Fetch all active IMAP accounts grouped by user
+  const { data: imapRows } = await supabase
+    .from("imap_accounts")
+    .select("id, user_id, host, port, username, password, use_tls, mailbox, unread_only, mark_read")
+    .eq("is_active", true);
+
+  type ImapAccountWithUser = ImapAccount & { user_id: string };
+  const imapByUser = new Map<string, ImapAccountWithUser[]>();
+  for (const row of (imapRows as ImapAccountWithUser[]) ?? []) {
+    if (!imapByUser.has(row.user_id)) imapByUser.set(row.user_id, []);
+    imapByUser.get(row.user_id)!.push(row);
+  }
+
+  const allUserIds = new Set([...byUser.keys(), ...imapByUser.keys()]);
 
   const summary = {
     users: byUser.size,
@@ -88,6 +103,19 @@ export async function GET(request: NextRequest) {
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Gmail scan failed";
         summary.errors.push(`orders:${userId.slice(0, 8)}: ${msg}`);
+      }
+    }
+
+    // IMAP orders — all IMAP accounts for this user
+    for (const imapAccount of imapByUser.get(userId) ?? []) {
+      try {
+        const result = await syncImapInbox({ supabase, imapAccount, userId });
+        summary.ordersScanned += result.scanned;
+        summary.ordersInserted += result.inserted;
+        summary.ordersUpdated += result.updated ?? 0;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "IMAP scan failed";
+        summary.errors.push(`imap:${imapAccount.username}@${imapAccount.host}: ${msg}`);
       }
     }
 

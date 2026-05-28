@@ -99,6 +99,152 @@ type OrderInsert = {
   email_html: string | null;
 };
 
+export type NormalisedEmail = {
+  from: string;
+  subject: string;
+  body: string;
+  htmlBody: string | null;
+  headers: Array<{ name: string; value: string }>;
+};
+
+export type ProcessResult = {
+  action: "inserted" | "updated" | "ignored" | "no_ref";
+  bookingRef: string | null;
+};
+
+export async function processNormalisedEmail(
+  supabase: SupabaseClient,
+  email: NormalisedEmail,
+  userId: string,
+  fallbackAccountEmail: string,
+): Promise<ProcessResult> {
+  const combined = cleanText(`${email.subject}\n${email.body}`);
+
+  const axs = isAxsEmail(email.from, email.subject);
+  const intl = !axs && isIntlTmEmail(email.from, email.subject);
+  const effectiveFrom = intl ? getEffectiveFrom(email.from, email.subject) : email.from;
+
+  const bookingRef = axs
+    ? parseAxsBookingRef(combined)
+    : intl
+      ? parseIntlBookingRef(effectiveFrom, email.subject, combined)
+      : parseBookingRef(email.subject, combined);
+
+  if (!bookingRef) {
+    return { action: "no_ref", bookingRef: null };
+  }
+
+  const accountEmail = extractAccount(email.headers, combined) || fallbackAccountEmail;
+  const existingOrder = await findExistingOrder(supabase, { bookingRef, userId });
+
+  let section: string;
+  let row: string;
+  let seatFrom: string;
+  let seatTo: string;
+  let total: string;
+  let qty: string;
+  let sourceType: string;
+
+  if (axs) {
+    section = parseAxsSection(combined);
+    row = parseAxsRow(combined);
+    [seatFrom, seatTo] = parseAxsSeats(combined);
+    total = parseAxsTotal(combined);
+    qty = parseAxsQty(combined);
+    sourceType = "axs";
+  } else if (intl) {
+    section = parseSection(combined);
+    row = parseRow(combined);
+    [seatFrom, seatTo] = parseSeats(combined);
+    qty = parseIntlQty(combined);
+    sourceType = getIntlSourceType(effectiveFrom, email.subject);
+    const rawTotal = parseIntlTotal(combined);
+    const intlCurrency = SOURCE_CURRENCY[sourceType] ?? "EUR";
+    total = await convertToGbp(rawTotal, intlCurrency);
+
+    if (!qty && seatFrom && seatTo) {
+      const sf = parseInt(seatFrom, 10);
+      const st = parseInt(seatTo, 10);
+      if (!isNaN(sf) && !isNaN(st) && st >= sf && st - sf < 20) {
+        qty = String(st - sf + 1);
+      }
+    }
+  } else {
+    section = parseSection(combined);
+    row = parseRow(combined);
+    [seatFrom, seatTo] = parseSeats(combined);
+    total = parseTotal(combined);
+    qty = parseQty(email.body);
+    sourceType = bookingRef.includes("/UK") ? "ticketmaster_direct" : "ticketmaster_resale";
+  }
+
+  const orderData: OrderInsert = {
+    booking_ref: bookingRef,
+    event_name: axs ? parseAxsEvent(email.subject) : intl ? parseIntlEvent(effectiveFrom, email.subject, combined) : parseEvent(combined),
+    venue: axs ? parseAxsVenue(combined) : intl ? parseIntlVenue(effectiveFrom, combined) : parseVenue(email.body),
+    event_date: axs ? parseAxsDate(combined) : intl ? parseIntlDate(effectiveFrom, combined) : parseDate(combined),
+    purchased_at: parsePurchasedAt(email.headers, combined),
+    account_email: accountEmail,
+    section,
+    row,
+    seat_from: seatFrom,
+    seat_to: seatTo,
+    qty_bought: qty ? Number.parseInt(qty, 10) : null,
+    total_cost: total ? Number.parseFloat(total) : null,
+    source_type: sourceType,
+    listing_status: "Unlisted",
+    user_id: userId,
+    email_html: email.htmlBody,
+  };
+
+  const resolvedDate = orderData.event_date || existingOrder?.event_date || "";
+  const pastEvent = isEventInPast(resolvedDate);
+
+  if (existingOrder) {
+    if (existingOrder.listing_status === "Ignored") {
+      return { action: "ignored", bookingRef };
+    }
+    const { error } = await supabase
+      .from("orders")
+      .update({
+        event_name: orderData.event_name || existingOrder.event_name,
+        venue: orderData.venue || existingOrder.venue,
+        event_date: orderData.event_date || existingOrder.event_date,
+        purchased_at: orderData.purchased_at || existingOrder.purchased_at,
+        account_email: orderData.account_email || existingOrder.account_email,
+        section: orderData.section || existingOrder.section,
+        row: orderData.row || existingOrder.row,
+        seat_from: orderData.seat_from || existingOrder.seat_from,
+        seat_to: orderData.seat_to || existingOrder.seat_to,
+        qty_bought: orderData.qty_bought ?? existingOrder.qty_bought,
+        total_cost: orderData.total_cost ?? existingOrder.total_cost,
+        listing_status: existingOrder.listing_status === "Sold"
+          ? "Sold"
+          : pastEvent
+            ? "Archived"
+            : existingOrder.listing_status ?? "Unlisted",
+        source_type: orderData.source_type || existingOrder.source_type,
+        ...(orderData.email_html !== null ? { email_html: orderData.email_html } : {}),
+      })
+      .eq("id", existingOrder.id);
+
+    if (error) {
+      throw new Error(error.message);
+    }
+    return { action: "updated", bookingRef };
+  }
+
+  const { error } = await supabase.from("orders").insert({
+    ...orderData,
+    listing_status: pastEvent ? "Archived" : "Unlisted",
+  });
+  if (error) {
+    if (error.code === "23505") return { action: "ignored", bookingRef };
+    throw new Error(error.message);
+  }
+  return { action: "inserted", bookingRef };
+}
+
 export async function syncGmailInbox({
   supabase,
   gmailAccount,
@@ -132,144 +278,28 @@ export async function syncGmailInbox({
     const headers = fullMessage.payload.headers || [];
     const subject = getHeader(headers, "Subject");
     const body = getBody(fullMessage.payload);
-    const emailHtml = getRawHtml(fullMessage.payload) || null;
-    const combined = cleanText(`${subject}\n${body}`);
 
-    const from = getHeader(headers, "From");
-    const axs = isAxsEmail(from, subject);
-    const intl = !axs && isIntlTmEmail(from, subject);
-    const effectiveFrom = intl ? getEffectiveFrom(from, subject) : from;
-
-    const bookingRef = axs
-      ? parseAxsBookingRef(combined)
-      : intl
-        ? parseIntlBookingRef(effectiveFrom, subject, combined)
-        : parseBookingRef(subject, combined);
-
-
-    if (!bookingRef) {
-      continue;
-    }
-
-    const accountEmail = extractAccount(headers, combined) || gmailAccount.email;
-    const existingOrder = await findExistingOrder(supabase, { bookingRef, userId });
-
-    let section: string;
-    let row: string;
-    let seatFrom: string;
-    let seatTo: string;
-    let total: string;
-    let qty: string;
-    let sourceType: string;
-
-    if (axs) {
-      section = parseAxsSection(combined);
-      row = parseAxsRow(combined);
-      [seatFrom, seatTo] = parseAxsSeats(combined);
-      total = parseAxsTotal(combined);
-      qty = parseAxsQty(combined);
-      sourceType = "axs";
-    } else if (intl) {
-      section = parseSection(combined);
-      row = parseRow(combined);
-      [seatFrom, seatTo] = parseSeats(combined);
-      qty = parseIntlQty(combined);
-      sourceType = getIntlSourceType(effectiveFrom, subject);
-      const rawTotal = parseIntlTotal(combined);
-      const intlCurrency = SOURCE_CURRENCY[sourceType] ?? "EUR";
-      total = await convertToGbp(rawTotal, intlCurrency);
-
-      // Seat-range fallback for qty (e.g. "Seat 27 - 30" → 4 tickets)
-      if (!qty && seatFrom && seatTo) {
-        const sf = parseInt(seatFrom, 10);
-        const st = parseInt(seatTo, 10);
-        if (!isNaN(sf) && !isNaN(st) && st >= sf && st - sf < 20) {
-          qty = String(st - sf + 1);
-        }
-      }
-    } else {
-      section = parseSection(combined);
-      row = parseRow(combined);
-      [seatFrom, seatTo] = parseSeats(combined);
-      total = parseTotal(combined);
-      qty = parseQty(body);
-      sourceType = bookingRef.includes("/UK") ? "ticketmaster_direct" : "ticketmaster_resale";
-    }
-
-    const orderData: OrderInsert = {
-      booking_ref: bookingRef,
-      event_name: axs ? parseAxsEvent(subject) : intl ? parseIntlEvent(effectiveFrom, subject, combined) : parseEvent(combined),
-      venue: axs ? parseAxsVenue(combined) : intl ? parseIntlVenue(effectiveFrom, combined) : parseVenue(body),
-      event_date: axs ? parseAxsDate(combined) : intl ? parseIntlDate(effectiveFrom, combined) : parseDate(combined),
-      purchased_at: parsePurchasedAt(headers, combined),
-      account_email: accountEmail,
-      section,
-      row,
-      seat_from: seatFrom,
-      seat_to: seatTo,
-      qty_bought: qty ? Number.parseInt(qty, 10) : null,
-      total_cost: total ? Number.parseFloat(total) : null,
-      source_type: sourceType,
-      listing_status: "Unlisted",
-      user_id: userId,
-      email_html: emailHtml,
+    const normEmail: NormalisedEmail = {
+      from: getHeader(headers, "From"),
+      subject,
+      body,
+      htmlBody: getRawHtml(fullMessage.payload) || null,
+      headers,
     };
 
-    const resolvedDate = orderData.event_date || existingOrder?.event_date || "";
-    const pastEvent = isEventInPast(resolvedDate);
+    const result = await processNormalisedEmail(supabase, normEmail, userId, gmailAccount.email);
 
-    if (existingOrder) {
-      if (existingOrder.listing_status === "Ignored") {
-        await markMessageProcessed(accessToken, message.id, labelId);
-        continue;
-      }
-      const { error } = await supabase
-        .from("orders")
-        .update({
-          event_name: orderData.event_name || existingOrder.event_name,
-          venue: orderData.venue || existingOrder.venue,
-          event_date: orderData.event_date || existingOrder.event_date,
-          purchased_at: orderData.purchased_at || existingOrder.purchased_at,
-          account_email: orderData.account_email || existingOrder.account_email,
-          section: orderData.section || existingOrder.section,
-          row: orderData.row || existingOrder.row,
-          seat_from: orderData.seat_from || existingOrder.seat_from,
-          seat_to: orderData.seat_to || existingOrder.seat_to,
-          qty_bought: orderData.qty_bought ?? existingOrder.qty_bought,
-          total_cost: orderData.total_cost ?? existingOrder.total_cost,
-          listing_status: existingOrder.listing_status === "Sold"
-            ? "Sold"
-            : pastEvent
-              ? "Archived"
-              : existingOrder.listing_status ?? "Unlisted",
-          source_type: orderData.source_type || existingOrder.source_type,
-          ...(orderData.email_html !== null ? { email_html: orderData.email_html } : {}),
-        })
-        .eq("id", existingOrder.id);
+    if (result.action === "no_ref") continue;
 
-      if (error) {
-        throw new Error(error.message);
-      }
-
-      updated += 1;
-      updatedRefs.push(bookingRef);
-      await markMessageProcessed(accessToken, message.id, labelId);
-      continue;
-    }
-
-    const { error } = await supabase.from("orders").insert({
-      ...orderData,
-      listing_status: pastEvent ? "Archived" : "Unlisted",
-    });
-    if (error) {
-      // Duplicate — pre-fetch Map missed it (e.g. RLS hiccup). Skip silently.
-      if (error.code === "23505") continue;
-      throw new Error(error.message);
-    }
-
-    inserted += 1;
-    insertedRefs.push(bookingRef);
     await markMessageProcessed(accessToken, message.id, labelId);
+
+    if (result.action === "inserted") {
+      inserted += 1;
+      insertedRefs.push(result.bookingRef!);
+    } else if (result.action === "updated") {
+      updated += 1;
+      updatedRefs.push(result.bookingRef!);
+    }
   }
 
   await supabase
@@ -519,7 +549,7 @@ function decodeQuotedPrintable(str: string, charset = "utf-8"): string {
   }
 }
 
-function stripHtml(text: string) {
+export function stripHtml(text: string) {
   return text
     .replace(/<(script|style)[^>]*>[\s\S]*?<\/\1>/gi, " ")
     .replace(/<br\s*\/?>/gi, "\n")
@@ -544,7 +574,7 @@ function stripHtml(text: string) {
     .replace(/&#xFEFF;/gi, "");
 }
 
-function cleanText(text: string) {
+export function cleanText(text: string) {
   return text
     .replace(/\r/g, "\n")
     .replace(/\u00a0/g, " ")

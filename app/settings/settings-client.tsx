@@ -30,6 +30,22 @@ type GmailAccount = {
   updated_at: string;
 };
 
+type ImapAccountRow = {
+  id: string;
+  host: string;
+  port: number;
+  username: string;
+  use_tls: boolean;
+  mailbox: string;
+  unread_only: boolean;
+  mark_read: boolean;
+  label: string | null;
+  status: string;
+  is_active: boolean;
+  last_synced_at: string | null;
+  created_at: string;
+};
+
 type ImportField = {
   key: string;
   label: string;
@@ -562,6 +578,21 @@ export default function SettingsClient() {
   const [newEmail, setNewEmail] = useState("");
   const [newDisplayName, setNewDisplayName] = useState("");
 
+  // ── IMAP state ──
+  const [imapAccounts, setImapAccounts] = useState<ImapAccountRow[]>([]);
+  const [imapLoading, setImapLoading] = useState(true);
+  const [imapMessage, setImapMessage] = useState<{ ok: boolean; text: string } | null>(null);
+  const [imapSubmitting, setImapSubmitting] = useState(false);
+  const [imapHost, setImapHost] = useState("");
+  const [imapPort, setImapPort] = useState("993");
+  const [imapUsername, setImapUsername] = useState("");
+  const [imapPassword, setImapPassword] = useState("");
+  const [imapUseTls, setImapUseTls] = useState(true);
+  const [imapMailbox, setImapMailbox] = useState("INBOX");
+  const [imapUnreadOnly, setImapUnreadOnly] = useState(true);
+  const [imapMarkRead, setImapMarkRead] = useState(false);
+  const [imapLabel, setImapLabel] = useState("");
+
   // ── Import state ──
   const [importStep, setImportStep] = useState<ImportStep>("upload");
   const [importRows, setImportRows] = useState<string[][]>([]);
@@ -581,9 +612,84 @@ export default function SettingsClient() {
     window.location.href = "/login";
   }
 
+  // ── IMAP handlers ──
+  async function loadImapAccounts() {
+    setImapLoading(true);
+    const { data, error } = await supabase
+      .from("imap_accounts")
+      .select("id, host, port, username, use_tls, mailbox, unread_only, mark_read, label, status, is_active, last_synced_at, created_at")
+      .order("created_at", { ascending: false });
+    if (!error) setImapAccounts((data as ImapAccountRow[]) || []);
+    setImapLoading(false);
+  }
+
+  async function connectImap(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const host = imapHost.trim();
+    const username = imapUsername.trim();
+    if (!host || !username || !imapPassword) {
+      setImapMessage({ ok: false, text: "Host, username, and password are required" });
+      return;
+    }
+    setImapSubmitting(true);
+    setImapMessage(null);
+    try {
+      const res = await fetch("/api/imap/connect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          host,
+          port: parseInt(imapPort, 10) || 993,
+          username,
+          password: imapPassword,
+          use_tls: imapUseTls,
+          mailbox: imapMailbox || "INBOX",
+          unread_only: imapUnreadOnly,
+          mark_read: imapMarkRead,
+          label: imapLabel || null,
+        }),
+      });
+      const data = await res.json() as { ok?: boolean; error?: string };
+      if (data.ok) {
+        setImapMessage({ ok: true, text: "IMAP account connected successfully" });
+        setImapPassword("");
+        await loadImapAccounts();
+      } else {
+        setImapMessage({ ok: false, text: data.error ?? "Connection failed" });
+      }
+    } catch {
+      setImapMessage({ ok: false, text: "Network error — check your connection" });
+    } finally {
+      setImapSubmitting(false);
+    }
+  }
+
+  async function removeImapAccount(id: string, username: string) {
+    if (!window.confirm(`Remove IMAP account ${username}?`)) return;
+    const res = await fetch("/api/imap/disconnect", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id }),
+    });
+    if (res.ok) {
+      await loadImapAccounts();
+      setImapMessage({ ok: true, text: "IMAP account removed" });
+    }
+  }
+
+  async function toggleImapAccount(account: ImapAccountRow) {
+    const nextActive = !account.is_active;
+    await supabase
+      .from("imap_accounts")
+      .update({ is_active: nextActive, updated_at: new Date().toISOString() })
+      .eq("id", account.id);
+    await loadImapAccounts();
+  }
+
   // ── Connection effects ──
   useEffect(() => {
     void loadAccounts();
+    void loadImapAccounts();
   }, []);
 
   useEffect(() => {
@@ -1015,6 +1121,115 @@ export default function SettingsClient() {
                 <button type="submit" className="secondary-button" disabled={connSubmitting}>{connSubmitting ? "Adding..." : "Add manually"}</button>
               </form>
             </section>
+
+            <section className="command-card connections-command-card">
+              <div className="command-header">
+                <div><p className="section-tag">IMAP</p><h4>Connect any email inbox via IMAP</h4></div>
+              </div>
+              <p style={{ margin: "0 0 1rem", color: "var(--text-2)", fontSize: "0.85rem", lineHeight: 1.6 }}>
+                Works with iCloud Mail, custom domains, and any IMAP-enabled inbox. Use an app-specific password for iCloud (Apple ID → Sign-In &amp; Security → App-Specific Passwords).
+              </p>
+              <form className="connections-form" style={{ gap: "0.75rem" }} onSubmit={(e) => void connectImap(e)}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: "0.5rem" }}>
+                  <label className="field-label">
+                    <span>Host</span>
+                    <input className="command-input" type="text" placeholder="imap.mail.me.com" value={imapHost} onChange={(e) => setImapHost(e.target.value)} required />
+                  </label>
+                  <label className="field-label">
+                    <span>Port</span>
+                    <input className="command-input" type="number" placeholder="993" value={imapPort} onChange={(e) => setImapPort(e.target.value)} style={{ width: "80px" }} />
+                  </label>
+                </div>
+                <label className="field-label">
+                  <span>Username (email address)</span>
+                  <input className="command-input" type="email" placeholder="you@icloud.com" value={imapUsername} onChange={(e) => setImapUsername(e.target.value)} required />
+                </label>
+                <label className="field-label">
+                  <span>Password</span>
+                  <input className="command-input" type="password" placeholder="App-specific password" value={imapPassword} onChange={(e) => setImapPassword(e.target.value)} autoComplete="new-password" required />
+                </label>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.5rem" }}>
+                  <label className="field-label">
+                    <span>Mailbox</span>
+                    <input className="command-input" type="text" placeholder="INBOX" value={imapMailbox} onChange={(e) => setImapMailbox(e.target.value)} />
+                  </label>
+                  <label className="field-label">
+                    <span>Label (optional)</span>
+                    <input className="command-input" type="text" placeholder="iCloud tickets" value={imapLabel} onChange={(e) => setImapLabel(e.target.value)} />
+                  </label>
+                </div>
+                <div style={{ display: "flex", gap: "1.5rem", flexWrap: "wrap" }}>
+                  <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.85rem", cursor: "pointer" }}>
+                    <input type="checkbox" checked={imapUseTls} onChange={(e) => setImapUseTls(e.target.checked)} />
+                    TLS / SSL
+                  </label>
+                  <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.85rem", cursor: "pointer" }}>
+                    <input type="checkbox" checked={imapUnreadOnly} onChange={(e) => setImapUnreadOnly(e.target.checked)} />
+                    Unread only
+                  </label>
+                  <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.85rem", cursor: "pointer" }}>
+                    <input type="checkbox" checked={imapMarkRead} onChange={(e) => setImapMarkRead(e.target.checked)} />
+                    Mark as read after scan
+                  </label>
+                </div>
+                {imapMessage && (
+                  <div style={{
+                    padding: "8px 12px",
+                    borderRadius: "6px",
+                    fontSize: "0.82rem",
+                    background: imapMessage.ok ? "rgba(103,240,165,0.08)" : "rgba(255,80,80,0.08)",
+                    border: `1px solid ${imapMessage.ok ? "rgba(103,240,165,0.25)" : "rgba(255,80,80,0.25)"}`,
+                    color: imapMessage.ok ? "#67F0A5" : "#ff8080",
+                  }}>
+                    {imapMessage.ok ? "✓ " : "✗ "}{imapMessage.text}
+                  </div>
+                )}
+                <button type="submit" className="primary-button" disabled={imapSubmitting} style={{ alignSelf: "flex-start" }}>
+                  {imapSubmitting ? "Connecting..." : "Connect &amp; test"}
+                </button>
+              </form>
+            </section>
+
+            {/* IMAP account list */}
+            {(imapLoading || imapAccounts.length > 0) && (
+              <section className="table-card connections-list-card">
+                <div className="table-card-header">
+                  <div><p className="section-tag">IMAP</p><h4>IMAP accounts</h4></div>
+                  <span className="table-count">{imapAccounts.length} total</span>
+                </div>
+                {imapLoading ? (
+                  <div className="empty-state compact-empty-state"><h5>Loading...</h5></div>
+                ) : (
+                  <div className="connections-list">
+                    {imapAccounts.map((account) => (
+                      <article key={account.id} className="connection-card">
+                        <div className="connection-card-main">
+                          <div className="connection-card-topline">
+                            <strong>{account.label || account.username}</strong>
+                            <div className="connection-badges">
+                              <span className={`status-badge ${connectionStatusClass(account.status)}`}>{account.status}</span>
+                              {!account.is_active && <span className="status-badge badge-paused">Paused</span>}
+                            </div>
+                          </div>
+                          <p className="connection-email">{account.username} — {account.host}:{account.port}</p>
+                          <div className="connection-meta-grid">
+                            <div><span className="connection-meta-label">Mailbox</span><strong>{account.mailbox}</strong></div>
+                            <div><span className="connection-meta-label">TLS</span><strong>{account.use_tls ? "Yes" : "No"}</strong></div>
+                            <div><span className="connection-meta-label">Last sync</span><strong>{account.last_synced_at ? formatDateTime(account.last_synced_at) : "Pending"}</strong></div>
+                          </div>
+                        </div>
+                        <div className="connection-card-actions">
+                          <button type="button" className="secondary-button" onClick={() => void toggleImapAccount(account)}>
+                            {account.is_active ? "Pause" : "Resume"}
+                          </button>
+                          <button type="button" className="ghost-button danger-button" onClick={() => void removeImapAccount(account.id, account.username)}>Remove</button>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                )}
+              </section>
+            )}
 
             <section className="table-card connections-list-card">
               <div className="table-card-header">

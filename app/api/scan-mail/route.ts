@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/src/lib/supabase-server";
 import { syncGmailInbox } from "@/src/lib/gmail-sync";
 import { syncOutlookInbox } from "@/src/lib/outlook-sync";
+import { syncImapInbox } from "@/src/lib/imap-sync";
+import type { ImapAccount } from "@/src/lib/imap-sync";
 
 export const runtime = "nodejs";
 
@@ -67,6 +69,31 @@ export async function POST() {
         });
       } catch (err) {
         errors.push(`${account.email}: ${err instanceof Error ? err.message : "scan failed"}`);
+      }
+    }
+
+    // IMAP accounts
+    const { data: imapAccounts } = await supabase
+      .from("imap_accounts")
+      .select("id, host, port, username, password, use_tls, mailbox, unread_only, mark_read")
+      .eq("is_active", true);
+
+    for (const account of (imapAccounts as ImapAccount[]) ?? []) {
+      try {
+        const result = await syncImapInbox({ supabase, imapAccount: account, userId: user.id });
+        totalScanned += result.scanned;
+        totalInserted += result.inserted;
+        totalUpdated += result.updated;
+        allInsertedRefs.push(...result.insertedRefs);
+        allUpdatedRefs.push(...result.updatedRefs);
+        accountResults.push({
+          email: result.email,
+          provider: "imap",
+          inserted: result.inserted,
+          updated: result.updated,
+        });
+      } catch (err) {
+        errors.push(`${account.username}@${account.host}: ${err instanceof Error ? err.message : "scan failed"}`);
       }
     }
 
