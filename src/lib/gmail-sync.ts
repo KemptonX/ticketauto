@@ -804,9 +804,16 @@ function parseVenue(text: string) {
   const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   for (let index = 0; index < lines.length; index += 1) {
     if (/^(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)/i.test(lines[index])) {
-      const venue = lines[index - 1];
-      if (venue && !venue.startsWith("Subject:")) {
-        return venue;
+      const before = lines[index - 1];
+      if (before && !before.startsWith("Subject:")) {
+        return before;
+      }
+      // No valid line before the date — look after it, skipping time lines
+      for (let j = index + 1; j < Math.min(index + 4, lines.length); j++) {
+        const candidate = lines[j];
+        if (/^\d{1,2}:\d{2}/.test(candidate)) continue;
+        if (/^\d+\s*(x\s*)?(ticket)/i.test(candidate)) break;
+        if (candidate) return candidate;
       }
     }
   }
