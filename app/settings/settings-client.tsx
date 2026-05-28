@@ -1127,7 +1127,7 @@ export default function SettingsClient() {
                 <div><p className="section-tag">IMAP</p><h4>Connect any email inbox via IMAP</h4></div>
               </div>
               <p style={{ margin: "0 0 1rem", color: "var(--text-2)", fontSize: "0.85rem", lineHeight: 1.6 }}>
-                Works with iCloud Mail, custom domains, and any IMAP-enabled inbox. Use an app-specific password for iCloud (Apple ID → Sign-In &amp; Security → App-Specific Passwords).
+                Works with any IMAP-enabled inbox — iCloud Mail, Outlook, Gmail, Yahoo, custom domains, and more. Some providers require an app-specific password: iCloud (Apple ID → Sign-In &amp; Security → App-Specific Passwords), Gmail (Google Account → Security → App Passwords), Yahoo (Account Security → Generate app password).
               </p>
               <form className="connections-form" style={{ gap: "0.75rem" }} onSubmit={(e) => void connectImap(e)}>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: "0.5rem" }}>
