@@ -14,6 +14,7 @@ export type ImapAccount = {
   mailbox: string;
   unread_only: boolean;
   mark_read: boolean;
+  last_synced_at?: string | null;
 };
 
 type SyncResult = {
@@ -69,6 +70,7 @@ function buildImapClient(account: ImapAccount) {
     auth: { user: account.username, pass: account.password },
     logger: false,
     disableAutoIdle: true,
+    socketTimeout: 30000,
   });
 }
 
@@ -111,8 +113,13 @@ export async function syncImapInbox({
   try {
     const lock = await client.getMailboxLock(imapAccount.mailbox || "INBOX");
     try {
+      // Incremental: use last_synced_at - 2h when available, else 14-day lookback
       const since = new Date();
-      since.setDate(since.getDate() - 14);
+      if (imapAccount.last_synced_at) {
+        since.setTime(new Date(imapAccount.last_synced_at).getTime() - 2 * 60 * 60 * 1000);
+      } else {
+        since.setDate(since.getDate() - 14);
+      }
 
       const searchCriteria = imapAccount.unread_only
         ? { unseen: true, since }
@@ -158,58 +165,57 @@ export async function syncImapInbox({
           const source = batchSources.get(uid);
           if (!source) continue;
 
-          const parsed = await simpleParser(source, { skipHtmlToText: false });
-          const subject = parsed.subject || "";
-          const textBody = parsed.text || "";
+          try {
+            // skipHtmlToText: true — prevents mailparser from using html-to-text,
+            // which outputs image src URLs inline and corrupts venue extraction
+            const parsed = await simpleParser(source, { skipHtmlToText: true });
+            const subject = parsed.subject || "";
 
-          scanned++;
+            scanned++;
 
-          const headers = extractRawHeaders(source);
-          if (parsed.date && !headers.some((h) => h.name.toLowerCase() === "date")) {
-            headers.push({ name: "Date", value: parsed.date.toUTCString() });
+            const headers = extractRawHeaders(source);
+            if (parsed.date && !headers.some((h) => h.name.toLowerCase() === "date")) {
+              headers.push({ name: "Date", value: parsed.date.toUTCString() });
+            }
+
+            // Mirror Gmail's getBody(): join text/plain + stripHtml(text/html)
+            const plainPart = parsed.text || "";
+            const rawHtml = typeof parsed.html === "string" ? parsed.html : "";
+            const bodyParts: string[] = [];
+            if (plainPart) bodyParts.push(plainPart);
+            if (rawHtml) bodyParts.push(stripHtml(rawHtml));
+            const body = cleanText(bodyParts.join("\n"));
+
+            const htmlBody: string | null = rawHtml
+              ? rawHtml
+              : plainPart
+              ? `<!DOCTYPE html><html><body><pre style="font-family:sans-serif;white-space:pre-wrap;padding:20px;color:#222">${plainPart.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</pre></body></html>`
+              : null;
+
+            const normEmail: NormalisedEmail = {
+              from: parsed.from?.text || "",
+              subject,
+              body,
+              htmlBody,
+              headers,
+            };
+
+            const result = await processNormalisedEmail(supabase, normEmail, userId, imapAccount.username);
+
+            if (result.action === "no_ref") { scanned--; continue; }
+
+            if (imapAccount.mark_read && result.action !== "ignored") {
+              try {
+                await client.messageFlagsAdd(uid, ["\\Seen"], { uid: true });
+              } catch { /* best-effort */ }
+            }
+
+            if (result.action === "inserted") { inserted++; insertedRefs.push(result.bookingRef!); }
+            else if (result.action === "updated") { updated++; updatedRefs.push(result.bookingRef!); }
+          } catch {
+            // Isolate per-message failures — don't abort the whole scan
+            scanned--;
           }
-
-          const rawHtml = typeof parsed.html === "string" ? parsed.html : null;
-
-          let body: string;
-          if (textBody) {
-            body = cleanText(textBody);
-          } else if (rawHtml) {
-            body = cleanText(stripHtml(rawHtml));
-          } else {
-            body = "";
-          }
-
-          let htmlBody: string | null;
-          if (rawHtml) {
-            htmlBody = rawHtml;
-          } else if (textBody) {
-            const escaped = textBody.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-            htmlBody = `<!DOCTYPE html><html><body><pre style="font-family:sans-serif;white-space:pre-wrap;padding:20px;color:#222">${escaped}</pre></body></html>`;
-          } else {
-            htmlBody = null;
-          }
-
-          const normEmail: NormalisedEmail = {
-            from: parsed.from?.text || "",
-            subject,
-            body,
-            htmlBody,
-            headers,
-          };
-
-          const result = await processNormalisedEmail(supabase, normEmail, userId, imapAccount.username);
-
-          if (result.action === "no_ref") { scanned--; continue; }
-
-          if (imapAccount.mark_read && result.action !== "ignored") {
-            try {
-              await client.messageFlagsAdd(uid, ["\\Seen"], { uid: true });
-            } catch { /* best-effort */ }
-          }
-
-          if (result.action === "inserted") { inserted++; insertedRefs.push(result.bookingRef!); }
-          else if (result.action === "updated") { updated++; updatedRefs.push(result.bookingRef!); }
         }
       }
     } finally {

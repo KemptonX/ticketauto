@@ -55,7 +55,7 @@ export async function GET(request: NextRequest) {
   // Fetch all active IMAP accounts grouped by user
   const { data: imapRowsRaw } = await supabase
     .from("imap_accounts")
-    .select("id, user_id, host, port, username, password_encrypted, use_tls, mailbox, unread_only, mark_read")
+    .select("id, user_id, host, port, username, password_encrypted, use_tls, mailbox, unread_only, mark_read, last_synced_at")
     .eq("is_active", true);
 
   type ImapAccountWithUser = ImapAccount & { user_id: string };

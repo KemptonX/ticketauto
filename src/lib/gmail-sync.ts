@@ -948,6 +948,17 @@ function parseAxsDate(text: string) {
   );
 }
 
+// Returns true for lines that are image/asset URLs and should never be used as venue names
+function isVenueNoise(s: string): boolean {
+  return (
+    /https?:\/\//i.test(s) ||
+    /\.(png|jpe?g|gif|webp|svg|ico)\b/i.test(s) ||
+    /ico-location/i.test(s) ||
+    /email\.axs\./i.test(s) ||
+    /^cid:/i.test(s)
+  );
+}
+
 function parseAxsVenue(text: string) {
   const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   for (let i = 0; i < lines.length; i++) {
@@ -956,10 +967,16 @@ function parseAxsVenue(text: string) {
         lines[i],
       )
     ) {
-      const candidate = lines[i + 1];
-      if (candidate && !/^\d+\s+Ticket/i.test(candidate)) {
-        // Strip "[image: venue]" or "[image: ...]" prefixes added by email clients
-        return candidate.replace(/^\[image:[^\]]*\]\s*/i, "").trim();
+      // Look ahead up to 3 lines; skip noise (image URLs, empty lines) to find real venue text
+      for (let j = i + 1; j < Math.min(i + 4, lines.length); j++) {
+        const candidate = lines[j]
+          .replace(/^\[image:[^\]]*\]\s*/i, "")   // strip "[image: …]" prefixes
+          .replace(/^https?:\/\/\S+\s*/g, "")     // strip leading URL tokens
+          .trim();
+        if (!candidate) continue;
+        if (/^\d+\s+Ticket/i.test(candidate)) break;  // hit ticket-qty line — stop
+        if (isVenueNoise(candidate)) continue;          // pure noise line — skip
+        return candidate;
       }
     }
   }

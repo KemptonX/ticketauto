@@ -13,7 +13,7 @@ export async function POST() {
 
     const { data: rows, error: fetchError } = await supabase
       .from("imap_accounts")
-      .select("id, host, port, username, password_encrypted, use_tls, mailbox, unread_only, mark_read")
+      .select("id, host, port, username, password_encrypted, use_tls, mailbox, unread_only, mark_read, last_synced_at")
       .eq("user_id", user.id)
       .eq("is_active", true);
 
