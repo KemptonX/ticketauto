@@ -51,6 +51,7 @@ export async function POST(request: NextRequest) {
     const { error: dbError } = await supabase.from("imap_accounts").upsert(
       {
         user_id: user.id,
+        email: username,
         host,
         port,
         username,
@@ -71,6 +72,7 @@ export async function POST(request: NextRequest) {
       // If upsert fails (e.g. no unique constraint yet), fall back to insert
       const { error: insertError } = await supabase.from("imap_accounts").insert({
         user_id: user.id,
+        email: username,
         host,
         port,
         username,
