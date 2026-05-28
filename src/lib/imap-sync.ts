@@ -113,17 +113,25 @@ export async function syncImapInbox({
   try {
     const lock = await client.getMailboxLock(imapAccount.mailbox || "INBOX");
     try {
-      // Incremental: use last_synced_at - 2h when available, else 14-day lookback
-      const since = new Date();
-      if (imapAccount.last_synced_at) {
-        since.setTime(new Date(imapAccount.last_synced_at).getTime() - 2 * 60 * 60 * 1000);
+      let searchCriteria: Record<string, unknown>;
+      if (imapAccount.unread_only) {
+        // Unread-only: search all unseen messages within a fixed 14-day cap.
+        // Do NOT use incremental since here — unread emails can be any age and
+        // the incremental window (last_synced_at - 2h) would skip old unread mail.
+        const since14 = new Date();
+        since14.setDate(since14.getDate() - 14);
+        searchCriteria = { seen: false, since: since14 };
       } else {
-        since.setDate(since.getDate() - 14);
+        // All-mail: use incremental since (last_synced_at - 2h) for efficiency,
+        // falling back to 14-day lookback on first scan.
+        const since = new Date();
+        if (imapAccount.last_synced_at) {
+          since.setTime(new Date(imapAccount.last_synced_at).getTime() - 2 * 60 * 60 * 1000);
+        } else {
+          since.setDate(since.getDate() - 14);
+        }
+        searchCriteria = { since };
       }
-
-      const searchCriteria = imapAccount.unread_only
-        ? { unseen: true, since }
-        : { since };
 
       const uidResult = await client.search(searchCriteria, { uid: true });
       const allUids = Array.isArray(uidResult) ? uidResult : [];
