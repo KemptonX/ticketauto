@@ -60,9 +60,13 @@ export default function LoginForm() {
           redirectTo: `${window.location.origin}/update-password`,
         });
         if (resetError) {
-          setError(resetError.message);
+          if (resetError.message.toLowerCase().includes("rate limit") || resetError.status === 429) {
+            setError("Too many reset requests. Please wait a few minutes and try again, or check your spam folder — the email may already be on its way.");
+          } else {
+            setError(resetError.message);
+          }
         } else {
-          setMessage("Check your email for a password reset link.");
+          setMessage("Check your email for a password reset link. If it doesn't arrive within a minute, check your spam folder.");
         }
         setLoading(false);
         return;
