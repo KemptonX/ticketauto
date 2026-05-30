@@ -265,8 +265,9 @@ export type MultiSaleStats = {
   totalCost: number; totalProfit: number; roi: number | null; eventNames: string[];
 };
 
-export function MultiSaleBanner({ stats, animated }: { stats: MultiSaleStats; animated: boolean }) {
-  const { totalRevenue, totalCost, totalProfit, roi, salesCount, totalTickets, eventNames } = stats;
+export function MultiSaleBanner({ stats, animated, hideDetails = false }: { stats: MultiSaleStats; animated: boolean; hideDetails?: boolean }) {
+  const { totalRevenue, totalCost, totalProfit, roi, salesCount, totalTickets } = stats;
+  const eventNames = hideDetails ? stats.eventNames.map(() => "••••••••••••") : stats.eventNames;
   const isPos = totalProfit >= 0;
 
   const animProfit = useCountUp(totalProfit, animated);
@@ -759,16 +760,24 @@ export function ShareMultiBannerModal({ stats, onClose }: MultiShareProps) {
   const [showConfetti, setShowConfetti] = useState(false);
   const [bannerBlob, setBannerBlob]     = useState<Blob | null>(null);
   const [genError, setGenError]         = useState("");
+  const [hideDetails, setHideDetails]   = useState(false);
 
   useEffect(() => {
     const t1 = setTimeout(() => setVisible(true), 16);
     const t2 = setTimeout(() => setShowConfetti(true), 200);
     const t3 = setTimeout(() => setShowConfetti(false), 1400);
-    renderBannerToBlob((ctx, W, H, logo) => _drawMultiBanner(ctx, W, H, stats, logo))
-      .then(b => setBannerBlob(b))
-      .catch(e => setGenError(e instanceof Error ? e.message : String(e)));
     return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
   }, []);
+
+  useEffect(() => {
+    const renderStats = hideDetails
+      ? { ...stats, eventNames: stats.eventNames.map(() => "••••••••••••") }
+      : stats;
+    setBannerBlob(null); setGenError("");
+    renderBannerToBlob((ctx, W, H, logo) => _drawMultiBanner(ctx, W, H, renderStats, logo))
+      .then(b => setBannerBlob(b))
+      .catch(e => setGenError(e instanceof Error ? e.message : String(e)));
+  }, [hideDetails, stats]);
 
   function handleCopy() {
     if (!bannerBlob) return;
@@ -799,12 +808,22 @@ export function ShareMultiBannerModal({ stats, onClose }: MultiShareProps) {
             <div style={{ fontSize:16, fontWeight:700, letterSpacing:"-0.02em", color:"rgba(255,255,255,0.95)" }}>Share your wins</div>
             <div style={{ fontSize:12, color:"rgba(255,255,255,0.30)", marginTop:2 }}>Copy and paste anywhere</div>
           </div>
-          <button type="button" onClick={onClose} style={{ ...btnBase, height:34, width:34, background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.10)", borderRadius:9, color:"rgba(255,255,255,0.5)", fontSize:18, flexShrink:0 }}>×</button>
+          <div style={{ display:"flex", alignItems:"center", gap:8, flexShrink:0 }}>
+            <button type="button" onClick={() => setHideDetails(v => !v)}
+              style={{ ...btnBase, height:34, padding:"0 13px",
+                background: hideDetails ? "rgba(155,92,255,0.18)" : "rgba(255,255,255,0.06)",
+                border: hideDetails ? "1px solid rgba(155,92,255,0.40)" : "1px solid rgba(255,255,255,0.10)",
+                borderRadius:9, color: hideDetails ? "#b87bff" : "rgba(255,255,255,0.50)", fontSize:12,
+              }}>
+              {hideDetails ? "Show Details" : "Hide Details"}
+            </button>
+            <button type="button" onClick={onClose} style={{ ...btnBase, height:34, width:34, background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.10)", borderRadius:9, color:"rgba(255,255,255,0.5)", fontSize:18, flexShrink:0 }}>×</button>
+          </div>
         </div>
 
         {/* Preview */}
         <div style={{ borderRadius:16, overflow:"hidden", boxShadow:"0 0 0 1px rgba(255,255,255,0.08), 0 20px 50px rgba(0,0,0,0.6), 0 0 36px rgba(155,92,255,0.09)" }}>
-          <ScaledPreview w={500} h={460}><MultiSaleBanner stats={stats} animated={visible} /></ScaledPreview>
+          <ScaledPreview w={500} h={460}><MultiSaleBanner stats={stats} animated={visible} hideDetails={hideDetails} /></ScaledPreview>
         </div>
 
         {genError && <div style={{ padding:"10px 14px", background:"rgba(248,113,113,0.10)", border:"1px solid rgba(248,113,113,0.25)", borderRadius:10, fontSize:12, color:"#fca5a5" }}>{genError}</div>}
