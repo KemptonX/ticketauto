@@ -193,6 +193,7 @@ export default function OrdersClient() {
   const [statusFilters, setStatusFilters] = useState<string[]>([]);
   const [sourceFilters, setSourceFilters] = useState<string[]>([]);
   const [soldFilters, setSoldFilters] = useState<string[]>([]);
+  const [emailFilters, setEmailFilters] = useState<string[]>([]);
 
   function resetFilters() {
     setSearch("");
@@ -201,6 +202,7 @@ export default function OrdersClient() {
     setStatusFilters([]);
     setSourceFilters([]);
     setSoldFilters([]);
+    setEmailFilters([]);
   }
 
   async function loadOrders(showRefreshing = false, mode = viewMode) {
@@ -666,13 +668,17 @@ export default function OrdersClient() {
         (soldFilters.includes("Sold") && order.listing_status === "Sold") ||
         (soldFilters.includes("Unsold") && order.listing_status !== "Sold");
 
+      const matchesEmail =
+        emailFilters.length === 0 || emailFilters.includes(order.account_email ?? "");
+
       return (
         matchesSearch &&
         matchesEvent &&
         matchesVenue &&
         matchesStatus &&
         matchesSource &&
-        matchesSold
+        matchesSold &&
+        matchesEmail
       );
     });
   }, [
@@ -683,6 +689,7 @@ export default function OrdersClient() {
     statusFilters,
     sourceFilters,
     soldFilters,
+    emailFilters,
   ]);
 
   const [expandedGroups, setExpandedGroups] = useState<string[]>([]);
@@ -1149,6 +1156,16 @@ export default function OrdersClient() {
                 selected={soldFilters}
                 onChange={setSoldFilters}
                 placeholder="All"
+              />
+            </div>
+
+            <div className="filter-field">
+              <span className="filter-label">Inbox</span>
+              <MultiSelectField
+                options={accounts}
+                selected={emailFilters}
+                onChange={setEmailFilters}
+                placeholder="All inboxes"
               />
             </div>
           </div>
