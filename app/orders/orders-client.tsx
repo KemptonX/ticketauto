@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/src/lib/supabase";
 import { formatCurrency } from "@/src/lib/currency";
 import { SidebarLogo, NavIcon, SidebarFooter } from "@/app/components/nav-icons";
+import { ShareMultiBannerModal, type MultiSaleStats } from "@/app/sales/ShareBannerModal";
 
 type SyncLogEntry = {
   id: number;
@@ -194,6 +195,8 @@ export default function OrdersClient() {
   const [sourceFilters, setSourceFilters] = useState<string[]>([]);
   const [soldFilters, setSoldFilters] = useState<string[]>([]);
   const [emailFilters, setEmailFilters] = useState<string[]>([]);
+  const [shareGroupKey, setShareGroupKey] = useState<string | null>(null);
+  const [shareMultiOpen, setShareMultiOpen] = useState(false);
 
   function resetFilters() {
     setSearch("");
@@ -697,6 +700,23 @@ export default function OrdersClient() {
   const [bulkStatus, setBulkStatus] = useState("Listed");
   const [merging, setMerging] = useState(false);
   const [copiedGroupId, setCopiedGroupId] = useState<string | null>(null);
+
+  const multiShareStats = useMemo((): MultiSaleStats | null => {
+    const sold = filteredOrders.filter(o => selectedIds.has(o.id) && o.sold_total != null);
+    if (sold.length === 0) return null;
+    let totalRevenue = 0, totalCost = 0, totalTickets = 0;
+    const seenEvents = new Set<string>();
+    for (const o of sold) {
+      totalRevenue += o.sold_total ?? 0;
+      const qtySold = soldQtyByOrderId.get(o.id) ?? (o.qty_bought ?? 0);
+      totalCost += getProportionalCost(o.total_cost, o.qty_bought, qtySold, o.listing_status);
+      totalTickets += qtySold;
+      if (o.event_name) seenEvents.add(o.event_name);
+    }
+    const totalProfit = totalRevenue - totalCost;
+    const roi = totalCost > 0 ? (totalProfit / totalCost) * 100 : null;
+    return { salesCount: sold.length, totalTickets, totalRevenue, totalCost, totalProfit, roi, eventNames: Array.from(seenEvents) };
+  }, [selectedIds, filteredOrders, soldQtyByOrderId]);
 
   function toggleSelect(id: number) {
     setSelectedIds((prev) => {
@@ -1231,6 +1251,29 @@ export default function OrdersClient() {
                 <button className="danger-button" type="button" onClick={() => void bulkDelete()}>
                   Delete selected
                 </button>
+                {multiShareStats && (
+                  <button
+                    type="button"
+                    onClick={() => setShareMultiOpen(true)}
+                    style={{
+                      display: "flex", alignItems: "center", gap: 6,
+                      background: "linear-gradient(135deg, rgba(155,92,255,0.3), rgba(255,79,163,0.3))",
+                      border: "1px solid rgba(155,92,255,0.4)",
+                      borderRadius: 999,
+                      padding: "6px 14px",
+                      cursor: "pointer",
+                      color: "rgba(255,255,255,0.9)",
+                      fontSize: 13, fontWeight: 600,
+                      transition: "all 150ms ease",
+                    }}
+                  >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" />
+                      <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" /><line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
+                    </svg>
+                    Share Success
+                  </button>
+                )}
                 <button className="ghost-button" type="button" onClick={clearSelection}>
                   Clear
                 </button>
@@ -1365,6 +1408,29 @@ export default function OrdersClient() {
                         <span className="inventory-chevron">{expanded ? "−" : "+"}</span>
                       </div>
                     </button>
+                    {groupProfit != null && (
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); setShareGroupKey(group.key); }}
+                        title="Share this event's profit"
+                        style={{
+                          background: "rgba(155,92,255,0.12)",
+                          border: "1px solid rgba(155,92,255,0.25)",
+                          borderRadius: 8,
+                          width: 32, height: 32,
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                          cursor: "pointer",
+                          transition: "all 150ms ease",
+                          flexShrink: 0,
+                          marginRight: 8,
+                        }}
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(155,92,255,0.9)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" />
+                          <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" /><line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
+                        </svg>
+                      </button>
+                    )}
                     </div>
 
                     {expanded ? (
@@ -1988,6 +2054,30 @@ export default function OrdersClient() {
           </div>
         </aside>
       ) : null}
+
+      {shareMultiOpen && multiShareStats && (
+        <ShareMultiBannerModal stats={multiShareStats} onClose={() => setShareMultiOpen(false)} />
+      )}
+
+      {shareGroupKey != null && (() => {
+        const g = groupedOrders.find(grp => grp.key === shareGroupKey);
+        if (!g) return null;
+        const soldOrders = g.orders.filter(o => o.sold_total != null);
+        let totalRevenue = 0, totalCost = 0, totalTickets = 0;
+        for (const o of soldOrders) {
+          totalRevenue += o.sold_total ?? 0;
+          const qtySold = soldQtyByOrderId.get(o.id) ?? (o.qty_bought ?? 0);
+          totalCost += getProportionalCost(o.total_cost, o.qty_bought, qtySold, o.listing_status);
+          totalTickets += qtySold;
+        }
+        const totalProfit = totalRevenue - totalCost;
+        const roi = totalCost > 0 ? (totalProfit / totalCost) * 100 : null;
+        const stats: MultiSaleStats = {
+          salesCount: soldOrders.length, totalTickets, totalRevenue,
+          totalCost, totalProfit, roi, eventNames: [g.eventName],
+        };
+        return <ShareMultiBannerModal stats={stats} onClose={() => setShareGroupKey(null)} />;
+      })()}
     </div>
   );
 }
