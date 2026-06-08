@@ -1468,7 +1468,7 @@ export default function OrdersClient() {
                                   onClick={() => setSelectedOrderId(order.id)}
                                 >
                                   {viewMode !== "ignored" && (
-                                    <td className="col-check" onClick={(e) => { e.stopPropagation(); toggleSelect(order.id); }}>
+                                    <td className="col-check" onClick={(e) => e.stopPropagation()}>
                                       <input
                                         type="checkbox"
                                         checked={selectedIds.has(order.id)}
