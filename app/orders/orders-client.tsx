@@ -208,23 +208,17 @@ export default function OrdersClient() {
     setEmailFilters([]);
   }
 
-  async function loadOrders(showRefreshing = false, mode = viewMode) {
+  async function loadOrders(showRefreshing = false) {
     if (showRefreshing) {
       setRefreshing(true);
     } else {
       setLoading(true);
     }
 
-    const query = supabase.from("orders").select("*").order("created_at", { ascending: false });
-    const { data, error } = await (
-      mode === "archived"
-        ? query.eq("listing_status", "Archived")
-        : mode === "ignored"
-          ? query.eq("listing_status", "Ignored")
-          : mode === "personal"
-            ? query.eq("listing_status", "Personal")
-            : query.or("listing_status.is.null,listing_status.not.in.(Archived,Ignored,Personal)")
-    );
+    const { data, error } = await supabase
+      .from("orders")
+      .select("*")
+      .order("created_at", { ascending: false });
 
     // Fetch matched sales to get actual qty_sold per order
     const { data: salesData } = await supabase
@@ -327,15 +321,13 @@ export default function OrdersClient() {
 
   useEffect(() => {
     async function init() {
-      if (viewMode === "active") {
-        await autoArchivePastEvents();
-      }
-      loadOrders(false, viewMode);
+      await autoArchivePastEvents();
+      loadOrders(false);
       void loadAccounts();
       void loadSyncLog();
     }
     void init();
-  }, [viewMode]);
+  }, []);
 
   async function autoArchivePastEvents() {
     const { data } = await supabase
@@ -522,7 +514,7 @@ export default function OrdersClient() {
       return;
     }
 
-    setOrders((current) => current.filter((o) => o.id !== id));
+    setOrders((current) => current.map((o) => o.id === id ? { ...o, listing_status: "Archived" } : o));
     setSelectedOrderId(null);
     setMessage("Ticket archived");
   }
@@ -533,7 +525,7 @@ export default function OrdersClient() {
       .update({ listing_status: "Ignored" })
       .eq("id", id);
     if (error) { setMessage(error.message); return; }
-    setOrders((current) => current.filter((o) => o.id !== id));
+    setOrders((current) => current.map((o) => o.id === id ? { ...o, listing_status: "Ignored" } : o));
     setSelectedOrderId(null);
     setMessage("Ticket ignored — scanner will skip this booking ref");
   }
@@ -546,7 +538,8 @@ export default function OrdersClient() {
       .update({ listing_status: nextStatus })
       .eq("id", id);
     if (error) { setMessage(error.message); return; }
-    setOrders((current) => current.filter((o) => o.id !== id));
+    setOrders((current) => current.map((o) => o.id === id ? { ...o, listing_status: nextStatus } : o));
+    setSelectedOrderId(null);
     setMessage("Ticket restored");
   }
 
@@ -638,6 +631,12 @@ export default function OrdersClient() {
 
   const filteredOrders = useMemo(() => {
     return orders.filter((order) => {
+      const matchesViewMode =
+        viewMode === "archived" ? order.listing_status === "Archived" :
+        viewMode === "ignored" ? order.listing_status === "Ignored" :
+        viewMode === "personal" ? order.listing_status === "Personal" :
+        order.listing_status == null || !["Archived", "Ignored", "Personal"].includes(order.listing_status);
+
       const matchesSearch =
         search === "" ||
         [
@@ -675,6 +674,7 @@ export default function OrdersClient() {
         emailFilters.length === 0 || emailFilters.includes(order.account_email ?? "");
 
       return (
+        matchesViewMode &&
         matchesSearch &&
         matchesEvent &&
         matchesVenue &&
@@ -686,6 +686,7 @@ export default function OrdersClient() {
     });
   }, [
     orders,
+    viewMode,
     search,
     eventFilters,
     venueFilters,
@@ -702,7 +703,7 @@ export default function OrdersClient() {
   const [copiedGroupId, setCopiedGroupId] = useState<string | null>(null);
 
   const multiShareStats = useMemo((): MultiSaleStats | null => {
-    const sold = filteredOrders.filter(o => selectedIds.has(o.id) && o.sold_total != null);
+    const sold = orders.filter(o => selectedIds.has(o.id) && o.sold_total != null);
     if (sold.length === 0) return null;
     let totalRevenue = 0, totalCost = 0, totalTickets = 0;
     const seenEvents = new Set<string>();
@@ -716,7 +717,7 @@ export default function OrdersClient() {
     const totalProfit = totalRevenue - totalCost;
     const roi = totalCost > 0 ? (totalProfit / totalCost) * 100 : null;
     return { salesCount: sold.length, totalTickets, totalRevenue, totalCost, totalProfit, roi, eventNames: Array.from(seenEvents) };
-  }, [selectedIds, filteredOrders, soldQtyByOrderId]);
+  }, [selectedIds, orders, soldQtyByOrderId]);
 
   function toggleSelect(id: number) {
     setSelectedIds((prev) => {
@@ -768,7 +769,7 @@ export default function OrdersClient() {
       .update({ listing_status: "Archived" })
       .in("id", ids);
     if (error) { setMessage(error.message); return; }
-    setOrders((current) => current.filter((o) => !selectedIds.has(o.id)));
+    setOrders((current) => current.map((o) => selectedIds.has(o.id) ? { ...o, listing_status: "Archived" } : o));
     clearSelection();
     setMessage(`${ids.length} ticket${ids.length !== 1 ? "s" : ""} archived`);
   }
@@ -779,7 +780,7 @@ export default function OrdersClient() {
       .update({ listing_status: "Personal" })
       .eq("id", id);
     if (error) { setMessage(error.message); return; }
-    setOrders((current) => current.filter((o) => o.id !== id));
+    setOrders((current) => current.map((o) => o.id === id ? { ...o, listing_status: "Personal" } : o));
     setSelectedOrderId(null);
     setMessage("Ticket marked personal — excluded from all business stats");
   }
@@ -792,7 +793,7 @@ export default function OrdersClient() {
       .update({ listing_status: "Personal" })
       .in("id", ids);
     if (error) { setMessage(error.message); return; }
-    setOrders((current) => current.filter((o) => !selectedIds.has(o.id)));
+    setOrders((current) => current.map((o) => selectedIds.has(o.id) ? { ...o, listing_status: "Personal" } : o));
     clearSelection();
     setMessage(`${ids.length} ticket${ids.length !== 1 ? "s" : ""} marked personal`);
   }
@@ -805,7 +806,7 @@ export default function OrdersClient() {
       .update({ listing_status: "Ignored" })
       .in("id", ids);
     if (error) { setMessage(error.message); return; }
-    setOrders((current) => current.filter((o) => !selectedIds.has(o.id)));
+    setOrders((current) => current.map((o) => selectedIds.has(o.id) ? { ...o, listing_status: "Ignored" } : o));
     clearSelection();
     setMessage(`${ids.length} ticket${ids.length !== 1 ? "s" : ""} ignored`);
   }
@@ -818,7 +819,7 @@ export default function OrdersClient() {
       .update({ listing_status: "Unlisted" })
       .in("id", ids);
     if (error) { setMessage(error.message); return; }
-    setOrders((current) => current.filter((o) => !selectedIds.has(o.id)));
+    setOrders((current) => current.map((o) => selectedIds.has(o.id) ? { ...o, listing_status: "Unlisted" } : o));
     clearSelection();
     setMessage(`${ids.length} ticket${ids.length !== 1 ? "s" : ""} restored`);
   }
@@ -1081,28 +1082,28 @@ export default function OrdersClient() {
               <button
                 type="button"
                 className={`toggle-btn${viewMode === "active" ? " toggle-btn-active" : ""}`}
-                onClick={() => { setViewMode("active"); clearSelection(); }}
+                onClick={() => { setViewMode("active"); }}
               >
                 Active
               </button>
               <button
                 type="button"
                 className={`toggle-btn${viewMode === "archived" ? " toggle-btn-active" : ""}`}
-                onClick={() => { setViewMode("archived"); clearSelection(); setSelectedOrderId(null); setShowAddForm(false); }}
+                onClick={() => { setViewMode("archived"); setSelectedOrderId(null); setShowAddForm(false); }}
               >
                 Archived
               </button>
               <button
                 type="button"
                 className={`toggle-btn${viewMode === "ignored" ? " toggle-btn-active" : ""}`}
-                onClick={() => { setViewMode("ignored"); clearSelection(); setSelectedOrderId(null); setShowAddForm(false); }}
+                onClick={() => { setViewMode("ignored"); setSelectedOrderId(null); setShowAddForm(false); }}
               >
                 Ignored
               </button>
               <button
                 type="button"
                 className={`toggle-btn${viewMode === "personal" ? " toggle-btn-active" : ""}`}
-                onClick={() => { setViewMode("personal"); clearSelection(); setSelectedOrderId(null); setShowAddForm(false); }}
+                onClick={() => { setViewMode("personal"); setSelectedOrderId(null); setShowAddForm(false); }}
               >
                 Personal
               </button>
