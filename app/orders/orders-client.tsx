@@ -952,7 +952,7 @@ export default function OrdersClient() {
     return Array.from(map.values()).sort((a, b) => {
       if (sortBy === "added-newest") return b.latestAddedAt - a.latestAddedAt;
       if (sortBy === "added-oldest") return a.latestAddedAt - b.latestAddedAt;
-      if (a.dateValue && b.dateValue) return a.dateValue.getTime() - b.dateValue.getTime();
+      if (a.dateValue && b.dateValue) return (viewMode === "archived" ? -1 : 1) * (a.dateValue.getTime() - b.dateValue.getTime());
       if (a.dateValue) return -1;
       if (b.dateValue) return 1;
       return a.eventName.localeCompare(b.eventName);
