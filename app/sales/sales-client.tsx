@@ -134,7 +134,7 @@ export default function SalesClient() {
   const [search, setSearch] = useState("");
   const [matchFilter, setMatchFilter] = useState("All");
   const [accountFilter, setAccountFilter] = useState("All");
-  const [sortBy, setSortBy] = useState("recently-sold");
+  const [sortBy, setSortBy] = useState("event-soonest");
   const [statusFilter, setStatusFilter] = useState("All");
   const [expandedGroups, setExpandedGroups] = useState<string[]>([]);
   const [selectedSaleId, setSelectedSaleId] = useState<number | null>(null);
@@ -315,6 +315,17 @@ export default function SalesClient() {
       setMessage("Sales refreshed");
     }
 
+    // Silently auto-archive qualifying past-event sales
+    if (!archived && !deleted) {
+      const archivedIds = await autoArchivePastSales(nextSales);
+      if (archivedIds.length > 0) {
+        setSales(prev => prev.filter(s => !archivedIds.includes(s.id)));
+        if (selectedSaleId != null && archivedIds.includes(selectedSaleId)) {
+          setSelectedSaleId(null);
+        }
+      }
+    }
+
     setLoading(false);
     setRefreshing(false);
   }
@@ -450,31 +461,31 @@ export default function SalesClient() {
     setMessage("Sale archived");
   }
 
-  async function autoArchivePastSales() {
-    const { data } = await supabase
-      .from("sales")
-      .select("id, event_date")
-      .neq("sale_status", "Archived");
+  async function autoArchivePastSales(loadedSales: Sale[]): Promise<number[]> {
+    const now = new Date();
+    now.setHours(0, 0, 0, 0);
+    // "Transfer Completed" sales are archived 5 days after the event
+    const fiveDaysAgo = new Date(now.getTime() - 5 * 24 * 60 * 60 * 1000);
 
-    if (!data) return;
+    const toArchive: number[] = [];
+    for (const s of loadedSales) {
+      const status = s.sale_status ?? "";
+      if (status === "Archived" || status === "Deleted" || status === "Cancelled / Issue") continue;
+      const eventDate = parseEventDateValue(s.event_date);
+      if (!eventDate) continue;
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+      if (s.payment_status === "Paid" && eventDate < now) {
+        // Paid out — archive as soon as event passes
+        toArchive.push(s.id);
+      } else if (s.transfer_status === "Transfer Completed" && eventDate < fiveDaysAgo) {
+        // Transferred — give 5 days grace then archive
+        toArchive.push(s.id);
+      }
+    }
 
-    const toArchive = (data as { id: number; event_date: string | null }[])
-      .filter((s) => {
-        if (!s.event_date) return false;
-        const d = parseEventDateValue(s.event_date);
-        return d !== null && d < today;
-      })
-      .map((s) => s.id);
-
-    if (toArchive.length === 0) return;
-
-    await supabase
-      .from("sales")
-      .update({ sale_status: "Archived" })
-      .in("id", toArchive);
+    if (toArchive.length === 0) return [];
+    await supabase.from("sales").update({ sale_status: "Archived" }).in("id", toArchive);
+    return toArchive;
   }
 
   async function syncOrderFromSales(orderId: number) {
@@ -907,7 +918,7 @@ export default function SalesClient() {
     setSearch("");
     setMatchFilter("All");
     setAccountFilter("All");
-    setSortBy("recently-sold");
+    setSortBy("event-soonest");
     setStatusFilter("All");
   }
 
