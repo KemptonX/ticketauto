@@ -1629,6 +1629,41 @@ export default function SettingsClient() {
                     <span>Supports .csv, .xlsx, .xls, .tsv — max 5 MB</span>
                   </div>
                   <input ref={fileInputRef} type="file" accept=".csv,.xlsx,.xls,.tsv,.ods" style={{ display: "none" }} onChange={handleFileInput} />
+                  <div style={{ marginTop: "0.75rem" }}>
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      style={{ fontSize: "12px", padding: "6px 14px" }}
+                      onClick={() => {
+                        const headers = [
+                          "Event Name", "Venue", "Event Date", "Section", "Row",
+                          "Seat From", "Seat To", "Qty Bought", "Total Cost",
+                          "Booking Ref", "Account Email",
+                          "Sale Status", "Sold For", "Payout Total",
+                          "Transfer Status", "Transfer Date",
+                          "Payment Status", "Payout Date",
+                        ];
+                        const example = [
+                          "Coldplay World Tour", "Wembley Stadium", "15/06/2025", "Block 123", "A",
+                          "1", "2", "2", "350.00",
+                          "TM-123456", "myaccount@gmail.com",
+                          "Sold", "480.00", "420.00",
+                          "Transfer Completed", "01/06/2025",
+                          "Paid", "05/06/2025",
+                        ];
+                        const csv = [headers.join(","), example.join(",")].join("\n");
+                        const blob = new Blob([csv], { type: "text/csv" });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement("a");
+                        a.href = url;
+                        a.download = "tixtracker-import-template.csv";
+                        a.click();
+                        URL.revokeObjectURL(url);
+                      }}
+                    >
+                      Download Template CSV
+                    </button>
+                  </div>
                   <div style={{ marginTop: "1.5rem" }}>
                     <p className="section-tag" style={{ marginBottom: "0.5rem" }}>Tips for best results</p>
                     <ul style={{ fontSize: "0.8125rem", color: "var(--muted)", lineHeight: 1.6, paddingLeft: "1.25rem" }}>

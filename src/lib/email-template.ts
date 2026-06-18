@@ -29,18 +29,24 @@ export const DEFAULT_SUBJECT = "Your tickets – {{event_name}}";
 
 export const DEFAULT_BODY = `Hi {{customer_name}},
 
-Thank you so much for your purchase. Here are your ticket details:
+Thank you for your purchase — it's really appreciated!
+
+Here are your ticket details:
 
 Event: {{event_name}}
 Venue: {{venue}}
 Date: {{event_date}}
 Section: {{section}}
-{{seats}}
+Seats: {{seats}}
 Quantity: {{quantity}}
 
-If you have any questions please don't hesitate to get in touch.
+Your tickets will be transferred to you shortly. Please keep an eye on your email for the transfer notification.
 
-Thanks`;
+If you have any questions at all, feel free to reply to this email and I'll get back to you as soon as possible.
+
+Hope you have an amazing time!
+
+Many thanks`;
 
 const LEGACY_KEY = "client_email_template";
 const TEMPLATES_KEY = "client_email_templates_v2";
