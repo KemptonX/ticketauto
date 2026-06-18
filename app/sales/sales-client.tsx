@@ -72,6 +72,9 @@ type AddSaleForm = {
   venue: string;
   event_date: string;
   section: string;
+  seat_from: string;
+  seat_to: string;
+  marketplace: string;
 };
 
 type SaleGroup = {
@@ -149,7 +152,7 @@ export default function SalesClient() {
   const [showAddSale, setShowAddSale] = useState(false);
   const [addSaleOrderId, setAddSaleOrderId] = useState<number | null>(null);
   const [addSaleSearch, setAddSaleSearch] = useState("");
-  const [addSaleForm, setAddSaleForm] = useState<AddSaleForm>({ qty_sold: "1", payout_total: "", buyer_email: "", sold_at: "", event_name: "", venue: "", event_date: "", section: "" });
+  const [addSaleForm, setAddSaleForm] = useState<AddSaleForm>({ qty_sold: "1", payout_total: "", buyer_email: "", sold_at: "", event_name: "", venue: "", event_date: "", section: "", seat_from: "", seat_to: "", marketplace: "" });
   const [savingNewSale, setSavingNewSale] = useState(false);
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [emailSubject, setEmailSubject] = useState("");
@@ -780,7 +783,7 @@ export default function SalesClient() {
   function openAddSale() {
     setAddSaleOrderId(null);
     setAddSaleSearch("");
-    setAddSaleForm({ qty_sold: "1", payout_total: "", buyer_email: "", sold_at: new Date().toISOString().slice(0, 10), event_name: "", venue: "", event_date: "", section: "" });
+    setAddSaleForm({ qty_sold: "1", payout_total: "", buyer_email: "", sold_at: new Date().toISOString().slice(0, 10), event_name: "", venue: "", event_date: "", section: "", seat_from: "", seat_to: "", marketplace: "" });
     setShowAddSale(true);
   }
 
@@ -811,8 +814,9 @@ export default function SalesClient() {
       currency: "GBP",
       section: addSaleForm.section || order?.section || null,
       row: order?.row ?? null,
-      seat_from: order?.seat_from ?? null,
-      seat_to: order?.seat_to ?? null,
+      seat_from: addSaleForm.seat_from || order?.seat_from || null,
+      seat_to: addSaleForm.seat_to || order?.seat_to || null,
+      marketplace: addSaleForm.marketplace || null,
       sale_status: "Sold – Awaiting Transfer",
       inventory_order_id: order?.id ?? null,
       match_confidence: order ? 1 : null,
@@ -2468,7 +2472,7 @@ export default function SalesClient() {
                           onClick={() => {
                             if (selected) {
                               setAddSaleOrderId(null);
-                              setAddSaleForm((f) => ({ ...f, event_name: "", venue: "", event_date: "", section: "" }));
+                              setAddSaleForm((f) => ({ ...f, event_name: "", venue: "", event_date: "", section: "", seat_from: "", seat_to: "" }));
                             } else {
                               setAddSaleOrderId(order.id);
                               setAddSaleForm((f) => ({
@@ -2477,6 +2481,8 @@ export default function SalesClient() {
                                 venue: order.venue || "",
                                 event_date: order.event_date || "",
                                 section: order.section || "",
+                                seat_from: order.seat_from || "",
+                                seat_to: order.seat_to || "",
                               }));
                             }
                           }}
@@ -2527,6 +2533,14 @@ export default function SalesClient() {
                     <span>Section <span className="add-sale-optional">(optional)</span></span>
                     <input className="field" placeholder="e.g. General Admission" value={addSaleForm.section} onChange={(e) => setAddSaleForm((f) => ({ ...f, section: e.target.value }))} />
                   </label>
+                  <label>
+                    <span>Seat from <span className="add-sale-optional">(optional)</span></span>
+                    <input className="field" placeholder="e.g. 1" value={addSaleForm.seat_from} onChange={(e) => setAddSaleForm((f) => ({ ...f, seat_from: e.target.value }))} />
+                  </label>
+                  <label>
+                    <span>Seat to <span className="add-sale-optional">(optional)</span></span>
+                    <input className="field" placeholder="e.g. 2" value={addSaleForm.seat_to} onChange={(e) => setAddSaleForm((f) => ({ ...f, seat_to: e.target.value }))} />
+                  </label>
                 </div>
               </div>
 
@@ -2534,6 +2548,19 @@ export default function SalesClient() {
               <div className="add-sale-section">
                 <p className="add-sale-section-title">Sale details</p>
                 <div className="drawer-grid">
+                  <label>
+                    <span>Platform sold on</span>
+                    <select
+                      className="field"
+                      value={addSaleForm.marketplace}
+                      onChange={(e) => setAddSaleForm((f) => ({ ...f, marketplace: e.target.value }))}
+                    >
+                      <option value="">Select platform…</option>
+                      {["Viagogo", "StubHub", "Lysted", "Private Broker", "Ticketmaster", "AXS"].map((p) => (
+                        <option key={p} value={p}>{p}</option>
+                      ))}
+                    </select>
+                  </label>
                   <label>
                     <span>Qty sold</span>
                     <input
