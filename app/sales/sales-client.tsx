@@ -128,6 +128,7 @@ function computeGroupId(key: string): string {
 
 export default function SalesClient() {
   const [sales, setSales] = useState<Sale[]>([]);
+  const [metricSales, setMetricSales] = useState<Pick<Sale, "qty_sold" | "payout_total" | "sale_total" | "payment_status" | "sale_status" | "transfer_status">[]>([]);
   const [matchedOrders, setMatchedOrders] = useState<Record<number, MatchedOrder>>({});
   const [allOrders, setAllOrders] = useState<MatchedOrder[]>([]);
   const [loading, setLoading] = useState(true);
@@ -276,11 +277,15 @@ export default function SalesClient() {
     }
 
     const query = supabase.from("sales").select("*").order("sold_at", { ascending: false }).order("created_at", { ascending: false });
-    const { data, error } = await (
+    const [{ data, error }, { data: metricsData }] = await Promise.all([
       deleted ? query.eq("sale_status", "Deleted")
       : archived ? query.in("sale_status", ["Archived", "Paid"])
-      : query.not("sale_status", "in", '("Archived","Deleted","Paid")')
-    );
+      : query.not("sale_status", "in", '("Archived","Deleted","Paid")'),
+      supabase
+        .from("sales")
+        .select("qty_sold, payout_total, sale_total, payment_status, sale_status, transfer_status")
+        .not("sale_status", "in", '("Deleted")'),
+    ]);
 
     if (error) {
       setMessage(error.message);
@@ -291,6 +296,7 @@ export default function SalesClient() {
 
     const nextSales = (data as Sale[]) || [];
     setSales(nextSales);
+    setMetricSales((metricsData ?? []) as typeof metricSales);
 
     const { data: orderData, error: orderError } = await supabase
       .from("orders")
@@ -951,7 +957,7 @@ export default function SalesClient() {
 
   const lifecycleMetrics = useMemo(() => {
     let ticketsSold = 0, revenueReceived = 0, awaitingPayment = 0, awaitingTransferCount = 0;
-    for (const s of sales) {
+    for (const s of metricSales) {
       ticketsSold += s.qty_sold ?? 0;
       const payout = s.payout_total ?? s.sale_total ?? 0;
       const payStatus = s.payment_status || "Awaiting Payment";
@@ -967,7 +973,7 @@ export default function SalesClient() {
       }
     }
     return { ticketsSold, revenueReceived, awaitingPayment, awaitingTransferCount };
-  }, [sales]);
+  }, [metricSales]);
 
   const filteredSales = useMemo(() => {
     return sales.filter((sale) => {
