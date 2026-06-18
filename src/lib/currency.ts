@@ -14,6 +14,7 @@ export const CURRENCY_OPTIONS = [
   { code: "JPY", label: "JPY — Japanese Yen (¥)" },
   { code: "SGD", label: "SGD — Singapore Dollar (S$)" },
   { code: "HKD", label: "HKD — Hong Kong Dollar (HK$)" },
+  { code: "AED", label: "AED — UAE Dirham (د.إ)" },
 ];
 
 export function getCurrencyCode(): string {
