@@ -1,14 +1,12 @@
 "use client";
 
 import { Suspense, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import { supabase } from "@/src/lib/supabase";
 import type { User } from "@supabase/supabase-js";
 
 async function checkWhop(user: User): Promise<string | null> {
   const isDiscord = user.identities?.some((i) => i.provider === "discord");
   if (!isDiscord) return null;
-
   try {
     const res = await fetch("/api/auth/whop-check", { method: "POST" });
     const json = (await res.json()) as { ok?: boolean; error?: string };
@@ -19,60 +17,39 @@ async function checkWhop(user: User): Promise<string | null> {
 }
 
 function AuthCallbackInner() {
-  const router = useRouter();
   const [status, setStatus] = useState("Signing you in…");
   const [errorMsg, setErrorMsg] = useState("");
 
   useEffect(() => {
-    // With implicit flow, createBrowserClient automatically parses the URL hash
-    // and fires SIGNED_IN through onAuthStateChange
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        if (event !== "SIGNED_IN" || !session?.user) return;
-        subscription.unsubscribe();
+    async function handleCallback() {
+      const code = new URLSearchParams(window.location.search).get("code");
 
-        setStatus("Verifying access…");
-        const whopError = await checkWhop(session.user);
+      if (!code) {
+        setErrorMsg("No auth code received. Please try the Discord login again.");
+        return;
+      }
 
-        if (whopError) {
-          await supabase.auth.signOut();
-          setErrorMsg(whopError);
-          return;
-        }
+      setStatus("Exchanging code for session…");
+      const { data, error } = await supabase.auth.exchangeCodeForSession(code);
 
-        setStatus("All good — redirecting…");
-        window.location.href = "/orders";
-      },
-    );
-
-    // Fallback: if the session was already set before the listener attached
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      if (!session?.user) return;
-      subscription.unsubscribe();
+      if (error || !data.user) {
+        setErrorMsg(`Sign-in error: ${error?.message ?? "unknown error"}`);
+        return;
+      }
 
       setStatus("Verifying access…");
-      const whopError = await checkWhop(session.user);
-
+      const whopError = await checkWhop(data.user);
       if (whopError) {
         await supabase.auth.signOut();
         setErrorMsg(whopError);
         return;
       }
 
-      setStatus("All good — redirecting…");
+      // Full page reload so the server picks up the new session cookies
       window.location.href = "/orders";
-    });
+    }
 
-    const timeout = setTimeout(() => {
-      subscription.unsubscribe();
-      setErrorMsg("Sign-in timed out — no session was established. Please try again.");
-    }, 15000);
-
-    return () => {
-      clearTimeout(timeout);
-      subscription.unsubscribe();
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    void handleCallback();
   }, []);
 
   return (
