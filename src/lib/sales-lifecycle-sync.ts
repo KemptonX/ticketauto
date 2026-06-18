@@ -1060,17 +1060,28 @@ async function getValidOutlookToken({
   const clientSecret = process.env.MICROSOFT_CLIENT_SECRET;
   if (!clientId || !clientSecret) throw new Error("Microsoft OAuth env vars missing");
 
-  const res = await fetch("https://login.microsoftonline.com/common/oauth2/v2.0/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      client_id: clientId,
-      client_secret: clientSecret,
-      refresh_token: outlookAccount.refresh_token,
-      grant_type: "refresh_token",
-    }),
-    cache: "no-store",
-  });
+  const olController = new AbortController();
+  const olTimeout = setTimeout(() => olController.abort(), 30_000);
+  let res: Response;
+  try {
+    res = await fetch("https://login.microsoftonline.com/common/oauth2/v2.0/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        client_id: clientId,
+        client_secret: clientSecret,
+        refresh_token: outlookAccount.refresh_token,
+        grant_type: "refresh_token",
+      }),
+      cache: "no-store",
+      signal: olController.signal,
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "network error";
+    throw new Error(`Outlook token refresh failed (${msg}). Reconnect Outlook in Connections.`);
+  } finally {
+    clearTimeout(olTimeout);
+  }
   const tokenData = (await res.json()) as {
     access_token?: string;
     refresh_token?: string;
@@ -1097,17 +1108,29 @@ async function getValidOutlookToken({
 }
 
 async function outlookGraphRequest<T>(accessToken: string, input: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(input, {
-    ...init,
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      "Content-Type": "application/json",
-      ...(init?.headers ?? {}),
-    },
-    cache: "no-store",
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 30_000);
+  let res: Response;
+  try {
+    res = await fetch(input, {
+      ...init,
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+        ...(init?.headers ?? {}),
+      },
+      cache: "no-store",
+      signal: controller.signal,
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "network error";
+    throw new Error(`Graph API request failed (${msg})`);
+  } finally {
+    clearTimeout(timeout);
+  }
   if (!res.ok) {
     const text = await res.text();
+    if (res.status === 401) throw new Error(`Outlook token expired or revoked (${res.status}). Reconnect Outlook in Connections.`);
     throw new Error(`Graph API ${res.status}: ${text}`);
   }
   return (await res.json()) as T;
