@@ -1275,6 +1275,16 @@ export default function SalesClient() {
                 ? "Deselect All"
                 : `Select All (${filteredSales.length})`}
             </button>
+            {selectedSaleIds.size > 0 && (
+              <button
+                className="danger-button"
+                type="button"
+                disabled={massUpdating}
+                onClick={() => void deleteSelectedSales()}
+              >
+                Delete ({selectedSaleIds.size})
+              </button>
+            )}
             {!showArchived && !showDeleted && (
               <>
                 <button className="secondary-button" onClick={() => void scanSalesNow()} disabled={scanning} type="button">
@@ -1723,6 +1733,8 @@ export default function SalesClient() {
             padding: "10px 16px 10px 20px",
             boxShadow: "0 8px 40px rgba(0,0,0,0.6), 0 0 0 1px rgba(155,92,255,0.15), 0 0 30px rgba(155,92,255,0.12)",
             whiteSpace: "nowrap",
+            maxWidth: "calc(100vw - 32px)",
+            overflowX: "auto",
           }}>
             <span style={{ fontSize: 13, fontWeight: 600, color: "rgba(255,255,255,0.5)", marginRight: 4 }}>
               {selectedStats.salesCount} selected
