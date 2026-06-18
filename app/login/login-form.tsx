@@ -32,60 +32,55 @@ export default function LoginForm() {
     setError("");
     setMessage("");
 
-    // skipBrowserRedirect so we can back up the PKCE verifier before navigating away
-    const { data, error: oauthError } = await supabase.auth.signInWithOAuth({
+    // Supabase stores the PKCE verifier in storage BEFORE navigating the browser away.
+    // We hook beforeunload — which fires after the verifier is stored but before the
+    // page unloads — and copy it into a cookie that survives the cross-site redirect.
+    const backupVerifier = () => {
+      try {
+        let key: string | null = null;
+        let val: string | null = null;
+
+        const checkStore = (store: Storage) => {
+          for (let i = 0; i < store.length; i++) {
+            const k = store.key(i);
+            if (k?.endsWith("-code-verifier")) { key = k; val = store.getItem(k); return; }
+          }
+        };
+
+        try { checkStore(localStorage); } catch { /**/ }
+        if (!val) { try { checkStore(sessionStorage); } catch { /**/ } }
+        if (!val) {
+          document.cookie.split("; ").forEach((c) => {
+            const eq = c.indexOf("=");
+            if (eq > -1 && c.slice(0, eq).endsWith("-code-verifier")) {
+              key = c.slice(0, eq);
+              val = decodeURIComponent(c.slice(eq + 1));
+            }
+          });
+        }
+
+        if (key && val) {
+          document.cookie = `pkce_k=${encodeURIComponent(key)}; path=/; max-age=600; SameSite=Lax`;
+          document.cookie = `pkce_v=${encodeURIComponent(val)}; path=/; max-age=600; SameSite=Lax`;
+        }
+      } catch { /**/ }
+    };
+
+    window.addEventListener("beforeunload", backupVerifier, { once: true });
+
+    const { error: oauthError } = await supabase.auth.signInWithOAuth({
       provider: "discord",
       options: {
         redirectTo: `${window.location.origin}/auth/callback`,
-        skipBrowserRedirect: true,
       },
     });
 
-    if (oauthError || !data.url) {
-      setError(oauthError?.message ?? "Failed to start Discord login");
+    if (oauthError) {
+      window.removeEventListener("beforeunload", backupVerifier);
+      setError(oauthError.message);
       setLoading(false);
-      return;
     }
-
-    // Back up the PKCE verifier to a cookie before leaving this domain.
-    // Scan all storage types — Supabase may use localStorage, sessionStorage, or cookies
-    // depending on the browser and @supabase/ssr version.
-    try {
-      let foundKey: string | null = null;
-      let foundVerifier: string | null = null;
-
-      const scan = (store: Storage) => {
-        for (let i = 0; i < store.length; i++) {
-          const k = store.key(i);
-          if (k?.endsWith("-code-verifier")) {
-            foundKey = k;
-            foundVerifier = store.getItem(k);
-            return;
-          }
-        }
-      };
-
-      try { scan(localStorage); } catch { /* blocked */ }
-      if (!foundVerifier) { try { scan(sessionStorage); } catch { /* blocked */ } }
-      if (!foundVerifier) {
-        document.cookie.split("; ").forEach((c) => {
-          const eq = c.indexOf("=");
-          if (eq === -1) return;
-          const k = c.slice(0, eq);
-          if (k.endsWith("-code-verifier")) {
-            foundKey = k;
-            foundVerifier = decodeURIComponent(c.slice(eq + 1));
-          }
-        });
-      }
-
-      if (foundKey && foundVerifier) {
-        document.cookie = `pkce_k=${encodeURIComponent(foundKey)}; path=/; max-age=600; SameSite=Lax`;
-        document.cookie = `pkce_v=${encodeURIComponent(foundVerifier)}; path=/; max-age=600; SameSite=Lax`;
-      }
-    } catch { /* non-fatal */ }
-
-    window.location.href = data.url;
+    // On success Supabase navigates the browser — beforeunload fires and backs up the verifier
   }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
