@@ -400,8 +400,20 @@ export default function SalesClient() {
         return;
       }
 
+      const lcResponse = await fetch("/api/scan-sales-lifecycle", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const lcResult = await lcResponse.json() as { updated?: number; error?: string };
+
       await loadSales(true);
-      setMessage(`Sales scan complete: ${result.inserted} new, ${result.matched} matched`);
+
+      let msg = `Sales scan complete: ${result.inserted} new, ${result.matched} matched`;
+      if (lcResponse.ok && (lcResult.updated ?? 0) > 0) {
+        msg += `, ${lcResult.updated} lifecycle updated`;
+      }
+      setMessage(msg);
     } catch {
       setMessage("Sales scan failed");
     } finally {
