@@ -201,7 +201,7 @@ export function SidebarLogo() {
   return (
     <div className="sidebar-brand-wrap">
       <img src="/logo.png" alt="TixTracker" className="sidebar-brand-img" />
-      <span className="sidebar-version">v0.34 / v0.35</span>
+      <span className="sidebar-version">v0.36</span>
     </div>
   );
 }
