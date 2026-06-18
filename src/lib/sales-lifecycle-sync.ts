@@ -111,9 +111,19 @@ export async function scanViagogoLifecycleGmail({
   const accessToken = await getValidAccessToken({ supabase, gmailAccount });
 
   const cutoffGmail = cutoffDate.replace(/-/g, "/");
-  const query = `from:automated@orders.viagogo.com ("confirmed transfer for order" OR "just been paid") after:${cutoffGmail}`;
 
-  const messages = await listMessages(accessToken, query);
+  // Split into two simple queries — combined OR queries are unreliable in the Gmail API
+  const [transferMsgs, payoutMsgs] = await Promise.all([
+    listMessages(accessToken, `from:automated@orders.viagogo.com subject:"confirmed transfer for order" after:${cutoffGmail}`),
+    listMessages(accessToken, `from:automated@orders.viagogo.com subject:"just been paid" after:${cutoffGmail}`),
+  ]);
+
+  // Merge and deduplicate by Gmail message ID
+  const seenIds = new Set<string>();
+  const messages: Array<{ id: string }> = [];
+  for (const m of [...transferMsgs, ...payoutMsgs]) {
+    if (!seenIds.has(m.id)) { seenIds.add(m.id); messages.push(m); }
+  }
 
   const BATCH_SIZE = 10;
   const fullMessages: GmailMessage[] = [];
@@ -271,20 +281,31 @@ export async function scanViagogoLifecycleOutlook({
   const accessToken = await getValidOutlookToken({ supabase, outlookAccount });
 
   const cutoffIso = new Date(cutoffDate).toISOString();
-  const url = new URL("https://graph.microsoft.com/v1.0/me/messages");
-  url.searchParams.set("$search", '"confirmed transfer for order" OR "just been paid"');
-  url.searchParams.set("$filter", `receivedDateTime ge ${cutoffIso}`);
-  url.searchParams.set("$top", "50");
-  url.searchParams.set("$select", "id,subject,body,receivedDateTime");
 
-  const data = await outlookGraphRequest<{ value?: OutlookGraphMessage[] }>(
-    accessToken,
-    url.toString(),
-  );
-  const messages = (data.value ?? []).filter(
-    (m) =>
-      isTransferEmail(m.subject) || isPayoutEmail(m.subject),
-  );
+  // Run two separate searches and merge — Graph API $search + $filter together is unreliable
+  async function outlookSearch(phrase: string): Promise<OutlookGraphMessage[]> {
+    const url = new URL("https://graph.microsoft.com/v1.0/me/messages");
+    url.searchParams.set("$search", `"${phrase}"`);
+    url.searchParams.set("$top", "50");
+    url.searchParams.set("$select", "id,subject,body,receivedDateTime");
+    const data = await outlookGraphRequest<{ value?: OutlookGraphMessage[] }>(accessToken, url.toString());
+    return (data.value ?? []).filter((m) => {
+      const d = new Date(m.receivedDateTime ?? "");
+      return !Number.isNaN(d.getTime()) && d >= new Date(cutoffIso);
+    });
+  }
+
+  const [transferMsgsOl, payoutMsgsOl] = await Promise.all([
+    outlookSearch("confirmed transfer for order"),
+    outlookSearch("just been paid"),
+  ]);
+
+  const seenIdsOl = new Set<string>();
+  const messages = [...transferMsgsOl, ...payoutMsgsOl].filter((m) => {
+    if (seenIdsOl.has(m.id)) return false;
+    seenIdsOl.add(m.id);
+    return isTransferEmail(m.subject) || isPayoutEmail(m.subject);
+  });
 
   const totals = { scanned: 0, processed: 0, updated: 0, needsReview: 0, alreadyProcessed: 0, errors: 0 };
 
