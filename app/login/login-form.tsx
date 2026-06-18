@@ -20,6 +20,29 @@ export default function LoginForm() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
+  // Show errors forwarded from the OAuth callback (e.g. Whop membership check failures)
+  useEffect(() => {
+    const urlError = searchParams.get("error");
+    if (urlError) setError(decodeURIComponent(urlError));
+  }, [searchParams]);
+
+
+  async function handleDiscordLogin() {
+    setLoading(true);
+    setError("");
+    setMessage("");
+    const { error: oauthError } = await supabase.auth.signInWithOAuth({
+      provider: "discord",
+      options: {
+        redirectTo: `${window.location.origin}/api/auth/callback?next=${encodeURIComponent(nextPath)}`,
+      },
+    });
+    if (oauthError) {
+      setError(oauthError.message);
+      setLoading(false);
+    }
+    // On success, Supabase redirects the browser — no further action needed here
+  }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -188,6 +211,44 @@ export default function LoginForm() {
           <h2 style={{ margin: "0 0 4px", fontSize: "1.1rem" }}>Reset password</h2>
           <p style={{ margin: 0, fontSize: "0.82rem", color: "var(--text-muted)" }}>We&apos;ll email you a reset link</p>
         </div>
+      )}
+
+      {mode !== "reset" && (
+        <>
+          <button
+            type="button"
+            disabled={loading}
+            onClick={() => void handleDiscordLogin()}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: "10px",
+              width: "100%",
+              padding: "10px 16px",
+              marginBottom: "16px",
+              background: "rgba(88,101,242,0.15)",
+              border: "1px solid rgba(88,101,242,0.45)",
+              borderRadius: "8px",
+              color: "#a5aaff",
+              fontSize: "0.875rem",
+              fontWeight: 600,
+              cursor: loading ? "not-allowed" : "pointer",
+              transition: "background 0.15s",
+            }}
+          >
+            <svg width="18" height="14" viewBox="0 0 18 14" fill="none" aria-hidden>
+              <path d="M15.245 1.175A14.91 14.91 0 0 0 11.567 0c-.167.302-.362.71-.496 1.033a13.784 13.784 0 0 0-4.143 0A11.124 11.124 0 0 0 6.431 0 14.968 14.968 0 0 0 2.75 1.179C.395 4.753-.242 8.238.076 11.674c1.54 1.148 3.033 1.846 4.502 2.303a10.8 10.8 0 0 0 .95-1.57 9.723 9.723 0 0 1-1.495-.73c.125-.093.248-.19.366-.29 2.884 1.353 6.016 1.353 8.866 0 .12.1.243.197.366.29a9.72 9.72 0 0 1-1.499.731c.28.558.604 1.086.952 1.57 1.47-.457 2.965-1.155 4.505-2.304.37-3.955-.627-7.408-2.644-10.499zM6.013 9.554c-.895 0-1.63-.835-1.63-1.857 0-1.022.717-1.859 1.63-1.859.914 0 1.647.836 1.63 1.859 0 1.022-.715 1.857-1.63 1.857zm6.025 0c-.896 0-1.63-.835-1.63-1.857 0-1.022.716-1.859 1.63-1.859.913 0 1.646.836 1.63 1.859 0 1.022-.716 1.857-1.63 1.857z" fill="currentColor" />
+            </svg>
+            Continue with Discord
+          </button>
+
+          <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "16px" }}>
+            <div style={{ flex: 1, height: "1px", background: "rgba(255,255,255,0.1)" }} />
+            <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>or</span>
+            <div style={{ flex: 1, height: "1px", background: "rgba(255,255,255,0.1)" }} />
+          </div>
+        </>
       )}
 
       <form className="auth-form" onSubmit={handleSubmit}>
