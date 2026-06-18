@@ -5,7 +5,16 @@ import { createServerClient } from "@supabase/ssr";
 export const runtime = "nodejs";
 
 const WHOP_API_BASE = process.env.WHOP_API_BASE_URL ?? "https://api.whop.com/api/v2";
-const ALLOWED_STATUSES = new Set(["active", "trialing", "canceling"]);
+// Free Whop products may return "completed" instead of "active"/"trialing".
+// Also accept past_due/pastDue so payment-grace members aren't locked out.
+const ALLOWED_STATUSES = new Set([
+  "active",
+  "trialing",
+  "completed",
+  "canceling",
+  "past_due",
+  "pastDue",
+]);
 
 type WhopMembership = {
   id: string;
@@ -39,22 +48,22 @@ function pickActiveMembership(
   memberships: WhopMembership[],
   allowedProductId: string | undefined,
 ): WhopMembership | undefined {
-  // Log each membership so we can compare product_id values in Vercel logs
   memberships.forEach((m) =>
     console.log(
-      "[whop] membership id=%s product_id=%s status=%s email=%s discord_id=%s",
+      "[whop] membership id=%s product_id=%s status=%s valid=%s email=%s discord_id=%s",
       m.id,
       m.product_id,
       m.status,
+      m.valid,
       m.email,
       m.discord?.id ?? "none",
     ),
   );
-  return memberships.find(
-    (m) =>
-      ALLOWED_STATUSES.has(m.status) &&
-      (!allowedProductId || m.product_id === allowedProductId),
-  );
+  return memberships.find((m) => {
+    const productMatch = !allowedProductId || m.product_id === allowedProductId;
+    const accessOk = m.valid === true || ALLOWED_STATUSES.has(m.status);
+    return productMatch && accessOk;
+  });
 }
 
 export async function GET(request: Request) {
