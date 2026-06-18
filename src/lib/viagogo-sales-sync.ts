@@ -1,4 +1,5 @@
 ﻿import type { SupabaseClient } from "@supabase/supabase-js";
+import type { ImapAccount } from "./imap-sync";
 
 const GMAIL_QUERY = 'is:unread from:orders.viagogo.com ("Please transfer the tickets for sale" OR "Please send your tickets" OR "You sold your ticket for" OR "Please upload your e-tickets") newer_than:14d';
 const PROCESSED_LABEL = "My Sales";
@@ -1287,7 +1288,10 @@ function stripHtml(text: string) {
     .replace(/<\/?(p|div|tr|li|ul|ol|table|tbody|thead|tfoot|h[1-6])[^>]*>/gi, "\n")
     .replace(/<\/?(td|th)[^>]*>/gi, " ")
     .replace(/<[^>]+>/g, " ")
-    .replace(/&nbsp;/g, " ");
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">");
 }
 
 function cleanText(text: string) {
@@ -1476,6 +1480,216 @@ function normalizeTimestamp(value: string) {
   }
 
   return parsed.toISOString();
+}
+
+const SALE_SUBJECT_KEYWORDS = [
+  "please transfer the tickets for sale",
+  "please send your tickets",
+  "you sold your ticket for",
+  "please upload your e-tickets",
+];
+
+export async function syncViagogoSalesImapInbox({
+  supabase,
+  imapAccount,
+  userId,
+}: {
+  supabase: SupabaseClient;
+  imapAccount: ImapAccount;
+  userId: string;
+}): Promise<SyncResult> {
+  const { ImapFlow } = await import("imapflow");
+  const { simpleParser } = await import("mailparser");
+
+  const client = new ImapFlow({
+    host: imapAccount.host,
+    port: imapAccount.port,
+    secure: imapAccount.use_tls,
+    auth: { user: imapAccount.username, pass: imapAccount.password },
+    logger: false,
+    disableAutoIdle: true,
+    socketTimeout: 30000,
+  });
+
+  let inserted = 0;
+  let matched = 0;
+  let scanned = 0;
+
+  try {
+    await client.connect();
+    const lock = await client.getMailboxLock(imapAccount.mailbox || "INBOX");
+    try {
+      // Mirror Gmail query: is:unread newer_than:14d from:orders.viagogo.com (subjects)
+      const since14 = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
+      const uidResult = await client.search({ since: since14, seen: false }, { uid: true });
+      const allUids = (Array.isArray(uidResult) ? uidResult : []).slice(-500) as number[];
+
+      if (allUids.length === 0) {
+        return { scanned: 0, inserted, matched, email: imapAccount.username };
+      }
+
+      // Phase 1 — envelope pre-filter in batches of 50 (mirrors Gmail's from: + subject: filter)
+      const candidateUids: number[] = [];
+      const ENV_BATCH = 50;
+      for (let ei = 0; ei < allUids.length; ei += ENV_BATCH) {
+        const chunk = allUids.slice(ei, ei + ENV_BATCH);
+        for await (const msg of client.fetch(chunk, { envelope: true }, { uid: true })) {
+          const subject = msg.envelope?.subject ?? "";
+          const from = (msg.envelope?.from?.[0]?.address ?? "").toLowerCase();
+          if (
+            from.includes("@orders.viagogo.com") &&
+            SALE_SUBJECT_KEYWORDS.some((kw) => subject.toLowerCase().includes(kw))
+          ) {
+            candidateUids.push(msg.uid);
+          }
+        }
+      }
+
+      if (candidateUids.length === 0) {
+        return { scanned: 0, inserted, matched, email: imapAccount.username };
+      }
+
+      // Create "My Sales" IMAP folder (mirrors Gmail's "My Sales" label)
+      try { await client.mailboxCreate("My Sales"); } catch { /* already exists */ }
+
+      const candidateOrders = await loadCandidateOrders(supabase, userId);
+      const orderUsage = await loadOrderUsage(supabase, userId);
+
+      // Phase 2 — fetch full source in batches of 10, collect first then process sequentially
+      // (mirrors syncGmailInbox: fullMessages batch then sequential for loop)
+      const BODY_BATCH = 10;
+      for (let bi = 0; bi < candidateUids.length; bi += BODY_BATCH) {
+        const batchUids = candidateUids.slice(bi, bi + BODY_BATCH);
+
+        const batchSources = new Map<number, Buffer>();
+        for await (const msg of client.fetch(batchUids, { source: true }, { uid: true })) {
+          if (msg.source) batchSources.set(msg.uid, msg.source as Buffer);
+        }
+
+        for (const uid of batchUids) {
+          const source = batchSources.get(uid);
+          if (!source) continue;
+
+          try {
+            // skipHtmlToText: true prevents mailparser's html-to-text from including
+            // image src URLs in parsed.text, which corrupts event/venue field extraction
+            const parsed = await simpleParser(source, { skipHtmlToText: true });
+            scanned++;
+
+            const subject = parsed.subject ?? "";
+            const lowerSubject = subject.toLowerCase();
+            const sourceMessageId = parsed.messageId
+              ? parsed.messageId.replace(/^<|>$/g, "")
+              : `imap-uid-${uid}`;
+
+            // Build combined text the same way Gmail's getBody() does:
+            // concatenate text/plain and stripHtml(text/html) from all MIME parts
+            const plainPart = parsed.text ?? "";
+            const rawHtml = typeof parsed.html === "string" ? parsed.html : "";
+            const bodyParts: string[] = [];
+            if (plainPart) bodyParts.push(plainPart);
+            if (rawHtml) bodyParts.push(stripHtml(rawHtml));
+            const body = cleanText(bodyParts.join("\n"));
+            const combined = cleanText(`${subject}\n${body}`);
+
+            const fakeHeaders: GmailHeader[] = [
+              { name: "Date", value: parsed.date?.toUTCString() ?? "" },
+            ];
+
+            const isSoldConfirmation = lowerSubject.includes("you sold your ticket for");
+            const saleParsed = isSoldConfirmation
+              ? parseSoldConfirmation({ headers: fakeHeaders, subject, text: combined })
+              : parseSale({ headers: fakeHeaders, subject, text: combined });
+
+            if (!saleParsed.externalSaleId) { scanned--; continue; }
+
+            const existingSale = await findExistingSale(supabase, {
+              userId,
+              externalSaleId: saleParsed.externalSaleId,
+              sourceMessageId,
+            });
+
+            const match = existingSale?.inventory_order_id
+              ? null
+              : findBestInventoryMatch({ orders: candidateOrders, orderUsage, sale: saleParsed });
+
+            const saleData: SaleInsert = {
+              external_sale_id: saleParsed.externalSaleId,
+              gmail_account_id: imapAccount.id,
+              source: "viagogo",
+              source_message_id: sourceMessageId,
+              subject: saleParsed.subject,
+              event_name: saleParsed.eventName,
+              venue: saleParsed.venue,
+              event_date: saleParsed.eventDate,
+              sold_at: saleParsed.soldAt,
+              account_email: imapAccount.username,
+              buyer_email: saleParsed.buyerEmail,
+              qty_sold: saleParsed.qtySold,
+              price_per_ticket: saleParsed.pricePerTicket,
+              sale_total: saleParsed.saleTotal,
+              payout_total: saleParsed.payoutTotal,
+              currency: "GBP",
+              section: saleParsed.section,
+              row: saleParsed.row,
+              seat_from: saleParsed.seatFrom,
+              seat_to: saleParsed.seatTo,
+              sale_status: "Sold",
+              inventory_order_id: existingSale?.inventory_order_id ?? match?.order.id ?? null,
+              match_confidence:
+                existingSale?.match_confidence ?? (match ? Number(match.score.toFixed(2)) : null),
+              user_id: userId,
+            };
+
+            const mutation = existingSale
+              ? supabase
+                  .from("sales")
+                  .update({
+                    ...saleData,
+                    source_message_id: existingSale.source_message_id || sourceMessageId,
+                  })
+                  .eq("id", existingSale.id)
+              : supabase.from("sales").insert(saleData);
+
+            const { error } = await mutation;
+            if (error) throw new Error(error.message);
+
+            if (!existingSale) inserted++;
+
+            if (match) {
+              const currentUsed = orderUsage.get(match.order.id) ?? 0;
+              const newQtySold = currentUsed + (saleParsed.qtySold ?? 1);
+              orderUsage.set(match.order.id, newQtySold);
+              matched++;
+              await updateMatchedOrder(supabase, {
+                userId,
+                order: match.order,
+                payoutTotal: saleParsed.payoutTotal,
+                totalQtySold: newQtySold,
+              });
+            }
+
+            // Mark read + file into "My Sales" (mirrors Gmail's markMessageProcessed)
+            try { await client.messageFlagsAdd(String(uid), ["\\Seen"], { uid: true }); } catch { /* best-effort */ }
+            try { await client.messageMove(String(uid), "My Sales", { uid: true }); } catch { /* best-effort */ }
+          } catch {
+            scanned--;
+          }
+        }
+      }
+    } finally {
+      lock.release();
+    }
+  } finally {
+    try { await client.logout(); } catch { /* ignore */ }
+  }
+
+  await supabase
+    .from("imap_accounts")
+    .update({ last_synced_at: new Date().toISOString() })
+    .eq("id", imapAccount.id);
+
+  return { scanned, inserted, matched, email: imapAccount.username };
 }
 
 

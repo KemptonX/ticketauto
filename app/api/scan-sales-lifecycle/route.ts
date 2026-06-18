@@ -41,7 +41,7 @@ export async function POST(req: Request) {
 
     const [
       { data: gmailAccounts, error: accountError },
-      { data: imapAccounts },
+      { data: imapRows, error: imapError },
     ] = await Promise.all([
       supabase
         .from("gmail_accounts")
@@ -51,7 +51,8 @@ export async function POST(req: Request) {
         .order("created_at", { ascending: true }),
       supabase
         .from("imap_accounts")
-        .select("id, host, port, username, password, use_tls, mailbox, unread_only, mark_read, last_synced_at")
+        .select("id, host, port, username, password_encrypted, use_tls, mailbox, unread_only, mark_read, last_synced_at")
+        .eq("user_id", user.id)
         .eq("is_active", true)
         .order("created_at", { ascending: true }),
     ]);
@@ -59,9 +60,15 @@ export async function POST(req: Request) {
     if (accountError) {
       return NextResponse.json({ error: accountError.message }, { status: 500 });
     }
+    if (imapError) {
+      return NextResponse.json({ error: imapError.message }, { status: 500 });
+    }
 
     const readyOAuthAccounts = (gmailAccounts ?? []).filter((a) => a.access_token);
-    const readyImapAccounts = imapAccounts ?? [];
+    const readyImapAccounts = ((imapRows ?? []) as Array<Record<string, unknown>>).map((r) => ({
+      ...(r as object),
+      password: r.password_encrypted as string,
+    })) as import("@/src/lib/imap-sync").ImapAccount[];
 
     if (readyOAuthAccounts.length === 0 && readyImapAccounts.length === 0) {
       return NextResponse.json(
