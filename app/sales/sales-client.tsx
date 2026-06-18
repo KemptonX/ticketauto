@@ -1491,12 +1491,6 @@ export default function SalesClient() {
                             <span>Sold for</span>
                             <strong>{formatCurrency(group.soldFor)}</strong>
                           </div>
-                          {group.buyerDisplay && (
-                            <div className="inventory-metric-chip">
-                              <span>Platform</span>
-                              <strong>{group.buyerDisplay}</strong>
-                            </div>
-                          )}
                           {group.awaitingPaymentAmount > 0 && (
                             <div className="inventory-metric-chip">
                               <span>Awaiting</span>
@@ -1607,7 +1601,7 @@ export default function SalesClient() {
                             />
                             Seat
                           </span>
-                          <span>Account</span>
+                          <span>Platform</span>
                           <span>Buyer</span>
                           <span>Value</span>
                           <span>Status</span>
@@ -1655,8 +1649,8 @@ export default function SalesClient() {
                                     {sale.split_of_sale_id != null && <span className="new-badge new-badge-inline" style={{ background: "rgba(255,180,0,0.15)", color: "#f5c842", borderColor: "rgba(255,180,0,0.3)" }}>↳ Split</span>}
                                   </div>
                                 </div>
-                                <span className="truncate-text" title={sale.account_email || ""}>
-                                  {sale.account_email || "No account"}
+                                <span className="truncate-text" title={sale.marketplace || ""}>
+                                  {sale.marketplace || "—"}
                                 </span>
                                 <div style={{ display: "flex", flexDirection: "column", gap: "2px", minWidth: 0 }}>
                                   <span className="truncate-text" title={sale.buyer_email || ""}>{sale.buyer_email || "—"}</span>
