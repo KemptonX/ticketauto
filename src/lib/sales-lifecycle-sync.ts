@@ -1,4 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { ImapFlow } from "imapflow";
+import { simpleParser } from "mailparser";
+import type { ImapAccount } from "./imap-sync";
 
 // ── Shared types ──────────────────────────────────────────────────────────────
 
@@ -423,6 +426,141 @@ export async function scanViagogoLifecycleOutlook({
   }
 
   return { ...totals, email: outlookAccount.email };
+}
+
+// ── IMAP lifecycle scanner ────────────────────────────────────────────────────
+
+export async function scanViagogoLifecycleImap({
+  supabase,
+  imapAccount,
+  userId,
+  cutoffDate,
+}: {
+  supabase: SupabaseClient;
+  imapAccount: ImapAccount;
+  userId: string;
+  cutoffDate: string;
+}): Promise<LifecycleScanResult> {
+  const client = new ImapFlow({
+    host: imapAccount.host,
+    port: imapAccount.port,
+    secure: imapAccount.use_tls,
+    auth: { user: imapAccount.username, pass: imapAccount.password },
+    logger: false,
+    disableAutoIdle: true,
+    socketTimeout: 30000,
+  });
+
+  const totals = { scanned: 0, processed: 0, updated: 0, needsReview: 0, alreadyProcessed: 0, errors: 0 };
+  let labelError: string | undefined;
+
+  try {
+    await client.connect();
+    const lock = await client.getMailboxLock(imapAccount.mailbox || "INBOX");
+    try {
+      // Search for Viagogo lifecycle emails since cutoff date
+      const uidResult = await client.search(
+        { since: new Date(cutoffDate), from: "automated@orders.viagogo.com" },
+        { uid: true },
+      );
+      const allUids = Array.isArray(uidResult) ? uidResult : [];
+      if (allUids.length === 0) return { ...totals, email: imapAccount.username };
+
+      // Envelope pre-filter — only keep transfer/payout subjects
+      const candidateUids: number[] = [];
+      for await (const msg of client.fetch(allUids, { envelope: true }, { uid: true })) {
+        const subject = msg.envelope?.subject ?? "";
+        if (isTransferEmail(subject) || isPayoutEmail(subject)) candidateUids.push(msg.uid);
+      }
+      if (candidateUids.length === 0) return { ...totals, email: imapAccount.username };
+
+      // Ensure Transfers and Payouts mailboxes exist (best-effort)
+      try { await client.mailboxCreate("Transfers"); } catch { /* already exists */ }
+      try { await client.mailboxCreate("Payouts"); } catch { /* already exists */ }
+
+      // Batch-fetch full source and process
+      const BATCH = 10;
+      for (let i = 0; i < candidateUids.length; i += BATCH) {
+        const batchUids = candidateUids.slice(i, i + BATCH);
+        const batchSources = new Map<number, Buffer>();
+        for await (const msg of client.fetch(batchUids, { source: true }, { uid: true })) {
+          if (msg.source) batchSources.set(msg.uid, msg.source as Buffer);
+        }
+
+        for (const uid of batchUids) {
+          const source = batchSources.get(uid);
+          if (!source) { totals.errors++; continue; }
+          totals.scanned++;
+
+          let subject = "";
+          let receivedAt = new Date().toISOString();
+          try {
+            const parsed = await simpleParser(source, { skipHtmlToText: true });
+            subject = parsed.subject ?? "";
+            receivedAt = parsed.date?.toISOString() ?? receivedAt;
+            const messageId = (parsed.messageId ?? "").replace(/^<|>$/g, "") || `imap-uid-${uid}`;
+            const rawHeaders: GmailHeader[] = [];
+            if (parsed.date) rawHeaders.push({ name: "Date", value: parsed.date.toUTCString() });
+            if (parsed.messageId) rawHeaders.push({ name: "Message-ID", value: parsed.messageId });
+
+            const alreadyDone = await isAlreadyProcessed(supabase, userId, messageId);
+            if (alreadyDone) {
+              totals.alreadyProcessed++;
+              const folder = isTransferEmail(subject) ? "Transfers" : "Payouts";
+              try { await client.messageMove(uid.toString(), folder, { uid: true }); } catch { /* best-effort */ }
+              continue;
+            }
+
+            const plainPart = parsed.text ?? "";
+            const rawHtml = typeof parsed.html === "string" ? parsed.html : "";
+            const body = cleanText([plainPart, rawHtml ? stripHtml(rawHtml) : ""].filter(Boolean).join("\n"));
+
+            if (isTransferEmail(subject)) {
+              const data = parseTransferEmail(subject, body, rawHeaders, "", receivedAt);
+              if (!data) {
+                try { await insertScanLog(supabase, userId, { messageId, xVgId: "", emailType: "transfer_complete", subject, receivedAt, accountEmail: imapAccount.username, status: "error", notes: "Failed to parse transfer email" }); } catch { /* ignore */ }
+                totals.errors++;
+                continue;
+              }
+              const logId = await insertScanLog(supabase, userId, { messageId, xVgId: "", emailType: "transfer_complete", subject, receivedAt, accountEmail: imapAccount.username, rawExtracted: { orderId: data.orderId, eventName: data.eventName, qty: data.qty } });
+              const result = await processTransferEmail(supabase, userId, data, logId);
+              await insertScanResult(supabase, userId, logId, "transfer_complete", result, { orderId: data.orderId, eventName: data.eventName, eventDate: data.eventDate, qty: data.qty });
+              tally(totals, result);
+              totals.processed++;
+              try { await client.messageMove(uid.toString(), "Transfers", { uid: true }); } catch { /* best-effort */ }
+            } else if (isPayoutEmail(subject)) {
+              const data = parsePayoutEmail(subject, body, rawHtml, rawHeaders, receivedAt);
+              if (!data || data.orderLines.length === 0) {
+                try { await insertScanLog(supabase, userId, { messageId, xVgId: "", emailType: "payout", subject, receivedAt, accountEmail: imapAccount.username, status: "error", notes: "Failed to parse payout email or no order lines found" }); } catch { /* ignore */ }
+                totals.errors++;
+                continue;
+              }
+              const logId = await insertScanLog(supabase, userId, { messageId, xVgId: "", emailType: "payout", subject, receivedAt, accountEmail: imapAccount.username, rawExtracted: { paymentReference: data.paymentReference, lineCount: data.orderLines.length } });
+              for (const line of data.orderLines) {
+                const result = await processPayoutOrderLine(supabase, userId, line, data.paymentDate, logId);
+                await insertScanResult(supabase, userId, logId, "payout", result, { orderId: line.orderId, paymentReference: line.paymentReference, orderDate: line.orderDate, amount: line.amount, qty: line.qty });
+                tally(totals, result);
+              }
+              totals.processed++;
+              try { await client.messageMove(uid.toString(), "Payouts", { uid: true }); } catch { /* best-effort */ }
+            }
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : "Unknown error";
+            try { await insertScanLog(supabase, userId, { messageId: `imap-uid-${uid}`, xVgId: "", emailType: isTransferEmail(subject) ? "transfer_complete" : "payout", subject, receivedAt, accountEmail: imapAccount.username, status: "error", notes: msg }); } catch { /* ignore */ }
+            totals.errors++;
+          }
+        }
+      }
+    } finally {
+      lock.release();
+    }
+  } catch (err) {
+    labelError = err instanceof Error ? err.message : "IMAP connection failed";
+  } finally {
+    try { await client.logout(); } catch { /* ignore */ }
+  }
+
+  return { ...totals, email: imapAccount.username, labelError };
 }
 
 // ── Email type detection ──────────────────────────────────────────────────────
