@@ -66,6 +66,7 @@ export default function DeskClient() {
   const [yearlyGoal, setYearlyGoal] = useState<number>(50000);
   const [editingYearlyGoal, setEditingYearlyGoal] = useState(false);
   const [yearlyGoalInput, setYearlyGoalInput] = useState("");
+  const [exporting, setExporting] = useState(false);
   const [selectedMonth, setSelectedMonth] = useState<{ year: number; month: number }>(() => {
     const n = new Date();
     return { year: n.getFullYear(), month: n.getMonth() };
@@ -160,6 +161,76 @@ export default function DeskClient() {
       localStorage.setItem("yearly_profit_goal", String(val));
     }
     setEditingYearlyGoal(false);
+  }
+
+  async function exportMatchedCSV() {
+    setExporting(true);
+    try {
+      const { data: salesData } = await supabase
+        .from("sales")
+        .select("id, external_sale_id, inventory_order_id, event_name, venue, event_date, sold_at, qty_sold, sale_total, payout_total, marketplace, buyer_name, buyer_email, sale_status, transfer_status, transfer_date, payment_status, expected_payout_date, payout_date, notes, account_email, section, row, seat_from, seat_to")
+        .not("inventory_order_id", "is", null)
+        .not("sale_status", "in", '("Archived","Deleted")');
+
+      if (!salesData || salesData.length === 0) {
+        alert("No matched sales to export.");
+        return;
+      }
+
+      const orderIds = [...new Set(salesData.map((s) => s.inventory_order_id as number))];
+      const { data: ordersData } = await supabase
+        .from("orders")
+        .select("id, booking_ref, event_name, venue, event_date, account_email, section, row, seat_from, seat_to, qty_bought, total_cost, listing_status, source_type")
+        .in("id", orderIds);
+
+      const orderMap = new Map<number, Record<string, unknown>>();
+      for (const o of (ordersData ?? [])) {
+        orderMap.set((o as { id: number }).id, o as Record<string, unknown>);
+      }
+
+      const csv = (rows: (string | number | null | undefined)[][]) => {
+        const esc = (v: string | number | null | undefined) => {
+          const s = v == null ? "" : String(v);
+          return s.includes(",") || s.includes('"') || s.includes("\n")
+            ? `"${s.replace(/"/g, '""')}"` : s;
+        };
+        return rows.map((r) => r.map(esc).join(",")).join("\n");
+      };
+
+      const headers = [
+        "Booking Ref", "Event Name", "Venue", "Event Date", "Account Email",
+        "Section", "Row", "Seat From", "Seat To", "Qty Bought", "Total Cost", "Ticket Status", "Source",
+        "Sale Reference", "Sale Date", "Qty Sold", "Sale Total", "Payout Total",
+        "Platform", "Buyer Name", "Buyer Email", "Sale Status",
+        "Transfer Status", "Transfer Date", "Payment Status",
+        "Expected Payout Date", "Payout Date", "Notes",
+      ];
+
+      const rows = salesData.map((s) => {
+        const o = orderMap.get(s.inventory_order_id as number) ?? {};
+        return [
+          o.booking_ref, o.event_name ?? s.event_name, o.venue ?? s.venue,
+          o.event_date ?? s.event_date, o.account_email ?? s.account_email,
+          o.section ?? s.section, o.row ?? s.row,
+          o.seat_from ?? s.seat_from, o.seat_to ?? s.seat_to,
+          o.qty_bought, o.total_cost, o.listing_status, o.source_type,
+          s.external_sale_id, s.sold_at, s.qty_sold, s.sale_total, s.payout_total,
+          s.marketplace, s.buyer_name, s.buyer_email, s.sale_status,
+          s.transfer_status, s.transfer_date, s.payment_status,
+          s.expected_payout_date, s.payout_date, s.notes,
+        ];
+      });
+
+      const blob = new Blob([csv([headers, ...rows])], { type: "text/csv" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `matched-export-${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } finally {
+      setExporting(false);
+    }
   }
 
   async function loadData() {
@@ -407,6 +478,14 @@ export default function DeskClient() {
                 </option>
               ))}
             </select>
+            <button
+              className="secondary-button"
+              type="button"
+              disabled={exporting}
+              onClick={() => void exportMatchedCSV()}
+            >
+              {exporting ? "Exporting…" : "Export"}
+            </button>
             <button className="secondary-button" type="button" onClick={() => {
               const n = new Date();
               setSelectedMonth({ year: n.getFullYear(), month: n.getMonth() });
