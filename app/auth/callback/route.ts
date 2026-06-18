@@ -65,9 +65,10 @@ export async function GET(request: Request) {
     if (discordIdentity && !ownerIds.has(discordIdentity.id)) {
       const allowedProductId = process.env.WHOP_ALLOWED_PRODUCT_ID;
       try {
+        // Don't filter by status here — Whop only returns "active" which misses
+        // "trialing" and "canceling". Filter locally with ALLOWED_STATUSES instead.
         const params = new URLSearchParams({
           discord_account_id: discordIdentity.id,
-          status: "active",
         });
         if (allowedProductId) params.set("product_id", allowedProductId);
 
@@ -106,5 +107,5 @@ export async function GET(request: Request) {
     }
   }
 
-  return NextResponse.redirect("https://tixtracker.app/orders");
+  return NextResponse.redirect("https://tixtracker.app/dashboard");
 }
