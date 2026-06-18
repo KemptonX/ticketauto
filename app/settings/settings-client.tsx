@@ -1102,9 +1102,9 @@ export default function SettingsClient() {
 
       // Create sale record if we have sale data and an actionable row type
       if (orderId && rowType !== "inventory_only" && rowType !== "skip") {
-        const transferStatus = (saleData.transfer_status as string) ??
+        let transferStatus = (saleData.transfer_status as string) ??
           (saleData.transfer_date ? "Transfer Completed" : "Awaiting Transfer");
-        const paymentStatus = (saleData.payment_status as string) ??
+        let paymentStatus = (saleData.payment_status as string) ??
           (saleData.payout_date ? "Paid" : "Awaiting Payment");
 
         let saleStatus = saleData.sale_status as string;
@@ -1112,6 +1112,17 @@ export default function SettingsClient() {
           if (paymentStatus === "Paid") saleStatus = "Paid";
           else if (transferStatus === "Transfer Completed") saleStatus = "Sold – Transfer Completed";
           else saleStatus = "Sold – Awaiting Transfer";
+        }
+
+        // Archived tickets or paid/archived sales → treat as fully settled
+        const isFullySettled =
+          orderData.listing_status === "Archived" ||
+          saleStatus === "Paid" ||
+          (saleData.sale_status as string) === "Archived";
+        if (isFullySettled) {
+          saleStatus = "Paid";
+          transferStatus = "Transfer Completed";
+          paymentStatus = "Paid";
         }
 
         const saleTotal = (saleData.sale_total as number) ?? (orderData.sold_total as number) ?? null;
@@ -1221,13 +1232,22 @@ export default function SettingsClient() {
       }
 
       if (orderId && rowType !== "inventory_only" && rowType !== "skip") {
-        const transferStatus = (saleData.transfer_status as string) ?? (saleData.transfer_date ? "Transfer Completed" : "Awaiting Transfer");
-        const paymentStatus = (saleData.payment_status as string) ?? (saleData.payout_date ? "Paid" : "Awaiting Payment");
+        let transferStatus = (saleData.transfer_status as string) ?? (saleData.transfer_date ? "Transfer Completed" : "Awaiting Transfer");
+        let paymentStatus = (saleData.payment_status as string) ?? (saleData.payout_date ? "Paid" : "Awaiting Payment");
         let saleStatus = saleData.sale_status as string;
         if (!saleStatus || saleStatus === "_skip") {
           if (paymentStatus === "Paid") saleStatus = "Paid";
           else if (transferStatus === "Transfer Completed") saleStatus = "Sold – Transfer Completed";
           else saleStatus = "Sold – Awaiting Transfer";
+        }
+        const isFullySettled =
+          orderData.listing_status === "Archived" ||
+          saleStatus === "Paid" ||
+          (saleData.sale_status as string) === "Archived";
+        if (isFullySettled) {
+          saleStatus = "Paid";
+          transferStatus = "Transfer Completed";
+          paymentStatus = "Paid";
         }
         const saleTotal = (saleData.sale_total as number) ?? (orderData.sold_total as number) ?? null;
         const qtySold = (orderData.qty_sold as number) ?? (orderData.qty_bought as number) ?? 1;
