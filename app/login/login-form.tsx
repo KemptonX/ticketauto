@@ -48,16 +48,40 @@ export default function LoginForm() {
     }
 
     // Back up the PKCE verifier to a cookie before leaving this domain.
-    // Safari ITP / Firefox ETP can wipe localStorage during cross-site redirects
-    // (Discord → Supabase → back here), so we persist it ourselves.
+    // Scan all storage types — Supabase may use localStorage, sessionStorage, or cookies
+    // depending on the browser and @supabase/ssr version.
     try {
-      const ref = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL!).hostname.split(".")[0];
-      const key = `sb-${ref}-auth-token-code-verifier`;
-      const verifier = localStorage.getItem(key)
-        ?? document.cookie.split("; ").find((c) => c.startsWith(`${key}=`))?.slice(key.length + 1) ?? null;
-      if (verifier) {
-        document.cookie = `pkce_k=${encodeURIComponent(key)}; path=/; max-age=600; SameSite=Lax`;
-        document.cookie = `pkce_v=${encodeURIComponent(verifier)}; path=/; max-age=600; SameSite=Lax`;
+      let foundKey: string | null = null;
+      let foundVerifier: string | null = null;
+
+      const scan = (store: Storage) => {
+        for (let i = 0; i < store.length; i++) {
+          const k = store.key(i);
+          if (k?.endsWith("-code-verifier")) {
+            foundKey = k;
+            foundVerifier = store.getItem(k);
+            return;
+          }
+        }
+      };
+
+      try { scan(localStorage); } catch { /* blocked */ }
+      if (!foundVerifier) { try { scan(sessionStorage); } catch { /* blocked */ } }
+      if (!foundVerifier) {
+        document.cookie.split("; ").forEach((c) => {
+          const eq = c.indexOf("=");
+          if (eq === -1) return;
+          const k = c.slice(0, eq);
+          if (k.endsWith("-code-verifier")) {
+            foundKey = k;
+            foundVerifier = decodeURIComponent(c.slice(eq + 1));
+          }
+        });
+      }
+
+      if (foundKey && foundVerifier) {
+        document.cookie = `pkce_k=${encodeURIComponent(foundKey)}; path=/; max-age=600; SameSite=Lax`;
+        document.cookie = `pkce_v=${encodeURIComponent(foundVerifier)}; path=/; max-age=600; SameSite=Lax`;
       }
     } catch { /* non-fatal */ }
 

@@ -29,8 +29,8 @@ function AuthCallbackInner() {
         return;
       }
 
-      // Restore the PKCE verifier from our backup cookie (set before the OAuth redirect)
-      // in case the browser cleared localStorage during the cross-site navigation.
+      // Restore the PKCE verifier from our backup cookie into all storage types,
+      // so exchangeCodeForSession finds it wherever @supabase/ssr looks.
       try {
         const getCookie = (name: string) => {
           const c = document.cookie.split("; ").find((r) => r.startsWith(`${name}=`));
@@ -39,8 +39,8 @@ function AuthCallbackInner() {
         const key = getCookie("pkce_k");
         const verifier = getCookie("pkce_v");
         if (key && verifier) {
-          localStorage.setItem(key, verifier);
-          // Also write as a cookie in case @supabase/ssr reads from there
+          try { localStorage.setItem(key, verifier); } catch { /* blocked */ }
+          try { sessionStorage.setItem(key, verifier); } catch { /* blocked */ }
           document.cookie = `${key}=${encodeURIComponent(verifier)}; path=/; max-age=60; SameSite=Lax`;
         }
       } catch { /* non-fatal */ }
