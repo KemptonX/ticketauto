@@ -62,27 +62,33 @@ export async function GET(request: Request) {
         .filter(Boolean),
     );
 
-    if (discordIdentity && !ownerIds.has(discordIdentity.id)) {
+    // identity_data.sub is the actual Discord snowflake; identity.id may be a Supabase UUID
+    const discordId =
+      (discordIdentity?.identity_data?.sub as string | undefined) ??
+      (discordIdentity?.identity_data?.provider_id as string | undefined) ??
+      discordIdentity?.id;
+
+    if (discordIdentity && discordId && !ownerIds.has(discordId)) {
       const allowedProductId = process.env.WHOP_ALLOWED_PRODUCT_ID;
       try {
-        // Don't filter by status here — Whop only returns "active" which misses
-        // "trialing" and "canceling". Filter locally with ALLOWED_STATUSES instead.
-        const params = new URLSearchParams({
-          discord_account_id: discordIdentity.id,
-        });
+        const params = new URLSearchParams({ discord_account_id: discordId });
         if (allowedProductId) params.set("product_id", allowedProductId);
 
-        const whopRes = await fetch(`${WHOP_API_BASE}/memberships?${params.toString()}`, {
+        const whopUrl = `${WHOP_API_BASE}/memberships?${params.toString()}`;
+        const whopRes = await fetch(whopUrl, {
           headers: { Authorization: `Bearer ${apiKey}` },
           cache: "no-store",
         });
+
+        const whopBody = await whopRes.text();
+        console.log("[whop-check] discord_id=%s url=%s status=%d body=%s", discordId, whopUrl, whopRes.status, whopBody);
 
         if (!whopRes.ok) {
           await supabase.auth.signOut();
           return NextResponse.redirect("https://tixtracker.app/login?error=whop-check-failed");
         }
 
-        const whopData = (await whopRes.json()) as {
+        const whopData = JSON.parse(whopBody) as {
           data?: { id: string; status: string }[];
         };
 
