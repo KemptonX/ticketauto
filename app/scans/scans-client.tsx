@@ -726,24 +726,32 @@ export default function ScansClient() {
               <div className="table-card-header">
                 <div>
                   <p className="section-tag">Results</p>
-                  <h4>Lifecycle scan results</h4>
+                  <h4>
+                    {lcFilter === "transfer" ? "Transfers folder" : lcFilter === "payout" ? "Payouts folder" : "Lifecycle scan results"}
+                  </h4>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
                   <span className="table-count">{filteredLcResults.length} rows</span>
                   <div className="view-toggle">
                     {([
-                      ["all", `All (${lcResults.length})`],
-                      ["transfer", `Transfer (${lcTransferCount})`],
-                      ["payout", `Payout (${lcPayoutCount})`],
-                      ["matched", `Matched (${lcMatchedCount})`],
-                      ["review", lcReviewCount > 0 ? `Review (${lcReviewCount})` : "Review"],
-                    ] as [LifecycleFilter, string][]).map(([f, label]) => (
+                      ["all", `All (${lcResults.length})`, null],
+                      ["transfer", `Transfers (${lcTransferCount})`, "#60a5fa"],
+                      ["payout", `Payouts (${lcPayoutCount})`, "#4ade80"],
+                      ["matched", `Matched (${lcMatchedCount})`, null],
+                      ["review", lcReviewCount > 0 ? `Review (${lcReviewCount})` : "Review", null],
+                    ] as [LifecycleFilter, string, string | null][]).map(([f, label, color]) => (
                       <button
                         key={f}
                         type="button"
                         className={`toggle-btn${lcFilter === f ? " toggle-btn-active" : ""}`}
                         onClick={() => setLcFilter(f)}
+                        style={color && lcFilter === f ? { color } : undefined}
                       >
+                        {(f === "transfer" || f === "payout") && (
+                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={color ?? "currentColor"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 4, verticalAlign: "middle" }}>
+                            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                          </svg>
+                        )}
                         {label}
                       </button>
                     ))}

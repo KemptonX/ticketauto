@@ -123,6 +123,12 @@ export async function scanViagogoLifecycleGmail({
     fullMessages.push(...fetched);
   }
 
+  // Pre-fetch/create Gmail labels for filing processed emails
+  let gmailLabels: { transfers: string; payouts: string } | null = null;
+  try {
+    gmailLabels = await ensureGmailLabels(accessToken);
+  } catch { /* non-critical — continue without labelling */ }
+
   const totals = { scanned: 0, processed: 0, updated: 0, needsReview: 0, alreadyProcessed: 0, errors: 0 };
 
   for (let i = 0; i < messages.length; i++) {
@@ -138,6 +144,11 @@ export async function scanViagogoLifecycleGmail({
     const alreadyDone = await isAlreadyProcessed(supabase, userId, messageId);
     if (alreadyDone) {
       totals.alreadyProcessed++;
+      // Still apply label in case it was missed on a previous run
+      if (gmailLabels) {
+        const labelId = isTransferEmail(subject) ? gmailLabels.transfers : gmailLabels.payouts;
+        applyGmailLabel(accessToken, message.id, labelId).catch(() => undefined);
+      }
       continue;
     }
 
@@ -177,6 +188,10 @@ export async function scanViagogoLifecycleGmail({
         });
         tally(totals, result);
         totals.processed++;
+        // File in Gmail "Transfers" folder
+        if (gmailLabels) {
+          applyGmailLabel(accessToken, message.id, gmailLabels.transfers).catch(() => undefined);
+        }
       } else if (isPayoutEmail(subject)) {
         const body = getBody(fullMessage.payload);
         const rawHtml = getHtmlBody(fullMessage.payload);
@@ -216,6 +231,10 @@ export async function scanViagogoLifecycleGmail({
           tally(totals, result);
         }
         totals.processed++;
+        // File in Gmail "Payouts" folder
+        if (gmailLabels) {
+          applyGmailLabel(accessToken, message.id, gmailLabels.payouts).catch(() => undefined);
+        }
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Unknown error";
@@ -491,6 +510,10 @@ function extractCells(rowHtml: string): string[] {
   let m: RegExpExecArray | null;
   while ((m = cellRegex.exec(rowHtml)) !== null) {
     const text = m[1]
+      .replace(/=\r?\n/g, "")                                             // remove QP soft-break continuations
+      .replace(/=[0-9A-Fa-f]{2}/g, (c) => {                              // decode any residual QP bytes
+        try { return String.fromCharCode(parseInt(c.slice(1), 16)); } catch { return ""; }
+      })
       .replace(/<[^>]+>/g, " ")
       .replace(/&nbsp;/g, " ")
       .replace(/&amp;/g, "&")
@@ -865,6 +888,46 @@ async function listMessages(accessToken: string, query: string) {
   return data.messages ?? [];
 }
 
+async function ensureGmailLabels(
+  accessToken: string,
+): Promise<{ transfers: string; payouts: string }> {
+  const data = await gmailRequest<{ labels?: Array<{ id: string; name: string }> }>(
+    accessToken,
+    "https://gmail.googleapis.com/gmail/v1/users/me/labels",
+  );
+  const labels = data.labels ?? [];
+
+  async function getOrCreate(name: string): Promise<string> {
+    const existing = labels.find((l) => l.name.toLowerCase() === name.toLowerCase());
+    if (existing) return existing.id;
+    const created = await gmailRequest<{ id: string }>(
+      accessToken,
+      "https://gmail.googleapis.com/gmail/v1/users/me/labels",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, labelListVisibility: "labelShow", messageListVisibility: "show" }),
+      },
+    );
+    return created.id;
+  }
+
+  const [transfers, payouts] = await Promise.all([getOrCreate("Transfers"), getOrCreate("Payouts")]);
+  return { transfers, payouts };
+}
+
+async function applyGmailLabel(accessToken: string, gmailMessageId: string, labelId: string): Promise<void> {
+  await gmailRequest(
+    accessToken,
+    `https://gmail.googleapis.com/gmail/v1/users/me/messages/${gmailMessageId}/modify`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ addLabelIds: [labelId] }),
+    },
+  );
+}
+
 async function getMessage(accessToken: string, id: string) {
   const url = new URL(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}`);
   url.searchParams.set("format", "full");
@@ -900,7 +963,12 @@ function getHtmlBody(payload: GmailPayload): string {
   let html = "";
   const walk = (part: GmailPayload) => {
     if (part.mimeType === "text/html" && part.body?.data) {
-      html = decodeBase64Url(part.body.data);
+      let raw = decodeBase64Url(part.body.data);
+      // Gmail API returns raw transfer-encoded bytes; decode QP if detected
+      if (raw.includes("=3D") || raw.includes("=\r\n") || raw.includes("=\n")) {
+        raw = decodeQuotedPrintable(raw);
+      }
+      html = raw;
     }
     for (const child of part.parts ?? []) walk(child);
   };
