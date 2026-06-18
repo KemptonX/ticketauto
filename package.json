@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "prebuild": "node -e \"const{rmSync}=require('fs');rmSync('middleware.ts',{force:true});rmSync('middleware.js',{force:true})\"",
     "build": "next build",
     "start": "next start",
     "lint": "eslint"
