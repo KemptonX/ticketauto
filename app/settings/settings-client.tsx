@@ -1639,17 +1639,21 @@ export default function SettingsClient() {
                           "Event Name", "Venue", "Event Date", "Section", "Row",
                           "Seat From", "Seat To", "Qty Bought", "Total Cost",
                           "Booking Ref", "Account Email",
-                          "Sale Status", "Sold For", "Payout Total",
-                          "Transfer Status", "Transfer Date",
-                          "Payment Status", "Payout Date",
+                          "Platform", "Viagogo Order ID", "Qty Sold", "Sold For", "Payout Total",
+                          "Buyer Name", "Buyer Email", "Sale Date",
+                          "Sale Status", "Transfer Status", "Transfer Date", "Transfer Deadline",
+                          "Payment Status", "Expected Payout Date", "Payout Date",
+                          "Notes",
                         ];
                         const example = [
                           "Coldplay World Tour", "Wembley Stadium", "15/06/2025", "Block 123", "A",
                           "1", "2", "2", "350.00",
                           "TM-123456", "myaccount@gmail.com",
-                          "Sold", "480.00", "420.00",
-                          "Transfer Completed", "01/06/2025",
-                          "Paid", "05/06/2025",
+                          "Viagogo", "VG-987654321", "2", "480.00", "420.00",
+                          "John Smith", "buyer@email.com", "01/05/2025",
+                          "Sold – Transfer Completed", "Transfer Completed", "01/06/2025", "03/06/2025",
+                          "Paid", "10/06/2025", "05/06/2025",
+                          "",
                         ];
                         const csv = [headers.join(","), example.join(",")].join("\n");
                         const blob = new Blob([csv], { type: "text/csv" });
