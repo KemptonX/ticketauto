@@ -283,7 +283,7 @@ const FIELD_GROUPS = [
 const ORDER_COLUMNS = new Set([
   "booking_ref", "event_name", "venue", "event_date", "account_email",
   "section", "row", "seat_from", "seat_to",
-  "qty_bought", "qty_sold", "total_cost", "sold_total", "listing_status", "source_type",
+  "qty_bought", "total_cost", "sold_total", "listing_status", "source_type",
 ]);
 
 const SALE_COLUMNS = new Set([
@@ -291,6 +291,7 @@ const SALE_COLUMNS = new Set([
   "marketplace", "buyer_email", "external_sale_id", "notes",
   "transfer_status", "transfer_date", "transfer_deadline",
   "payment_status", "expected_payout_date", "payout_date",
+  "qty_sold",
 ]);
 
 // ─── Auto-mapping ─────────────────────────────────────────────────────────────
