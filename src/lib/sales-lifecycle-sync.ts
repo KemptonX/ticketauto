@@ -429,24 +429,33 @@ export async function scanViagogoLifecycleImap({
         { since: new Date(cutoffDate) },
         { uid: true },
       );
-      const allUids = Array.isArray(uidResult) ? uidResult : [];
+      // Take the 500 most-recent UIDs only — UIDs are generally ascending so we slice
+      // from the end. A very large UID list causes FETCH command strings that exceed
+      // server limits (Gmail returns BAD → "Command failed").
+      const allUids = (Array.isArray(uidResult) ? uidResult : []).slice(-500) as number[];
       if (allUids.length === 0) return { ...totals, email: imapAccount.username };
 
-      // Envelope pre-filter — keep only Viagogo transfer/payout emails
+      // Envelope pre-filter in batches — keep only Viagogo transfer/payout emails.
+      // Batching avoids giant FETCH UID commands for large inboxes.
       const candidateUids: number[] = [];
-      for await (const msg of client.fetch(allUids, { envelope: true }, { uid: true })) {
-        const subject = msg.envelope?.subject ?? "";
-        const from = (msg.envelope?.from?.[0]?.address ?? "").toLowerCase();
-        if (
-          from.includes("automated@orders.viagogo.com") &&
-          (isTransferEmail(subject) || isPayoutEmail(subject))
-        ) {
-          candidateUids.push(msg.uid);
+      const ENV_BATCH = 50;
+      for (let ei = 0; ei < allUids.length; ei += ENV_BATCH) {
+        const chunk = allUids.slice(ei, ei + ENV_BATCH);
+        for await (const msg of client.fetch(chunk, { envelope: true }, { uid: true })) {
+          const subject = msg.envelope?.subject ?? "";
+          const from = (msg.envelope?.from?.[0]?.address ?? "").toLowerCase();
+          if (
+            from.includes("automated@orders.viagogo.com") &&
+            (isTransferEmail(subject) || isPayoutEmail(subject))
+          ) {
+            candidateUids.push(msg.uid);
+          }
         }
       }
       if (candidateUids.length === 0) return { ...totals, email: imapAccount.username };
 
-      // Ensure Transfers and Payouts mailboxes exist (best-effort)
+      // Ensure Transfers and Payouts mailboxes exist — done here so it only runs when
+      // we actually have emails to file, reducing unnecessary commands on empty inboxes
       try { await client.mailboxCreate("Transfers"); } catch { /* already exists */ }
       try { await client.mailboxCreate("Payouts"); } catch { /* already exists */ }
 
