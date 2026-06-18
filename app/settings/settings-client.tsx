@@ -1127,11 +1127,13 @@ export default function SettingsClient() {
         }
 
         const saleTotal = (saleData.sale_total as number) ?? (orderData.sold_total as number) ?? null;
-        const qtySold = (orderData.qty_sold as number) ?? (orderData.qty_bought as number) ?? 1;
+        const qtySold = (saleData.qty_sold as number) ?? (orderData.qty_bought as number) ?? 1;
         const payoutTotal = (saleData.payout_total as number) ??
           (paymentStatus === "Paid" ? saleTotal : null);
 
         const saleInsert: Record<string, unknown> = {
+          source: "import",
+          source_message_id: `import-${orderId}-${Date.now()}`,
           inventory_order_id: orderId,
           event_name: orderData.event_name,
           ...(orderData.event_date ? { event_date: orderData.event_date } : {}),
@@ -1159,7 +1161,11 @@ export default function SettingsClient() {
         };
 
         const { error: saleError } = await supabase.from("sales").insert(saleInsert);
-        if (!saleError) salesCreated++;
+        if (saleError) {
+          errors.push(`Row ${rowNum} (sale): ${saleError.message}`);
+        } else {
+          salesCreated++;
+        }
       }
     }
 
