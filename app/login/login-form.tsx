@@ -32,55 +32,18 @@ export default function LoginForm() {
     setError("");
     setMessage("");
 
-    // Supabase stores the PKCE verifier in storage BEFORE navigating the browser away.
-    // We hook beforeunload — which fires after the verifier is stored but before the
-    // page unloads — and copy it into a cookie that survives the cross-site redirect.
-    const backupVerifier = () => {
-      try {
-        let key: string | null = null;
-        let val: string | null = null;
-
-        const checkStore = (store: Storage) => {
-          for (let i = 0; i < store.length; i++) {
-            const k = store.key(i);
-            if (k?.endsWith("-code-verifier")) { key = k; val = store.getItem(k); return; }
-          }
-        };
-
-        try { checkStore(localStorage); } catch { /**/ }
-        if (!val) { try { checkStore(sessionStorage); } catch { /**/ } }
-        if (!val) {
-          document.cookie.split("; ").forEach((c) => {
-            const eq = c.indexOf("=");
-            if (eq > -1 && c.slice(0, eq).endsWith("-code-verifier")) {
-              key = c.slice(0, eq);
-              val = decodeURIComponent(c.slice(eq + 1));
-            }
-          });
-        }
-
-        if (key && val) {
-          document.cookie = `pkce_k=${encodeURIComponent(key)}; path=/; max-age=600; SameSite=Lax`;
-          document.cookie = `pkce_v=${encodeURIComponent(val)}; path=/; max-age=600; SameSite=Lax`;
-        }
-      } catch { /**/ }
-    };
-
-    window.addEventListener("beforeunload", backupVerifier, { once: true });
-
     const { error: oauthError } = await supabase.auth.signInWithOAuth({
       provider: "discord",
       options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
+        redirectTo: "https://tixtracker.app/auth/callback",
+        scopes: "identify email",
       },
     });
 
     if (oauthError) {
-      window.removeEventListener("beforeunload", backupVerifier);
       setError(oauthError.message);
       setLoading(false);
     }
-    // On success Supabase navigates the browser — beforeunload fires and backs up the verifier
   }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
