@@ -1133,7 +1133,7 @@ export default function SettingsClient() {
 
         const saleInsert: Record<string, unknown> = {
           source: "import",
-          source_message_id: `import-${orderId}-${Date.now()}`,
+          source_message_id: `import-${crypto.randomUUID()}`,
           inventory_order_id: orderId,
           event_name: orderData.event_name,
           ...(orderData.event_date ? { event_date: orderData.event_date } : {}),
@@ -1265,7 +1265,7 @@ export default function SettingsClient() {
         const payoutTotal = (saleData.payout_total as number) ?? (paymentStatus === "Paid" ? saleTotal : null);
         const { error: saleError } = await supabase.from("sales").insert({
           source: "import",
-          source_message_id: `import-${orderId}-${Date.now()}`,
+          source_message_id: `import-${crypto.randomUUID()}`,
           inventory_order_id: orderId,
           event_name: orderData.event_name,
           ...(orderData.event_date ? { event_date: orderData.event_date } : {}),
@@ -1914,6 +1914,14 @@ export default function SettingsClient() {
                       <strong style={{ color: importResult.errors.length > 0 ? "#f87171" : undefined }}>{importResult.errors.length}</strong>
                     </div>
                   </div>
+                  {importResult.errors.length > 0 && (
+                    <div style={{ marginTop: "1rem", maxHeight: 200, overflowY: "auto", background: "rgba(248,113,113,0.06)", border: "1px solid rgba(248,113,113,0.2)", borderRadius: 8, padding: "0.75rem 1rem" }}>
+                      <p style={{ fontSize: "0.75rem", color: "#f87171", fontWeight: 600, marginBottom: "0.5rem" }}>Error details:</p>
+                      {importResult.errors.map((e, i) => (
+                        <p key={i} style={{ fontSize: "0.75rem", color: "rgba(255,255,255,0.6)", marginBottom: "0.25rem" }}>{e}</p>
+                      ))}
+                    </div>
+                  )}
                   {failedEdits.length > 0 && (
                     <div style={{ marginBottom: "1.5rem" }}>
                       <p className="section-tag" style={{ marginBottom: "0.25rem" }}>Failed rows — edit and retry ({failedEdits.length})</p>
