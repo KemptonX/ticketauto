@@ -2087,53 +2087,56 @@ export default function SalesClient() {
               </div>
             </div>
 
-            <div className="drawer-actions">
-              {selectedSale.buyer_email ? (
+            <div className="drawer-actions" style={{ flexDirection: "column", alignItems: "stretch" }}>
+              <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
+                {selectedSale.buyer_email ? (
+                  <button
+                    className="secondary-button"
+                    type="button"
+                    onClick={() => void openEmailModal()}
+                  >
+                    {thankYouSentIds[selectedSale.id] ? "✓ Email Sent" : "Send Email"}
+                  </button>
+                ) : null}
                 <button
                   className="secondary-button"
                   type="button"
-                  onClick={() => void openEmailModal()}
+                  onClick={() => void archiveSale(selectedSale)}
                 >
-                  {thankYouSentIds[selectedSale.id] ? "✓ Email Sent" : "Send Email"}
+                  Archive Sale
                 </button>
-              ) : null}
-              <button
-                className="secondary-button"
-                type="button"
-                onClick={() => void archiveSale(selectedSale)}
-              >
-                Archive Sale
-              </button>
-              {selectedSale.inventory_order_id != null ? (
-                <button
-                  className="secondary-button"
-                  type="button"
-                  onClick={() => void unmatchSale(selectedSale)}
-                  disabled={unmatching}
-                >
-                  {unmatching ? "Unmatching..." : "Unmatch Sale"}
-                </button>
-              ) : null}
-              {showDeleted ? (
-                <button
-                  className="primary-button"
-                  type="button"
-                  onClick={() => void restoreSale(selectedSale)}
-                >
-                  Restore Sale
-                </button>
-              ) : (
-                <button
-                  className="danger-button"
-                  type="button"
-                  onClick={() => void deleteSale(selectedSale.id)}
-                >
-                  Delete Sale
-                </button>
-              )}
+                {selectedSale.inventory_order_id != null ? (
+                  <button
+                    className="secondary-button"
+                    type="button"
+                    onClick={() => void unmatchSale(selectedSale)}
+                    disabled={unmatching}
+                  >
+                    {unmatching ? "Unmatching..." : "Unmatch Sale"}
+                  </button>
+                ) : null}
+                {showDeleted ? (
+                  <button
+                    className="secondary-button"
+                    type="button"
+                    onClick={() => void restoreSale(selectedSale)}
+                  >
+                    Restore Sale
+                  </button>
+                ) : (
+                  <button
+                    className="danger-button"
+                    type="button"
+                    onClick={() => void deleteSale(selectedSale.id)}
+                  >
+                    Delete Sale
+                  </button>
+                )}
+              </div>
               <button
                 className="primary-button"
                 type="button"
+                style={{ width: "100%" }}
                 onClick={() => void saveSaleEdits()}
                 disabled={savingSale}
               >

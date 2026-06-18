@@ -2002,24 +2002,16 @@ export default function OrdersClient() {
               </div>
             </div>
 
-            <div className="drawer-actions">
-              <button
-                className="danger-button"
-                type="button"
-                onClick={() => void deleteOrder(selectedOrder.id)}
-              >
-                Delete
-              </button>
-              {viewMode === "ignored" || viewMode === "personal" ? (
+            <div className="drawer-actions" style={{ flexDirection: "column", alignItems: "stretch" }}>
+              <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
                 <button
-                  className="secondary-button"
+                  className="danger-button"
                   type="button"
-                  onClick={() => void restoreOrder(selectedOrder.id)}
+                  onClick={() => void deleteOrder(selectedOrder.id)}
                 >
-                  Restore
+                  Delete
                 </button>
-              ) : viewMode === "archived" ? (
-                <>
+                {viewMode === "ignored" || viewMode === "personal" ? (
                   <button
                     className="secondary-button"
                     type="button"
@@ -2027,42 +2019,53 @@ export default function OrdersClient() {
                   >
                     Restore
                   </button>
-                  <button
-                    className="secondary-button"
-                    type="button"
-                    onClick={() => void ignoreOrder(selectedOrder.id)}
-                  >
-                    Ignore
-                  </button>
-                </>
-              ) : (
-                <>
-                  <button
-                    className="secondary-button"
-                    type="button"
-                    onClick={() => void markPersonal(selectedOrder.id)}
-                  >
-                    Personal
-                  </button>
-                  <button
-                    className="secondary-button"
-                    type="button"
-                    onClick={() => void ignoreOrder(selectedOrder.id)}
-                  >
-                    Ignore
-                  </button>
-                  <button
-                    className="secondary-button"
-                    type="button"
-                    onClick={() => void archiveOrder(selectedOrder.id)}
-                  >
-                    Archive
-                  </button>
-                </>
-              )}
+                ) : viewMode === "archived" ? (
+                  <>
+                    <button
+                      className="secondary-button"
+                      type="button"
+                      onClick={() => void restoreOrder(selectedOrder.id)}
+                    >
+                      Restore
+                    </button>
+                    <button
+                      className="secondary-button"
+                      type="button"
+                      onClick={() => void ignoreOrder(selectedOrder.id)}
+                    >
+                      Ignore
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      className="secondary-button"
+                      type="button"
+                      onClick={() => void markPersonal(selectedOrder.id)}
+                    >
+                      Personal
+                    </button>
+                    <button
+                      className="secondary-button"
+                      type="button"
+                      onClick={() => void ignoreOrder(selectedOrder.id)}
+                    >
+                      Ignore
+                    </button>
+                    <button
+                      className="secondary-button"
+                      type="button"
+                      onClick={() => void archiveOrder(selectedOrder.id)}
+                    >
+                      Archive
+                    </button>
+                  </>
+                )}
+              </div>
               <button
                 className="primary-button"
                 type="button"
+                style={{ width: "100%" }}
                 onClick={() => void saveOrder(selectedOrder)}
               >
                 Save Row
