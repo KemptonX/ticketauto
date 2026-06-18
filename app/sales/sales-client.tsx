@@ -161,6 +161,7 @@ export default function SalesClient() {
   const [thankYouSentIds, setThankYouSentIds] = useState<Record<number, true>>({});
   const [shareSaleId, setShareSaleId] = useState<number | null>(null);
   const [selectedSaleIds, setSelectedSaleIds] = useState<Set<number>>(new Set());
+  const [massUpdating, setMassUpdating] = useState(false);
   const [shareMultiOpen, setShareMultiOpen] = useState(false);
   const [massMatchGroupKey, setMassMatchGroupKey] = useState<string | null>(null);
   const [massMatchInput, setMassMatchInput] = useState("");
@@ -1149,6 +1150,26 @@ export default function SalesClient() {
     });
   }
 
+  async function applyMassUpdate(updates: {
+    transfer_status?: string;
+    payment_status?: string;
+    sale_status?: string;
+    payout_date?: string | null;
+  }) {
+    if (selectedSaleIds.size === 0 || massUpdating) return;
+    setMassUpdating(true);
+    const ids = [...selectedSaleIds];
+    const { error } = await supabase.from("sales").update(updates).in("id", ids);
+    if (error) {
+      setMessage("Bulk update failed: " + error.message);
+    } else {
+      setSales(prev => prev.map(s => ids.includes(s.id) ? { ...s, ...updates } : s));
+      setSelectedSaleIds(new Set());
+      setMessage(`${ids.length} sale${ids.length === 1 ? "" : "s"} updated`);
+    }
+    setMassUpdating(false);
+  }
+
   const manualResults = useMemo(() => {
     const q = manualSearch.trim().toLowerCase();
     if (!q || !selectedSale) return [];
@@ -1198,6 +1219,19 @@ export default function SalesClient() {
             </button>
             <button className="secondary-button" onClick={exportSalesCSV} type="button">
               Export CSV
+            </button>
+            <button
+              className="secondary-button"
+              type="button"
+              onClick={() => {
+                const allIds = new Set(filteredSales.map(s => s.id));
+                const allSelected = filteredSales.length > 0 && filteredSales.every(s => selectedSaleIds.has(s.id));
+                setSelectedSaleIds(allSelected ? new Set() : allIds);
+              }}
+            >
+              {filteredSales.length > 0 && filteredSales.every(s => selectedSaleIds.has(s.id))
+                ? "Deselect All"
+                : `Select All (${filteredSales.length})`}
             </button>
             {!showArchived && !showDeleted && (
               <>
@@ -1706,6 +1740,72 @@ export default function SalesClient() {
               </svg>
               Share Success
             </button>
+
+            <div style={{ width: 1, height: 20, background: "rgba(255,255,255,0.12)" }} />
+
+            <button
+              type="button"
+              disabled={massUpdating}
+              onClick={() => void applyMassUpdate({ transfer_status: "Transfer Completed" })}
+              style={{
+                display: "flex", alignItems: "center", gap: 5,
+                background: "rgba(74,222,128,0.12)",
+                border: "1px solid rgba(74,222,128,0.3)",
+                borderRadius: 999,
+                padding: "6px 12px",
+                cursor: massUpdating ? "not-allowed" : "pointer",
+                color: "#4ade80",
+                fontSize: 12, fontWeight: 600,
+                opacity: massUpdating ? 0.5 : 1,
+              }}
+            >
+              ✓ Transferred
+            </button>
+
+            <button
+              type="button"
+              disabled={massUpdating}
+              onClick={() => void applyMassUpdate({
+                payment_status: "Paid",
+                transfer_status: "Transfer Completed",
+                sale_status: "Paid",
+                payout_date: new Date().toISOString().slice(0, 10),
+              })}
+              style={{
+                display: "flex", alignItems: "center", gap: 5,
+                background: "rgba(74,222,128,0.2)",
+                border: "1px solid rgba(74,222,128,0.45)",
+                borderRadius: 999,
+                padding: "6px 12px",
+                cursor: massUpdating ? "not-allowed" : "pointer",
+                color: "#4ade80",
+                fontSize: 12, fontWeight: 600,
+                opacity: massUpdating ? 0.5 : 1,
+              }}
+            >
+              £ Paid Out
+            </button>
+
+            <button
+              type="button"
+              disabled={massUpdating}
+              onClick={() => void applyMassUpdate({ sale_status: "Archived" })}
+              style={{
+                display: "flex", alignItems: "center", gap: 5,
+                background: "rgba(255,255,255,0.06)",
+                border: "1px solid rgba(255,255,255,0.15)",
+                borderRadius: 999,
+                padding: "6px 12px",
+                cursor: massUpdating ? "not-allowed" : "pointer",
+                color: "rgba(255,255,255,0.5)",
+                fontSize: 12, fontWeight: 600,
+                opacity: massUpdating ? 0.5 : 1,
+              }}
+            >
+              Archive
+            </button>
+
+            <div style={{ width: 1, height: 20, background: "rgba(255,255,255,0.12)" }} />
 
             <button
               type="button"
