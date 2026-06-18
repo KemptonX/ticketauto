@@ -938,7 +938,7 @@ export default function OrdersClient() {
       }
 
       const group = map.get(key)!;
-      const effSold = (o.sold_total ?? 0) > 0 ? (o.sold_total ?? 0) : (saleTotalByOrderId.get(o.id) ?? 0);
+      const effSold = (order.sold_total ?? 0) > 0 ? (order.sold_total ?? 0) : (saleTotalByOrderId.get(order.id) ?? 0);
       group.orders.push(order);
       group.totalQty += order.qty_bought ?? 0;
       group.totalCost += order.total_cost ?? 0;
