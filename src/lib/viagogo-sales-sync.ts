@@ -226,7 +226,7 @@ export async function syncViagogoSalesInbox({
       row: parsed.row,
       seat_from: parsed.seatFrom,
       seat_to: parsed.seatTo,
-      sale_status: "Sold",
+      sale_status: "Sold – Awaiting Transfer",
       user_id: userId,
     };
 
@@ -569,7 +569,7 @@ export async function syncViagogoSalesOutlookInbox({
       row: parsed.row,
       seat_from: parsed.seatFrom,
       seat_to: parsed.seatTo,
-      sale_status: "Sold",
+      sale_status: "Sold – Awaiting Transfer",
       inventory_order_id: existingSale?.inventory_order_id ?? match?.order.id ?? null,
       match_confidence:
         existingSale?.match_confidence ?? (match ? Number(match.score.toFixed(2)) : null),
@@ -1634,7 +1634,7 @@ export async function syncViagogoSalesImapInbox({
               row: saleParsed.row,
               seat_from: saleParsed.seatFrom,
               seat_to: saleParsed.seatTo,
-              sale_status: "Sold",
+              sale_status: "Sold – Awaiting Transfer",
               inventory_order_id: existingSale?.inventory_order_id ?? match?.order.id ?? null,
               match_confidence:
                 existingSale?.match_confidence ?? (match ? Number(match.score.toFixed(2)) : null),

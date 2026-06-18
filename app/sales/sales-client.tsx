@@ -2599,11 +2599,12 @@ export default function SalesClient() {
 
 function getLifecycleLabel(status: string | null): string {
   switch (status) {
-    case "Sold – Awaiting Transfer": return "Awaiting Transfer";
+    case "Sold – Awaiting Transfer":
+    case "Sold":
+      return "Awaiting Transfer";
     case "Sold – Transfer Completed": return "Transfer Completed";
     case "Paid": return "Paid";
     case "Cancelled / Issue": return "Cancelled";
-    case "Sold": return "Paid";
     default: return "Awaiting Transfer";
   }
 }
@@ -2611,11 +2612,11 @@ function getLifecycleLabel(status: string | null): string {
 function getLifecycleBadgeStyle(status: string | null): React.CSSProperties {
   switch (status) {
     case "Sold – Awaiting Transfer":
+    case "Sold":
       return { background: "rgba(249,115,22,0.15)", color: "#f97316", borderColor: "rgba(249,115,22,0.3)" };
     case "Sold – Transfer Completed":
       return { background: "rgba(79,195,255,0.15)", color: "#4fc3ff", borderColor: "rgba(79,195,255,0.3)" };
     case "Paid":
-    case "Sold":
       return { background: "rgba(74,222,128,0.15)", color: "#4ade80", borderColor: "rgba(74,222,128,0.3)" };
     case "Cancelled / Issue":
       return { background: "rgba(248,113,113,0.15)", color: "#f87171", borderColor: "rgba(248,113,113,0.3)" };
