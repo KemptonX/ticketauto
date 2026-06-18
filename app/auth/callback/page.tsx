@@ -1,58 +1,77 @@
 "use client";
 
 import { Suspense, useEffect, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/src/lib/supabase";
+import type { User } from "@supabase/supabase-js";
+
+async function checkWhop(user: User): Promise<string | null> {
+  const isDiscord = user.identities?.some((i) => i.provider === "discord");
+  if (!isDiscord) return null;
+
+  try {
+    const res = await fetch("/api/auth/whop-check", { method: "POST" });
+    const json = (await res.json()) as { ok?: boolean; error?: string };
+    return json.ok ? null : (json.error ?? "Access denied");
+  } catch {
+    return "Could not verify Whop membership. Please try again.";
+  }
+}
 
 function AuthCallbackInner() {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const [status, setStatus] = useState("Signing you in…");
   const [errorMsg, setErrorMsg] = useState("");
 
   useEffect(() => {
-    async function handleCallback() {
-      const code = searchParams.get("code");
-      const next = searchParams.get("next") ?? "/orders";
+    // With implicit flow, createBrowserClient automatically parses the URL hash
+    // and fires SIGNED_IN through onAuthStateChange
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        if (event !== "SIGNED_IN" || !session?.user) return;
+        subscription.unsubscribe();
 
-      if (!code) {
-        setErrorMsg("No auth code received from Discord. Please try again.");
-        return;
-      }
+        setStatus("Verifying access…");
+        const whopError = await checkWhop(session.user);
 
-      setStatus("Exchanging code for session…");
-      const { data, error } = await supabase.auth.exchangeCodeForSession(code);
-
-      if (error || !data.user) {
-        setErrorMsg(`Session error: ${error?.message ?? "unknown"}`);
-        return;
-      }
-
-      setStatus("Session established. Checking access…");
-
-      const isDiscord = data.user.identities?.some((i) => i.provider === "discord");
-      if (isDiscord) {
-        setStatus("Verifying Whop membership…");
-        try {
-          const res = await fetch("/api/auth/whop-check", { method: "POST" });
-          const json = (await res.json()) as { ok?: boolean; error?: string };
-          if (!json.ok) {
-            await supabase.auth.signOut();
-            setErrorMsg(json.error ?? "Access denied");
-            return;
-          }
-        } catch (e) {
+        if (whopError) {
           await supabase.auth.signOut();
-          setErrorMsg(`Whop check failed: ${e instanceof Error ? e.message : "network error"}`);
+          setErrorMsg(whopError);
           return;
         }
+
+        setStatus("All good — redirecting…");
+        window.location.href = "/orders";
+      },
+    );
+
+    // Fallback: if the session was already set before the listener attached
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (!session?.user) return;
+      subscription.unsubscribe();
+
+      setStatus("Verifying access…");
+      const whopError = await checkWhop(session.user);
+
+      if (whopError) {
+        await supabase.auth.signOut();
+        setErrorMsg(whopError);
+        return;
       }
 
       setStatus("All good — redirecting…");
-      window.location.href = next;
-    }
+      window.location.href = "/orders";
+    });
 
-    void handleCallback();
+    const timeout = setTimeout(() => {
+      subscription.unsubscribe();
+      setErrorMsg("Sign-in timed out — no session was established. Please try again.");
+    }, 15000);
+
+    return () => {
+      clearTimeout(timeout);
+      subscription.unsubscribe();
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
