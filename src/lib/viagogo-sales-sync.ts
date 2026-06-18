@@ -1014,9 +1014,12 @@ function parseSoldConfirmation({
     payoutTotal,
     saleTotal,
     section,
-    row: "",
-    seatFrom: "",
-    seatTo: "",
+    row: text.match(/Row:\s*([^\n|,]+)/i)?.[1]?.trim() || "",
+    seatFrom: text.match(/Seat\(?s?\)?:\s*(\d+)/i)?.[1]?.trim() || "",
+    seatTo:
+      text.match(/Seat\(?s?\)?:\s*\d+\s*[-–]\s*(\d+)/i)?.[1]?.trim() ||
+      text.match(/Seat\(?s?\)?:\s*(\d+)/i)?.[1]?.trim() ||
+      "",
   };
 }
 
@@ -1076,10 +1079,15 @@ function parseSale({
       ticketLine.match(/Row\s+([^,]+)/i)?.[1]?.trim() ||
       extractField(text, "Row", ["Seat", "Event"]) ||
       "",
-    seatFrom: ticketLine.match(/Seat\(s\)\s*(\d+)/i)?.[1]?.trim() || "",
+    seatFrom:
+      ticketLine.match(/Seat\(s\)\s*(\d+)/i)?.[1]?.trim() ||
+      text.match(/Seat\(?s?\)?:\s*(\d+)/i)?.[1]?.trim() ||
+      "",
     seatTo:
       ticketLine.match(/Seat\(s\)\s*\d+\s*(?:-|–|to)\s*(\d+)/i)?.[1]?.trim() ||
       ticketLine.match(/Seat\(s\)\s*(\d+)/i)?.[1]?.trim() ||
+      text.match(/Seat\(?s?\)?:\s*\d+\s*[-–]\s*(\d+)/i)?.[1]?.trim() ||
+      text.match(/Seat\(?s?\)?:\s*(\d+)/i)?.[1]?.trim() ||
       "",
   };
 }
