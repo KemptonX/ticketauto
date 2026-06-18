@@ -1275,14 +1275,6 @@ export default function SalesClient() {
                 ? "Deselect All"
                 : `Select All (${filteredSales.length})`}
             </button>
-            <button
-              className="danger-button"
-              type="button"
-              disabled={massUpdating || selectedSaleIds.size === 0}
-              onClick={() => void deleteSelectedSales()}
-            >
-              {selectedSaleIds.size > 0 ? `Delete (${selectedSaleIds.size})` : "Delete Selected"}
-            </button>
             {!showArchived && !showDeleted && (
               <>
                 <button className="secondary-button" onClick={() => void scanSalesNow()} disabled={scanning} type="button">
@@ -1358,25 +1350,6 @@ export default function SalesClient() {
               </button>
             </div>
             <div style={{ display: "flex", gap: 8 }}>
-              {selectedSaleIds.size > 0 && (
-                <button
-                  type="button"
-                  disabled={massUpdating}
-                  onClick={() => void deleteSelectedSales()}
-                  style={{
-                    background: "rgba(239,68,68,0.15)",
-                    border: "1px solid rgba(239,68,68,0.5)",
-                    borderRadius: 8,
-                    padding: "6px 14px",
-                    color: "#f87171",
-                    fontSize: 13,
-                    fontWeight: 600,
-                    cursor: "pointer",
-                  }}
-                >
-                  🗑 Delete ({selectedSaleIds.size})
-                </button>
-              )}
               <button className="ghost-button" type="button" onClick={resetFilters}>
                 Reset
               </button>
@@ -1870,25 +1843,6 @@ export default function SalesClient() {
               }}
             >
               Archive
-            </button>
-
-            <button
-              type="button"
-              disabled={massUpdating}
-              onClick={() => void deleteSelectedSales()}
-              style={{
-                display: "flex", alignItems: "center", gap: 5,
-                background: "rgba(248,113,113,0.12)",
-                border: "1px solid rgba(248,113,113,0.3)",
-                borderRadius: 999,
-                padding: "6px 12px",
-                cursor: massUpdating ? "not-allowed" : "pointer",
-                color: "#f87171",
-                fontSize: 12, fontWeight: 600,
-                opacity: massUpdating ? 0.5 : 1,
-              }}
-            >
-              Delete
             </button>
 
             <div style={{ width: 1, height: 20, background: "rgba(255,255,255,0.12)" }} />
