@@ -93,6 +93,7 @@ export type LifecycleScanResult = {
   alreadyProcessed: number;
   errors: number;
   email: string;
+  labelError?: string;
 };
 
 // ── Gmail lifecycle scanner ────────────────────────────────────────────────────
@@ -135,9 +136,12 @@ export async function scanViagogoLifecycleGmail({
 
   // Pre-fetch/create Gmail labels for filing processed emails
   let gmailLabels: { transfers: string; payouts: string } | null = null;
+  let labelError: string | undefined;
   try {
     gmailLabels = await ensureGmailLabels(accessToken);
-  } catch { /* non-critical — continue without labelling */ }
+  } catch (e) {
+    labelError = e instanceof Error ? e.message : "Label setup failed";
+  }
 
   const totals = { scanned: 0, processed: 0, updated: 0, needsReview: 0, alreadyProcessed: 0, errors: 0 };
 
@@ -262,7 +266,7 @@ export async function scanViagogoLifecycleGmail({
     }
   }
 
-  return { ...totals, email: gmailAccount.email };
+  return { ...totals, email: gmailAccount.email, labelError };
 }
 
 // ── Outlook lifecycle scanner ─────────────────────────────────────────────────
@@ -575,11 +579,13 @@ async function isAlreadyProcessed(
 ): Promise<boolean> {
   const { data } = await supabase
     .from("sales_scan_log")
-    .select("id")
+    .select("id, status")
     .eq("user_id", userId)
     .eq("message_id", messageId)
     .maybeSingle();
-  return !!data;
+  if (!data) return false;
+  // Don't skip emails that previously errored — allow them to be retried
+  return (data as { status: string }).status !== "error";
 }
 
 async function insertScanLog(
@@ -597,21 +603,25 @@ async function insertScanLog(
     notes?: string;
   },
 ): Promise<number> {
+  // Upsert so that retrying a previously-errored email updates the existing row
   const { data, error } = await supabase
     .from("sales_scan_log")
-    .insert({
-      user_id: userId,
-      message_id: opts.messageId,
-      x_vg_id: opts.xVgId || null,
-      email_type: opts.emailType,
-      platform: "viagogo",
-      subject: opts.subject,
-      received_at: opts.receivedAt,
-      status: opts.status ?? "ok",
-      account_email: opts.accountEmail,
-      raw_extracted: opts.rawExtracted ?? null,
-      notes: opts.notes ?? null,
-    })
+    .upsert(
+      {
+        user_id: userId,
+        message_id: opts.messageId,
+        x_vg_id: opts.xVgId || null,
+        email_type: opts.emailType,
+        platform: "viagogo",
+        subject: opts.subject,
+        received_at: opts.receivedAt,
+        status: opts.status ?? "ok",
+        account_email: opts.accountEmail,
+        raw_extracted: opts.rawExtracted ?? null,
+        notes: opts.notes ?? null,
+      },
+      { onConflict: "user_id,message_id", ignoreDuplicates: false },
+    )
     .select("id")
     .single();
 
@@ -858,17 +868,28 @@ async function getValidAccessToken({
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
   if (!clientId || !clientSecret) throw new Error("Google OAuth env vars missing");
 
-  const res = await fetch("https://oauth2.googleapis.com/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      client_id: clientId,
-      client_secret: clientSecret,
-      refresh_token: gmailAccount.refresh_token,
-      grant_type: "refresh_token",
-    }),
-    cache: "no-store",
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 30_000);
+  let res: Response;
+  try {
+    res = await fetch("https://oauth2.googleapis.com/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        client_id: clientId,
+        client_secret: clientSecret,
+        refresh_token: gmailAccount.refresh_token,
+        grant_type: "refresh_token",
+      }),
+      cache: "no-store",
+      signal: controller.signal,
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "network error";
+    throw new Error(`Gmail token refresh failed (${msg}). Reconnect Gmail in Connections.`);
+  } finally {
+    clearTimeout(timeout);
+  }
   const tokenData = (await res.json()) as {
     access_token?: string;
     expires_in?: number;
@@ -889,13 +910,25 @@ async function getValidAccessToken({
 }
 
 async function gmailRequest<T>(accessToken: string, input: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(input, {
-    ...init,
-    headers: { Authorization: `Bearer ${accessToken}`, ...(init?.headers ?? {}) },
-    cache: "no-store",
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 30_000);
+  let res: Response;
+  try {
+    res = await fetch(input, {
+      ...init,
+      headers: { Authorization: `Bearer ${accessToken}`, ...(init?.headers ?? {}) },
+      cache: "no-store",
+      signal: controller.signal,
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "network error";
+    throw new Error(`Gmail API request failed (${msg})`);
+  } finally {
+    clearTimeout(timeout);
+  }
   if (!res.ok) {
     const text = await res.text();
+    if (res.status === 401) throw new Error(`Gmail token expired or revoked (${res.status}). Reconnect Gmail in Connections.`);
     throw new Error(`Gmail API ${res.status}: ${text}`);
   }
   return (await res.json()) as T;

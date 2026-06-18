@@ -3,6 +3,7 @@ import { createSupabaseServerClient } from "@/src/lib/supabase-server";
 import { scanViagogoLifecycleGmail, scanViagogoLifecycleOutlook } from "@/src/lib/sales-lifecycle-sync";
 
 export const runtime = "nodejs";
+export const maxDuration = 300;
 
 export async function POST(req: Request) {
   try {
@@ -67,6 +68,7 @@ export async function POST(req: Request) {
       errors: 0,
       accounts: readyAccounts.length,
       cutoffDate,
+      labelError: undefined as string | undefined,
     };
 
     for (const account of readyAccounts) {
@@ -91,6 +93,7 @@ export async function POST(req: Request) {
       totals.needsReview += result.needsReview;
       totals.alreadyProcessed += result.alreadyProcessed;
       totals.errors += result.errors;
+      if (result.labelError) totals.labelError = result.labelError;
     }
 
     return NextResponse.json({ ok: true, ...totals });

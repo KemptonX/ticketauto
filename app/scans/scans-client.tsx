@@ -79,6 +79,7 @@ type ScanSummary = {
   alreadyProcessed: number;
   errors: number;
   cutoffDate: string;
+  labelError?: string;
 };
 
 function formatTs(ts: string): string {
@@ -719,6 +720,12 @@ export default function ScansClient() {
                   <span className="kpi-trend">skipped (duplicate)</span>
                 </article>
               </section>
+            )}
+            {lcLastScan?.labelError && (
+              <div style={{ marginBottom: "1rem", padding: "0.6rem 0.85rem", background: "rgba(251,191,36,0.1)", border: "1px solid rgba(251,191,36,0.3)", borderRadius: "8px", fontSize: "13px", color: "#fbbf24", display: "flex", gap: "0.5rem", alignItems: "flex-start" }}>
+                <span style={{ fontWeight: 600, flexShrink: 0 }}>⚠ Gmail folder labelling failed:</span>
+                <span>{lcLastScan.labelError} — reconnect Gmail in Connections if this persists.</span>
+              </div>
             )}
 
             {/* Results table */}
