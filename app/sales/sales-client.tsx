@@ -956,7 +956,7 @@ export default function SalesClient() {
       const payout = s.payout_total ?? s.sale_total ?? 0;
       const payStatus = s.payment_status || "Awaiting Payment";
       const saleStatus = s.sale_status || "Sold – Awaiting Transfer";
-      if (payStatus === "Paid" || saleStatus === "Paid" || saleStatus === "Sold") {
+      if (payStatus === "Paid" || saleStatus === "Paid") {
         revenueReceived += payout;
       } else if (saleStatus !== "Cancelled / Issue") {
         awaitingPayment += payout;
