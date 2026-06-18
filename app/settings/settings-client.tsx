@@ -1165,6 +1165,10 @@ export default function SettingsClient() {
           errors.push(`Row ${rowNum} (sale): ${saleError.message}`);
         } else {
           salesCreated++;
+          // Keep orders.sold_total in sync so dashboard profit is correct
+          if (!orderData.sold_total && saleTotal !== null) {
+            await supabase.from("orders").update({ sold_total: saleTotal }).eq("id", orderId);
+          }
         }
       }
     }
@@ -1257,9 +1261,11 @@ export default function SettingsClient() {
           paymentStatus = "Paid";
         }
         const saleTotal = (saleData.sale_total as number) ?? (orderData.sold_total as number) ?? null;
-        const qtySold = (orderData.qty_sold as number) ?? (orderData.qty_bought as number) ?? 1;
+        const qtySold = (saleData.qty_sold as number) ?? (orderData.qty_bought as number) ?? 1;
         const payoutTotal = (saleData.payout_total as number) ?? (paymentStatus === "Paid" ? saleTotal : null);
         const { error: saleError } = await supabase.from("sales").insert({
+          source: "import",
+          source_message_id: `import-${orderId}-${Date.now()}`,
           inventory_order_id: orderId,
           event_name: orderData.event_name,
           ...(orderData.event_date ? { event_date: orderData.event_date } : {}),
@@ -1285,7 +1291,13 @@ export default function SettingsClient() {
           ...(saleData.payout_date ? { payout_date: saleData.payout_date } : {}),
           ...(saleData.notes ? { notes: saleData.notes } : {}),
         });
-        if (!saleError) salesCreated++;
+        if (!saleError) {
+          salesCreated++;
+          // Keep orders.sold_total in sync so dashboard profit is correct
+          if (!orderData.sold_total && saleTotal !== null) {
+            await supabase.from("orders").update({ sold_total: saleTotal }).eq("id", orderId);
+          }
+        }
       }
     }
 

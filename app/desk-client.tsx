@@ -285,25 +285,34 @@ export default function DeskClient() {
       : new Date(now.getFullYear() - 1, 3, 1);  // Apr 1 last year
     const fyEnd = new Date(fyStart.getFullYear() + 1, 3, 1);
 
-    // Build qty sold per order from linked sales for proportional cost
+    // Build qty sold and sale_total per order from linked sales
     const soldQtyByOrderId = new Map<number, number>();
+    const saleTotalByOrderId = new Map<number, number>();
     for (const s of sales) {
       if (s.inventory_order_id == null) continue;
       soldQtyByOrderId.set(s.inventory_order_id, (soldQtyByOrderId.get(s.inventory_order_id) ?? 0) + (s.qty_sold ?? 0));
+      if (s.sale_total != null) {
+        saleTotalByOrderId.set(s.inventory_order_id, (saleTotalByOrderId.get(s.inventory_order_id) ?? 0) + s.sale_total);
+      }
     }
+
+    // Effective sold total: use orders.sold_total, fall back to sum of linked sales.sale_total
+    const effectiveSoldTotal = (o: Order) => (o.sold_total ?? 0) > 0
+      ? (o.sold_total ?? 0)
+      : (saleTotalByOrderId.get(o.id) ?? 0);
 
     const monthlyRevenue = orders
       .filter((o) => {
-        if ((o.sold_total ?? 0) <= 0) return false;
+        if (effectiveSoldTotal(o) <= 0) return false;
         const d = parseDate(o.event_date);
         if (!d) return false;
         return d >= monthStart && d < nextMonth;
       })
-      .reduce((sum, o) => sum + (o.sold_total ?? 0), 0);
+      .reduce((sum, o) => sum + effectiveSoldTotal(o), 0);
 
     const monthlyCost = orders
       .filter((o) => {
-        if ((o.sold_total ?? 0) <= 0) return false;
+        if (effectiveSoldTotal(o) <= 0) return false;
         const d = parseDate(o.event_date);
         if (!d) return false;
         return d >= monthStart && d < nextMonth;
@@ -312,24 +321,24 @@ export default function DeskClient() {
 
     const monthlyProfit = orders
       .filter((o) => {
-        if ((o.sold_total ?? 0) <= 0) return false;
+        if (effectiveSoldTotal(o) <= 0) return false;
         const d = parseDate(o.event_date);
         if (!d) return false;
         return d >= monthStart && d < nextMonth;
       })
-      .reduce((sum, o) => sum + ((o.sold_total ?? 0) - getProportionalCost(o.total_cost, o.qty_bought, soldQtyByOrderId.get(o.id) ?? (o.qty_bought ?? 0), o.listing_status)), 0);
+      .reduce((sum, o) => sum + (effectiveSoldTotal(o) - getProportionalCost(o.total_cost, o.qty_bought, soldQtyByOrderId.get(o.id) ?? (o.qty_bought ?? 0), o.listing_status)), 0);
 
     const monthlyROI = monthlyCost > 0 ? (monthlyProfit / monthlyCost) * 100 : null;
 
     // Yearly profit (April to April FY)
     const yearlyProfit = orders
       .filter((o) => {
-        if ((o.sold_total ?? 0) <= 0) return false;
+        if (effectiveSoldTotal(o) <= 0) return false;
         const d = parseDate(o.event_date);
         if (!d) return false;
         return d >= fyStart && d < fyEnd;
       })
-      .reduce((sum, o) => sum + ((o.sold_total ?? 0) - getProportionalCost(o.total_cost, o.qty_bought, soldQtyByOrderId.get(o.id) ?? (o.qty_bought ?? 0), o.listing_status)), 0);
+      .reduce((sum, o) => sum + (effectiveSoldTotal(o) - getProportionalCost(o.total_cost, o.qty_bought, soldQtyByOrderId.get(o.id) ?? (o.qty_bought ?? 0), o.listing_status)), 0);
 
     // Projections based on daily run rate
     const daysInMonth = new Date(selectedMonth.year, selectedMonth.month + 1, 0).getDate();
@@ -345,10 +354,10 @@ export default function DeskClient() {
     // Best performing event (all time) by profit
     const eventProfitMap = new Map<string, number>();
     for (const o of orders) {
-      if ((o.sold_total ?? 0) <= 0) continue;
+      if (effectiveSoldTotal(o) <= 0) continue;
       const name = o.event_name ?? "Untitled";
       const effCost = getProportionalCost(o.total_cost, o.qty_bought, soldQtyByOrderId.get(o.id) ?? (o.qty_bought ?? 0), o.listing_status);
-      const profit = (o.sold_total ?? 0) - effCost;
+      const profit = effectiveSoldTotal(o) - effCost;
       eventProfitMap.set(name, (eventProfitMap.get(name) ?? 0) + profit);
     }
     let bestEvent = "";
@@ -396,8 +405,8 @@ export default function DeskClient() {
       .reduce((sum, o) => sum + (o.total_cost ?? 0), 0);
 
     const closedProfit = orders
-      .filter((o) => (o.sold_total ?? 0) > 0)
-      .reduce((sum, o) => sum + ((o.sold_total ?? 0) - getProportionalCost(o.total_cost, o.qty_bought, soldQtyByOrderId.get(o.id) ?? (o.qty_bought ?? 0), o.listing_status)), 0);
+      .filter((o) => effectiveSoldTotal(o) > 0)
+      .reduce((sum, o) => sum + (effectiveSoldTotal(o) - getProportionalCost(o.total_cost, o.qty_bought, soldQtyByOrderId.get(o.id) ?? (o.qty_bought ?? 0), o.listing_status)), 0);
 
     const availableCount = orders.filter(
       (o) => o.listing_status !== "Sold" && o.listing_status !== "Archived",
