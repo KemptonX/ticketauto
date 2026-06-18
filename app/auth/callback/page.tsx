@@ -29,6 +29,22 @@ function AuthCallbackInner() {
         return;
       }
 
+      // Restore the PKCE verifier from our backup cookie (set before the OAuth redirect)
+      // in case the browser cleared localStorage during the cross-site navigation.
+      try {
+        const getCookie = (name: string) => {
+          const c = document.cookie.split("; ").find((r) => r.startsWith(`${name}=`));
+          return c ? decodeURIComponent(c.slice(name.length + 1)) : null;
+        };
+        const key = getCookie("pkce_k");
+        const verifier = getCookie("pkce_v");
+        if (key && verifier) {
+          localStorage.setItem(key, verifier);
+          // Also write as a cookie in case @supabase/ssr reads from there
+          document.cookie = `${key}=${encodeURIComponent(verifier)}; path=/; max-age=60; SameSite=Lax`;
+        }
+      } catch { /* non-fatal */ }
+
       setStatus("Exchanging code for session…");
       const { data, error } = await supabase.auth.exchangeCodeForSession(code);
 

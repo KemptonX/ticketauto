@@ -31,17 +31,37 @@ export default function LoginForm() {
     setLoading(true);
     setError("");
     setMessage("");
-    const { error: oauthError } = await supabase.auth.signInWithOAuth({
+
+    // skipBrowserRedirect so we can back up the PKCE verifier before navigating away
+    const { data, error: oauthError } = await supabase.auth.signInWithOAuth({
       provider: "discord",
       options: {
         redirectTo: `${window.location.origin}/auth/callback`,
+        skipBrowserRedirect: true,
       },
     });
-    if (oauthError) {
-      setError(oauthError.message);
+
+    if (oauthError || !data.url) {
+      setError(oauthError?.message ?? "Failed to start Discord login");
       setLoading(false);
+      return;
     }
-    // On success, Supabase redirects the browser — no further action needed here
+
+    // Back up the PKCE verifier to a cookie before leaving this domain.
+    // Safari ITP / Firefox ETP can wipe localStorage during cross-site redirects
+    // (Discord → Supabase → back here), so we persist it ourselves.
+    try {
+      const ref = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL!).hostname.split(".")[0];
+      const key = `sb-${ref}-auth-token-code-verifier`;
+      const verifier = localStorage.getItem(key)
+        ?? document.cookie.split("; ").find((c) => c.startsWith(`${key}=`))?.slice(key.length + 1) ?? null;
+      if (verifier) {
+        document.cookie = `pkce_k=${encodeURIComponent(key)}; path=/; max-age=600; SameSite=Lax`;
+        document.cookie = `pkce_v=${encodeURIComponent(verifier)}; path=/; max-age=600; SameSite=Lax`;
+      }
+    } catch { /* non-fatal */ }
+
+    window.location.href = data.url;
   }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
