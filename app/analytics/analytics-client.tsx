@@ -33,6 +33,15 @@ type MetricCard = {
   tone?: "default" | "profit" | "risk";
 };
 
+type SaleMetrics = {
+  revenueReceived: number;
+  revenuePending: number;
+  awaitingTransfer: number;
+  transferCompleted: number;
+  paidSalesCount: number;
+  totalSalesCount: number;
+};
+
 type SeriesPoint = {
   label: string;
   profit: number;
@@ -70,6 +79,7 @@ type DatePreset = "all" | "this-week" | "this-month" | "this-year" | "last-year"
 
 export default function AnalyticsClient() {
   const [orders, setOrders] = useState<Order[]>([]);
+  const [saleMetrics, setSaleMetrics] = useState<SaleMetrics | null>(null);
   const [soldAtMap, setSoldAtMap] = useState<Record<number, string>>({});
   const [soldQtyByOrderId, setSoldQtyByOrderId] = useState<Map<number, number>>(new Map());
   const [loading, setLoading] = useState(true);
@@ -184,9 +194,10 @@ export default function AnalyticsClient() {
       setLoading(true);
     }
 
-    const [ordersResult, salesResult] = await Promise.all([
+    const [ordersResult, salesResult, saleMetricsResult] = await Promise.all([
       supabase.from("orders").select("*").or("listing_status.is.null,listing_status.not.in.(Ignored,Personal)").order("created_at", { ascending: true }),
       supabase.from("sales").select("inventory_order_id, sold_at, qty_sold").not("inventory_order_id", "is", null),
+      supabase.from("sales").select("payment_status, transfer_status, payout_total, sale_total").not("sale_status", "in", '("Archived","Deleted","Cancelled / Issue")'),
     ]);
 
     if (ordersResult.error) {
@@ -196,6 +207,19 @@ export default function AnalyticsClient() {
       if (showRefreshing) {
         setMessage("Analytics refreshed");
       }
+    }
+
+    if (!saleMetricsResult.error && saleMetricsResult.data) {
+      const sm = saleMetricsResult.data as { payment_status: string | null; transfer_status: string | null; payout_total: number | null; sale_total: number | null }[];
+      let revenueReceived = 0, revenuePending = 0, awaitingTransfer = 0, transferCompleted = 0, paidSalesCount = 0;
+      for (const s of sm) {
+        const amount = s.payout_total ?? s.sale_total ?? 0;
+        if (s.payment_status === "Paid") { revenueReceived += amount; paidSalesCount++; }
+        else revenuePending += amount;
+        if ((s.transfer_status || "Awaiting Transfer") === "Awaiting Transfer") awaitingTransfer++;
+        else transferCompleted++;
+      }
+      setSaleMetrics({ revenueReceived, revenuePending, awaitingTransfer, transferCompleted, paidSalesCount, totalSalesCount: sm.length });
     }
 
     if (!salesResult.error && salesResult.data) {
@@ -557,6 +581,44 @@ export default function AnalyticsClient() {
             </article>
           ))}
         </section>
+
+        {saleMetrics && (
+          <section className="table-card">
+            <div className="table-card-header">
+              <div>
+                <p className="section-tag">Sales operations</p>
+                <h4>Payment &amp; transfer status</h4>
+              </div>
+              <span className="table-count">{saleMetrics.totalSalesCount} active sales</span>
+            </div>
+            <div className="drawer-summary" style={{ gridTemplateColumns: "repeat(6, 1fr)" }}>
+              <div>
+                <span>Revenue received</span>
+                <strong style={{ color: "#4ade80" }}>{formatCurrency(saleMetrics.revenueReceived)}</strong>
+              </div>
+              <div>
+                <span>Revenue pending</span>
+                <strong style={{ color: "#fbbf24" }}>{formatCurrency(saleMetrics.revenuePending)}</strong>
+              </div>
+              <div>
+                <span>Awaiting transfer</span>
+                <strong style={{ color: "#f97316" }}>{saleMetrics.awaitingTransfer}</strong>
+              </div>
+              <div>
+                <span>Transfer completed</span>
+                <strong style={{ color: "#4fc3ff" }}>{saleMetrics.transferCompleted}</strong>
+              </div>
+              <div>
+                <span>Paid sales</span>
+                <strong>{saleMetrics.paidSalesCount}</strong>
+              </div>
+              <div>
+                <span>Unpaid sales</span>
+                <strong>{saleMetrics.totalSalesCount - saleMetrics.paidSalesCount}</strong>
+              </div>
+            </div>
+          </section>
+        )}
 
         {loading ? (
           <section className="table-card">

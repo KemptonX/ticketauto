@@ -8,6 +8,7 @@ import { formatCurrency } from "@/src/lib/currency";
 import { loadTemplate, interpolate } from "@/src/lib/email-template";
 import { SidebarLogo, NavIcon, SidebarFooter } from "@/app/components/nav-icons";
 import ShareBannerModal, { ShareMultiBannerModal, type MultiSaleStats } from "./ShareBannerModal";
+import SalesImportModal from "./SalesImportModal";
 
 type Sale = {
   id: number;
@@ -35,6 +36,14 @@ type Sale = {
   match_confidence: number | null;
   split_of_sale_id: number | null;
   created_at: string | null;
+  transfer_date: string | null;
+  payout_date: string | null;
+  expected_payout_date: string | null;
+  marketplace: string | null;
+  buyer_name: string | null;
+  transfer_status: string | null;
+  payment_status: string | null;
+  notes: string | null;
 };
 
 type MatchedOrder = {
@@ -81,6 +90,12 @@ type SaleGroup = {
   matchedCount: number;
   unmatchedCount: number;
   hasNew: boolean;
+  awaitingTransferQty: number;
+  transferCompletedQty: number;
+  awaitingPaymentAmount: number;
+  paidAmount: number;
+  buyerDisplay: string;
+  inventoryLinked: boolean;
 };
 
 const navItems = [
@@ -120,12 +135,14 @@ export default function SalesClient() {
   const [matchFilter, setMatchFilter] = useState("All");
   const [accountFilter, setAccountFilter] = useState("All");
   const [sortBy, setSortBy] = useState("recently-sold");
+  const [statusFilter, setStatusFilter] = useState("All");
   const [expandedGroups, setExpandedGroups] = useState<string[]>([]);
   const [selectedSaleId, setSelectedSaleId] = useState<number | null>(null);
   const [matchingOrderId, setMatchingOrderId] = useState<number | null>(null);
   const [unmatching, setUnmatching] = useState(false);
   const [savingSale, setSavingSale] = useState(false);
-  const [saleEdits, setSaleEdits] = useState<{ qty_sold: string; price_per_ticket: string; sale_total: string; payout_total: string } | null>(null);
+  const [saleEdits, setSaleEdits] = useState<{ qty_sold: string; price_per_ticket: string; sale_total: string; payout_total: string; sale_status: string; transfer_status: string; payment_status: string; transfer_date: string; payout_date: string; expected_payout_date: string; marketplace: string; buyer_name: string; notes: string } | null>(null);
+  const [showImportModal, setShowImportModal] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
   const [showDeleted, setShowDeleted] = useState(false);
   const [manualSearch, setManualSearch] = useState("");
@@ -174,6 +191,15 @@ export default function SalesClient() {
         price_per_ticket: selectedSaleRaw.price_per_ticket != null ? String(selectedSaleRaw.price_per_ticket) : "",
         sale_total: selectedSaleRaw.sale_total != null ? String(selectedSaleRaw.sale_total) : "",
         payout_total: selectedSaleRaw.payout_total != null ? String(selectedSaleRaw.payout_total) : "",
+        sale_status: selectedSaleRaw.sale_status || "Sold – Awaiting Transfer",
+        transfer_status: selectedSaleRaw.transfer_status || "Awaiting Transfer",
+        payment_status: selectedSaleRaw.payment_status || "Awaiting Payment",
+        transfer_date: selectedSaleRaw.transfer_date ? selectedSaleRaw.transfer_date.slice(0, 16) : "",
+        payout_date: selectedSaleRaw.payout_date ? selectedSaleRaw.payout_date.slice(0, 16) : "",
+        expected_payout_date: selectedSaleRaw.expected_payout_date ? selectedSaleRaw.expected_payout_date.slice(0, 16) : "",
+        marketplace: selectedSaleRaw.marketplace || "",
+        buyer_name: selectedSaleRaw.buyer_name || "",
+        notes: selectedSaleRaw.notes || "",
       });
     } else {
       setSaleEdits(null);
@@ -192,10 +218,19 @@ export default function SalesClient() {
     const price_per_ticket = saleEdits.price_per_ticket !== "" ? Number(saleEdits.price_per_ticket) : null;
     const sale_total = saleEdits.sale_total !== "" ? Number(saleEdits.sale_total) : null;
     const payout_total = saleEdits.payout_total !== "" ? Number(saleEdits.payout_total) : null;
+    const sale_status = saleEdits.sale_status || selectedSaleRaw.sale_status || "Sold – Awaiting Transfer";
+    const transfer_status = saleEdits.transfer_status || "Awaiting Transfer";
+    const payment_status = saleEdits.payment_status || "Awaiting Payment";
+    const transfer_date = saleEdits.transfer_date ? new Date(saleEdits.transfer_date).toISOString() : null;
+    const payout_date = saleEdits.payout_date ? new Date(saleEdits.payout_date).toISOString() : null;
+    const expected_payout_date = saleEdits.expected_payout_date ? new Date(saleEdits.expected_payout_date).toISOString() : null;
+    const marketplace = saleEdits.marketplace || null;
+    const buyer_name = saleEdits.buyer_name || null;
+    const notes = saleEdits.notes || null;
 
     const { error } = await supabase
       .from("sales")
-      .update({ qty_sold, price_per_ticket, sale_total, payout_total })
+      .update({ qty_sold, price_per_ticket, sale_total, payout_total, sale_status, transfer_status, payment_status, transfer_date, payout_date, expected_payout_date, marketplace, buyer_name, notes })
       .eq("id", selectedSaleRaw.id);
 
     if (error) {
@@ -204,18 +239,23 @@ export default function SalesClient() {
       return;
     }
 
-    setSales((current) =>
-      current.map((s) =>
-        s.id === selectedSaleRaw.id ? { ...s, qty_sold, price_per_ticket, sale_total, payout_total } : s,
-      ),
-    );
+    if (sale_status === "Paid" && !showArchived && !showDeleted) {
+      setSales((current) => current.filter((s) => s.id !== selectedSaleRaw.id));
+      setSelectedSaleId(null);
+    } else {
+      setSales((current) =>
+        current.map((s) =>
+          s.id === selectedSaleRaw.id ? { ...s, qty_sold, price_per_ticket, sale_total, payout_total, sale_status, transfer_status, payment_status, transfer_date, payout_date, expected_payout_date, marketplace, buyer_name, notes } : s,
+        ),
+      );
+    }
 
     if (selectedSaleRaw.inventory_order_id != null) {
       await syncOrderFromSales(selectedSaleRaw.inventory_order_id);
     }
 
     setSavingSale(false);
-    setMessage("Sale updated");
+    setMessage(sale_status === "Paid" && !showArchived && !showDeleted ? "Sale marked as Paid — moved to Archived" : "Sale updated");
   }
 
 
@@ -234,8 +274,8 @@ export default function SalesClient() {
     const query = supabase.from("sales").select("*").order("sold_at", { ascending: false }).order("created_at", { ascending: false });
     const { data, error } = await (
       deleted ? query.eq("sale_status", "Deleted")
-      : archived ? query.eq("sale_status", "Archived")
-      : query.not("sale_status", "in", '("Archived","Deleted")')
+      : archived ? query.in("sale_status", ["Archived", "Paid"])
+      : query.not("sale_status", "in", '("Archived","Deleted","Paid")')
     );
 
     if (error) {
@@ -279,25 +319,56 @@ export default function SalesClient() {
   }
 
   function exportSalesCSV() {
-    const headers = ["Sale ID", "Event", "Venue", "Event Date", "Sold At", "Account", "Buyer Email", "Qty", "Price Per Ticket", "Sale Total", "Payout", "Currency", "Section", "Row", "Seat From", "Seat To", "Status", "Matched Order ID"];
+    const headers = [
+      "Sale Reference",
+      "Event Name",
+      "Venue",
+      "Event Date",
+      "Section",
+      "Row",
+      "Seat From",
+      "Seat To",
+      "Qty Sold",
+      "Sale Date",
+      "Sale Total",
+      "Payout Total",
+      "Platform",
+      "Buyer Name",
+      "Buyer Email",
+      "Sale Status",
+      "Transfer Status",
+      "Transfer Date",
+      "Payment Status",
+      "Expected Payout Date",
+      "Payout Date",
+      "Notes",
+      "Account",
+      "Matched Order ID",
+    ];
     const rows = sales.map((s) => [
-      s.external_sale_id ?? s.id,
+      s.external_sale_id ?? "",
       s.event_name ?? "",
       s.venue ?? "",
       s.event_date ?? "",
-      s.sold_at ?? "",
-      s.account_email ?? "",
-      s.buyer_email ?? "",
-      s.qty_sold ?? "",
-      s.price_per_ticket ?? "",
-      s.sale_total ?? "",
-      s.payout_total ?? "",
-      s.currency ?? "",
       s.section ?? "",
       s.row ?? "",
       s.seat_from ?? "",
       s.seat_to ?? "",
+      s.qty_sold ?? "",
+      s.sold_at ?? "",
+      s.sale_total ?? "",
+      s.payout_total ?? "",
+      s.marketplace ?? "",
+      s.buyer_name ?? "",
+      s.buyer_email ?? "",
       s.sale_status ?? "",
+      s.transfer_status ?? "",
+      s.transfer_date ?? "",
+      s.payment_status ?? "",
+      s.expected_payout_date ?? "",
+      s.payout_date ?? "",
+      s.notes ?? "",
+      s.account_email ?? "",
       s.inventory_order_id ?? "",
     ]);
     downloadCSV(`sales-${dateStamp()}.csv`, headers, rows);
@@ -724,7 +795,7 @@ export default function SalesClient() {
       row: order?.row ?? null,
       seat_from: order?.seat_from ?? null,
       seat_to: order?.seat_to ?? null,
-      sale_status: "Sold",
+      sale_status: "Sold – Awaiting Transfer",
       inventory_order_id: order?.id ?? null,
       match_confidence: order ? 1 : null,
     };
@@ -836,6 +907,7 @@ export default function SalesClient() {
     setMatchFilter("All");
     setAccountFilter("All");
     setSortBy("recently-sold");
+    setStatusFilter("All");
   }
 
   const accountOptions = useMemo(() => {
@@ -844,6 +916,35 @@ export default function SalesClient() {
       .filter((value): value is string => Boolean(value));
 
     return ["All", ...new Set(values)];
+  }, [sales]);
+
+  const platformOptions = useMemo(() => {
+    const presets = ["Viagogo", "StubHub", "Lysted", "Private Broker", "Ticketmaster", "AXS"];
+    const fromSales = sales
+      .map((s) => s.marketplace)
+      .filter((v): v is string => Boolean(v));
+    const merged = [...new Set([...presets, ...fromSales])].sort();
+    return merged;
+  }, [sales]);
+
+  const lifecycleMetrics = useMemo(() => {
+    let ticketsSold = 0, revenueReceived = 0, awaitingPayment = 0, awaitingTransferCount = 0;
+    for (const s of sales) {
+      ticketsSold += s.qty_sold ?? 0;
+      const payout = s.payout_total ?? s.sale_total ?? 0;
+      const payStatus = s.payment_status || "Awaiting Payment";
+      const saleStatus = s.sale_status || "Sold – Awaiting Transfer";
+      if (payStatus === "Paid" || saleStatus === "Paid" || saleStatus === "Sold") {
+        revenueReceived += payout;
+      } else if (saleStatus !== "Cancelled / Issue") {
+        awaitingPayment += payout;
+      }
+      const transStatus = s.transfer_status || "Awaiting Transfer";
+      if (transStatus === "Awaiting Transfer" && saleStatus !== "Cancelled / Issue") {
+        awaitingTransferCount += 1;
+      }
+    }
+    return { ticketsSold, revenueReceived, awaitingPayment, awaitingTransferCount };
   }, [sales]);
 
   const filteredSales = useMemo(() => {
@@ -861,12 +962,19 @@ export default function SalesClient() {
 
       const matchesAccount = accountFilter === "All" || sale.account_email === accountFilter;
 
-      return matchesSearch && matchesMatch && matchesAccount;
+      const effectiveStatus = sale.sale_status || "Sold – Awaiting Transfer";
+      const matchesStatus =
+        statusFilter === "All" ||
+        effectiveStatus === statusFilter ||
+        (statusFilter === "Paid" && effectiveStatus === "Sold");
+
+      return matchesSearch && matchesMatch && matchesAccount && matchesStatus;
     });
-  }, [sales, search, matchFilter, accountFilter]);
+  }, [sales, search, matchFilter, accountFilter, statusFilter]);
 
   const groupedSales = useMemo(() => {
     const map = new Map<string, SaleGroup>();
+    const buyersByKey = new Map<string, Set<string>>();
 
     for (const sale of filteredSales) {
       const eventName = sale.event_name || "Untitled sale";
@@ -896,6 +1004,12 @@ export default function SalesClient() {
           matchedCount: 0,
           unmatchedCount: 0,
           hasNew: false,
+          awaitingTransferQty: 0,
+          transferCompletedQty: 0,
+          awaitingPaymentAmount: 0,
+          paidAmount: 0,
+          buyerDisplay: "",
+          inventoryLinked: false,
         });
       }
 
@@ -909,8 +1023,22 @@ export default function SalesClient() {
       if (sale.split_of_sale_id == null) {
         group.salesCount += 1;
         if (sale.created_at && new Date(sale.created_at).getTime() > Date.now() - 86400000) group.hasNew = true;
-        if (sale.inventory_order_id != null) group.matchedCount += 1;
+        if (sale.inventory_order_id != null) { group.matchedCount += 1; group.inventoryLinked = true; }
         else group.unmatchedCount += 1;
+
+        const transferStatus = sale.transfer_status || "Awaiting Transfer";
+        const paymentStatus = sale.payment_status || "Awaiting Payment";
+        const saleStatus = sale.sale_status || "Sold – Awaiting Transfer";
+        if (transferStatus === "Awaiting Transfer") group.awaitingTransferQty += ticketsSold;
+        else if (transferStatus === "Transfer Completed") group.transferCompletedQty += ticketsSold;
+        if (paymentStatus === "Paid" || saleStatus === "Paid") group.paidAmount += soldFor;
+        else if (saleStatus !== "Cancelled / Issue") group.awaitingPaymentAmount += soldFor;
+
+        const platform = sale.marketplace;
+        if (platform) {
+          if (!buyersByKey.has(key)) buyersByKey.set(key, new Set());
+          buyersByKey.get(key)!.add(platform);
+        }
       }
       // But always count tickets, revenue, and cost (overflows contribute real qty and revenue)
       group.ticketsSold += ticketsSold;
@@ -919,6 +1047,24 @@ export default function SalesClient() {
       if (sale.inventory_order_id != null) {
         group.profit += profit ?? 0;
       }
+    }
+
+    // Resolve buyer display for each group
+    for (const [key, group] of map) {
+      const buyers = Array.from(buyersByKey.get(key) ?? new Set<string>()).filter(Boolean);
+      group.buyerDisplay = buyers.length === 0 ? "" : buyers.length === 1 ? buyers[0] : "Multiple";
+    }
+
+    // Sort sales within each group by section → row → seat_from (numeric)
+    for (const group of map.values()) {
+      group.sales.sort((a, b) => {
+        const secCmp = (a.section || "").localeCompare(b.section || "");
+        if (secCmp !== 0) return secCmp;
+        const rowA = parseInt(a.row || "0") || a.row?.charCodeAt(0) || 0;
+        const rowB = parseInt(b.row || "0") || b.row?.charCodeAt(0) || 0;
+        if (rowA !== rowB) return rowA - rowB;
+        return (parseInt(a.seat_from || "0") || 0) - (parseInt(b.seat_from || "0") || 0);
+      });
     }
 
     return Array.from(map.values()).sort((a, b) => {
@@ -1058,6 +1204,9 @@ export default function SalesClient() {
                 <button className="secondary-button" onClick={() => void scanSalesNow()} disabled={scanning} type="button">
                   {scanning ? "Scanning..." : "Scan Sales"}
                 </button>
+                <button className="secondary-button" onClick={() => setShowImportModal(true)} type="button">
+                  Import CSV
+                </button>
                 <button className="primary-button" onClick={openAddSale} type="button">
                   + Add Sale
                 </button>
@@ -1072,6 +1221,32 @@ export default function SalesClient() {
             <span>{message}</span>
           </div>
         ) : null}
+
+        <div style={{ display: "flex", gap: 10, paddingBottom: 16, flexWrap: "wrap" }}>
+          {([
+            { label: "Tickets Sold",      value: String(lifecycleMetrics.ticketsSold),             color: "rgba(255,255,255,0.9)", filterStatus: null },
+            { label: "Revenue Received",  value: formatCurrency(lifecycleMetrics.revenueReceived), color: "#4ade80",              filterStatus: "Paid" },
+            { label: "Awaiting Payment",  value: formatCurrency(lifecycleMetrics.awaitingPayment), color: "#fbbf24",              filterStatus: null },
+            { label: "Awaiting Transfer", value: String(lifecycleMetrics.awaitingTransferCount),   color: "#f97316",              filterStatus: "Sold – Awaiting Transfer" },
+          ] as const).map((m) => (
+            <div
+              key={m.label}
+              onClick={m.filterStatus ? () => setStatusFilter(statusFilter === m.filterStatus ? "All" : m.filterStatus!) : undefined}
+              style={{
+                flex: "1 1 130px",
+                background: statusFilter === m.filterStatus ? "rgba(255,255,255,0.07)" : "rgba(255,255,255,0.03)",
+                border: `1px solid ${statusFilter === m.filterStatus ? "rgba(255,255,255,0.18)" : "rgba(255,255,255,0.08)"}`,
+                borderRadius: 10,
+                padding: "12px 16px",
+                cursor: m.filterStatus ? "pointer" : "default",
+                transition: "all 150ms ease",
+              }}
+            >
+              <div style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>{m.label}</div>
+              <div style={{ fontSize: 18, fontWeight: 700, color: m.color }}>{m.value}</div>
+            </div>
+          ))}
+        </div>
 
         <section className="command-card">
           <div className="command-header">
@@ -1131,6 +1306,16 @@ export default function SalesClient() {
                     {option}
                   </option>
                 ))}
+              </select>
+            </label>
+            <label className="filter-field">
+              <span className="filter-label">Status</span>
+              <select className="field" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+                <option value="All">All statuses</option>
+                <option value="Sold – Awaiting Transfer">Awaiting Transfer</option>
+                <option value="Sold – Transfer Completed">Transfer Completed</option>
+                <option value="Paid">Paid</option>
+                <option value="Cancelled / Issue">Cancelled / Issue</option>
               </select>
             </label>
             <label className="filter-field">
@@ -1201,14 +1386,39 @@ export default function SalesClient() {
                             <span>Sold for</span>
                             <strong>{formatCurrency(group.soldFor)}</strong>
                           </div>
-                          <div className="inventory-metric-chip">
-                            <span>Profit</span>
-                            <strong className={getDeltaTone(group.profit)}>
-                              {group.matchedCount > 0 ? renderDeltaValue(group.profit) : "—"}
-                            </strong>
-                          </div>
+                          {group.buyerDisplay && (
+                            <div className="inventory-metric-chip">
+                              <span>Platform</span>
+                              <strong>{group.buyerDisplay}</strong>
+                            </div>
+                          )}
+                          {group.awaitingPaymentAmount > 0 && (
+                            <div className="inventory-metric-chip">
+                              <span>Awaiting</span>
+                              <strong style={{ color: "#fbbf24" }}>{formatCurrency(group.awaitingPaymentAmount)}</strong>
+                            </div>
+                          )}
                           <div className="inventory-status-row">
-                            <span className="status-badge status-static status-sold">Matched {group.matchedCount}</span>
+                            {group.awaitingTransferQty > 0 && (
+                              <span className="status-badge status-static" style={{ background: "rgba(249,115,22,0.15)", color: "#f97316", border: "1px solid rgba(249,115,22,0.3)" }}>
+                                {group.awaitingTransferQty} to transfer
+                              </span>
+                            )}
+                            {group.transferCompletedQty > 0 && (
+                              <span className="status-badge status-static" style={{ background: "rgba(79,195,255,0.12)", color: "#4fc3ff", border: "1px solid rgba(79,195,255,0.25)" }}>
+                                {group.transferCompletedQty} transferred
+                              </span>
+                            )}
+                            {group.paidAmount > 0 && (
+                              <span className="status-badge status-static" style={{ background: "rgba(74,222,128,0.12)", color: "#4ade80", border: "1px solid rgba(74,222,128,0.25)" }}>
+                                Paid {formatCurrency(group.paidAmount)}
+                              </span>
+                            )}
+                            {group.inventoryLinked && (
+                              <span className="status-badge status-static" style={{ background: "rgba(155,92,255,0.12)", color: "#9b5cff", border: "1px solid rgba(155,92,255,0.25)" }}>
+                                Inventory linked
+                              </span>
+                            )}
                             {group.unmatchedCount > 0 && (
                               <span className="status-badge status-static status-problem">Review {group.unmatchedCount}</span>
                             )}
@@ -1295,7 +1505,7 @@ export default function SalesClient() {
                           <span>Account</span>
                           <span>Buyer</span>
                           <span>Value</span>
-                          <span>Match</span>
+                          <span>Status</span>
                           <span></span>
                         </div>
                         {group.sales.map((sale) => {
@@ -1328,9 +1538,13 @@ export default function SalesClient() {
                                     style={{ width: 15, height: 15, cursor: "pointer", accentColor: "#9b5cff", flexShrink: 0 }}
                                   />
                                   <div className="inventory-ticket-seat">
-                                    <strong>{sale.section || "Section —"}</strong>
-                                    <span>{formatSeatLabel(sale.row, sale.seat_from, sale.seat_to)}</span>
+                                    <strong>{formatFullSeatLabel(sale.section, sale.row, sale.seat_from, sale.seat_to)}</strong>
                                     <span className="sale-qty-badge">{sale.qty_sold ?? 1} ticket{(sale.qty_sold ?? 1) !== 1 ? "s" : ""}</span>
+                                    {(sale.buyer_name || sale.marketplace) && (
+                                      <span style={{ fontSize: 10, color: "rgba(255,255,255,0.45)", fontStyle: "italic" }}>
+                                        {[sale.buyer_name, sale.marketplace].filter(Boolean).join(" · ")}
+                                      </span>
+                                    )}
                                     {sale.external_sale_id && <span className="sale-id-chip">{sale.external_sale_id}</span>}
                                     {isNew && <span className="new-badge new-badge-inline">New</span>}
                                     {sale.split_of_sale_id != null && <span className="new-badge new-badge-inline" style={{ background: "rgba(255,180,0,0.15)", color: "#f5c842", borderColor: "rgba(255,180,0,0.3)" }}>↳ Split</span>}
@@ -1348,8 +1562,11 @@ export default function SalesClient() {
                                 <strong className="inventory-cost-value">
                                   {formatCurrency(sale.payout_total ?? sale.sale_total)}
                                 </strong>
-                                <span className={`status-badge status-static ${sale.inventory_order_id != null ? "status-sold" : "status-problem"}`}>
-                                  {sale.inventory_order_id != null ? "Matched" : "Unmatched"}
+                                <span
+                                  className="status-badge status-static"
+                                  style={getLifecycleBadgeStyle(sale.sale_status)}
+                                >
+                                  {getLifecycleLabel(sale.sale_status)}
                                 </span>
                                 <button
                                   type="button"
@@ -1529,8 +1746,8 @@ export default function SalesClient() {
                 <small>{formatEventDate(selectedSale.event_date)}</small>
               </div>
               <div className="drawer-hero-meta">
-                <span className={`status-badge status-static ${selectedSale.inventory_order_id != null ? "status-sold" : "status-problem"}`}>
-                  {selectedSale.inventory_order_id != null ? "Matched" : "Needs review"}
+                <span className="status-badge status-static" style={getLifecycleBadgeStyle(selectedSale.sale_status)}>
+                  {getLifecycleLabel(selectedSale.sale_status)}
                 </span>
                 <strong className={`drawer-profit ${getDeltaTone(selectedProfit)}`}>
                   {selectedSale.inventory_order_id != null ? renderDeltaValue(selectedProfit, true) : "Needs match"}
@@ -1622,6 +1839,116 @@ export default function SalesClient() {
                 <span>Match confidence</span>
                 <div className="field">{selectedSale.match_confidence != null ? selectedSale.match_confidence.toFixed(2) : "—"}</div>
               </label>
+              <label style={{ gridColumn: "1 / -1" }}>
+                <span>Lifecycle status</span>
+                <select
+                  className="field"
+                  value={saleEdits?.sale_status ?? selectedSale.sale_status ?? "Sold – Awaiting Transfer"}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    setSaleEdits((prev) => {
+                      if (!prev) return prev;
+                      const today = new Date().toISOString().slice(0, 16);
+                      const needsTransfer = ["Sold – Transfer Completed", "Paid"].includes(next);
+                      return {
+                        ...prev,
+                        sale_status: next,
+                        transfer_status: needsTransfer ? "Transfer Completed" : prev.transfer_status,
+                        payment_status: next === "Paid" ? "Paid" : prev.payment_status,
+                        transfer_date: needsTransfer && !prev.transfer_date ? today : prev.transfer_date,
+                        payout_date: next === "Paid" && !prev.payout_date ? today : prev.payout_date,
+                      };
+                    });
+                  }}
+                >
+                  <option value="Sold – Awaiting Transfer">Sold – Awaiting Transfer</option>
+                  <option value="Sold – Transfer Completed">Sold – Transfer Completed</option>
+                  <option value="Paid">Paid</option>
+                  <option value="Cancelled / Issue">Cancelled / Issue</option>
+                </select>
+              </label>
+              <label>
+                <span>Transfer date</span>
+                <input
+                  className="field"
+                  type="datetime-local"
+                  value={saleEdits?.transfer_date ?? ""}
+                  onChange={(e) => setSaleEdits((prev) => prev ? { ...prev, transfer_date: e.target.value } : prev)}
+                />
+              </label>
+              <label>
+                <span>Expected payout date</span>
+                <input
+                  className="field"
+                  type="datetime-local"
+                  value={saleEdits?.expected_payout_date ?? ""}
+                  onChange={(e) => setSaleEdits((prev) => prev ? { ...prev, expected_payout_date: e.target.value } : prev)}
+                />
+              </label>
+              <label>
+                <span>Payment received date</span>
+                <input
+                  className="field"
+                  type="datetime-local"
+                  value={saleEdits?.payout_date ?? ""}
+                  onChange={(e) => setSaleEdits((prev) => prev ? { ...prev, payout_date: e.target.value } : prev)}
+                />
+              </label>
+              <label>
+                <span>Buyer / Broker name</span>
+                <input
+                  className="field"
+                  placeholder="e.g. John Smith, Private"
+                  value={saleEdits?.buyer_name ?? ""}
+                  onChange={(e) => setSaleEdits((prev) => prev ? { ...prev, buyer_name: e.target.value } : prev)}
+                />
+              </label>
+              <label>
+                <span>Platform</span>
+                <select
+                  className="field"
+                  value={saleEdits?.marketplace ?? ""}
+                  onChange={(e) => setSaleEdits((prev) => prev ? { ...prev, marketplace: e.target.value } : prev)}
+                >
+                  <option value="">— Select platform —</option>
+                  {platformOptions.map((p) => (
+                    <option key={p} value={p}>{p}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span>Transfer status</span>
+                <select
+                  className="field"
+                  value={saleEdits?.transfer_status ?? "Awaiting Transfer"}
+                  onChange={(e) => setSaleEdits((prev) => prev ? { ...prev, transfer_status: e.target.value } : prev)}
+                >
+                  <option value="Awaiting Transfer">Awaiting Transfer</option>
+                  <option value="Transfer Completed">Transfer Completed</option>
+                </select>
+              </label>
+              <label>
+                <span>Payment status</span>
+                <select
+                  className="field"
+                  value={saleEdits?.payment_status ?? "Awaiting Payment"}
+                  onChange={(e) => setSaleEdits((prev) => prev ? { ...prev, payment_status: e.target.value } : prev)}
+                >
+                  <option value="Awaiting Payment">Awaiting Payment</option>
+                  <option value="Paid">Paid</option>
+                </select>
+              </label>
+              <label style={{ gridColumn: "1 / -1" }}>
+                <span>Notes</span>
+                <textarea
+                  className="field"
+                  rows={2}
+                  placeholder="Any notes about this sale..."
+                  value={saleEdits?.notes ?? ""}
+                  onChange={(e) => setSaleEdits((prev) => prev ? { ...prev, notes: e.target.value } : prev)}
+                  style={{ resize: "vertical", fontFamily: "inherit" }}
+                />
+              </label>
             </div>
 
             <div className="drawer-summary">
@@ -1638,8 +1965,8 @@ export default function SalesClient() {
                 <strong>{selectedOrder ? formatSeatLabel(selectedOrder.row, selectedOrder.seat_from, selectedOrder.seat_to) : "—"}</strong>
               </div>
               <div>
-                <span>Status</span>
-                <strong>{selectedSale.sale_status || "Sold"}</strong>
+                <span>Match status</span>
+                <strong>{selectedSale.inventory_order_id != null ? "Matched" : "Unmatched"}</strong>
               </div>
             </div>
 
@@ -1875,6 +2202,14 @@ export default function SalesClient() {
           </div>
       </aside>
       ) : null}
+
+      {showImportModal && (
+        <SalesImportModal
+          allOrders={allOrders}
+          onClose={() => setShowImportModal(false)}
+          onImported={() => { void loadSales(true); }}
+        />
+      )}
 
       {shareMultiOpen && selectedStats && (
         <ShareMultiBannerModal stats={selectedStats} onClose={() => setShareMultiOpen(false)} />
@@ -2143,6 +2478,33 @@ export default function SalesClient() {
       )}
     </div>
   );
+}
+
+function getLifecycleLabel(status: string | null): string {
+  switch (status) {
+    case "Sold – Awaiting Transfer": return "Awaiting Transfer";
+    case "Sold – Transfer Completed": return "Transfer Completed";
+    case "Paid": return "Paid";
+    case "Cancelled / Issue": return "Cancelled";
+    case "Sold": return "Paid";
+    default: return "Awaiting Transfer";
+  }
+}
+
+function getLifecycleBadgeStyle(status: string | null): React.CSSProperties {
+  switch (status) {
+    case "Sold – Awaiting Transfer":
+      return { background: "rgba(249,115,22,0.15)", color: "#f97316", borderColor: "rgba(249,115,22,0.3)" };
+    case "Sold – Transfer Completed":
+      return { background: "rgba(79,195,255,0.15)", color: "#4fc3ff", borderColor: "rgba(79,195,255,0.3)" };
+    case "Paid":
+    case "Sold":
+      return { background: "rgba(74,222,128,0.15)", color: "#4ade80", borderColor: "rgba(74,222,128,0.3)" };
+    case "Cancelled / Issue":
+      return { background: "rgba(248,113,113,0.15)", color: "#f87171", borderColor: "rgba(248,113,113,0.3)" };
+    default:
+      return { background: "rgba(249,115,22,0.15)", color: "#f97316", borderColor: "rgba(249,115,22,0.3)" };
+  }
 }
 
 function getSaleProfit(sale: Sale, order?: MatchedOrder | null) {
@@ -2473,6 +2835,16 @@ function formatSeatLabel(row: string | null, seatFrom: string | null, seatTo: st
     : "Seat —";
 
   return row ? `Row ${row} • ${seatLabel}` : seatLabel;
+}
+
+function formatFullSeatLabel(section: string | null, row: string | null, seatFrom: string | null, seatTo: string | null) {
+  const parts: string[] = [];
+  if (section) parts.push(section);
+  if (row) parts.push(`Row ${row}`);
+  if (seatFrom) {
+    parts.push(seatTo && seatTo !== seatFrom ? `Seats ${seatFrom}–${seatTo}` : `Seat ${seatFrom}`);
+  }
+  return parts.length ? parts.join(" / ") : "—";
 }
 
 

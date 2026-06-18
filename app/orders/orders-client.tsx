@@ -258,7 +258,23 @@ export default function OrdersClient() {
       .not("listing_status", "in", '("Ignored","Personal")')
       .order("created_at", { ascending: false });
     if (error || !data) { setMessage("Export failed"); return; }
-    const headers = ["Booking Ref", "Event", "Venue", "Event Date", "Purchased At", "Account", "Section", "Row", "Seat From", "Seat To", "Qty", "Cost", "Sold Total", "Status", "Source"];
+    const headers = [
+      "Booking Ref",
+      "Event Name",
+      "Venue",
+      "Event Date",
+      "Purchased At",
+      "Account Email",
+      "Section",
+      "Row",
+      "Seat From",
+      "Seat To",
+      "Qty Bought",
+      "Total Cost",
+      "Sold Total",
+      "Ticket Status",
+      "Source",
+    ];
     const rows = (data as typeof orders).map((o) => [
       o.booking_ref ?? "",
       o.event_name ?? "",

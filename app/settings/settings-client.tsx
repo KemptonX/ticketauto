@@ -50,7 +50,8 @@ type ImportField = {
   key: string;
   label: string;
   aliases: string[];
-  dataType: "text" | "date" | "number" | "status";
+  dataType: "text" | "date" | "number" | "status" | "sale_status" | "transfer_status" | "payment_status";
+  group?: string;
   required?: boolean;
 };
 
@@ -74,109 +75,223 @@ const navItems = [
 // ─── Import field definitions ─────────────────────────────────────────────────
 
 const IMPORT_FIELDS: ImportField[] = [
+  // ── Ticket / Inventory ──
   {
-    key: "event_name",
+    key: "event_name", group: "Ticket / Inventory",
     label: "Event Name",
     aliases: ["event name", "event", "show", "concert", "match", "game", "act", "artist", "title", "name", "fixture", "performance"],
     dataType: "text",
     required: true,
   },
   {
-    key: "venue",
+    key: "venue", group: "Ticket / Inventory",
     label: "Venue",
     aliases: ["venue", "stadium", "arena", "location", "ground", "hall", "theatre", "theater", "place", "city"],
     dataType: "text",
   },
   {
-    key: "event_date",
+    key: "event_date", group: "Ticket / Inventory",
     label: "Event Date",
-    aliases: ["date", "event date", "show date", "match date", "game date", "when", "event_date", "event date", "event date time", "date time", "datetime"],
+    aliases: ["date", "event date", "show date", "match date", "game date", "when", "event_date", "event date time", "date time", "datetime"],
     dataType: "date",
   },
   {
-    key: "section",
+    key: "section", group: "Ticket / Inventory",
     label: "Section / Block",
     aliases: ["section", "block", "sec", "stand", "area", "zone", "sector"],
     dataType: "text",
   },
   {
-    key: "row",
+    key: "row", group: "Ticket / Inventory",
     label: "Row",
     aliases: ["row", "row number", "row no"],
     dataType: "text",
   },
   {
-    key: "seat_from",
+    key: "seat_from", group: "Ticket / Inventory",
     label: "Seat From",
     aliases: ["seat from", "seat_from", "from seat", "first seat", "seat start", "seat no from", "seat number from", "seat low", "seat begin"],
     dataType: "text",
   },
   {
-    key: "seat_to",
+    key: "seat_to", group: "Ticket / Inventory",
     label: "Seat To",
     aliases: ["seat to", "seat_to", "to seat", "last seat", "seat end", "seat no to", "seat number to", "seat high"],
     dataType: "text",
   },
   {
-    key: "seats",
+    key: "seats", group: "Ticket / Inventory",
     label: "Seats (range e.g. 12-14)",
     aliases: ["seats", "seat", "seat numbers", "seat range", "seat no", "seat number", "seat nos"],
     dataType: "text",
   },
   {
-    key: "qty_bought",
+    key: "qty_bought", group: "Ticket / Inventory",
     label: "Qty Bought",
     aliases: ["qty", "quantity", "tickets", "count", "num tickets", "number", "qty bought", "quantity bought", "no of tickets", "num", "ticket count", "no tickets"],
     dataType: "number",
   },
   {
-    key: "qty_sold",
+    key: "qty_sold", group: "Ticket / Inventory",
     label: "Qty Sold",
     aliases: ["qty sold", "quantity sold", "sold qty", "sold quantity", "tickets sold", "qty_sold", "sold count", "no sold", "number sold"],
     dataType: "number",
   },
   {
-    key: "total_cost",
+    key: "total_cost", group: "Ticket / Inventory",
     label: "Total Cost",
     aliases: ["cost", "total cost", "price", "amount paid", "paid", "purchase price", "buying price", "face value", "total paid", "cost price", "buy price", "purchase total", "amount", "total amount"],
     dataType: "number",
   },
   {
-    key: "sold_total",
-    label: "Sold For",
-    aliases: ["sold", "sold for", "sale price", "revenue", "sold total", "sold_total", "payout", "sale total", "selling price", "sold amount"],
+    key: "sold_total", group: "Ticket / Inventory",
+    label: "Sold For (order)",
+    aliases: ["sold total", "sold_total"],
     dataType: "number",
   },
   {
-    key: "listing_status",
-    label: "Status",
-    aliases: ["status", "listing status", "listing_status", "ticket status", "state"],
+    key: "listing_status", group: "Ticket / Inventory",
+    label: "Ticket Status",
+    aliases: ["status", "ticket status", "listing status", "listing_status", "state", "ticket state"],
     dataType: "status",
   },
   {
-    key: "booking_ref",
+    key: "booking_ref", group: "Ticket / Inventory",
     label: "Booking Ref",
     aliases: ["ref", "reference", "booking ref", "booking_ref", "order ref", "order_ref", "booking", "booking reference", "order number", "booking number", "confirmation"],
     dataType: "text",
   },
   {
-    key: "account_email",
+    key: "account_email", group: "Ticket / Inventory",
     label: "Account Email",
-    aliases: ["account", "email", "account email", "account_email", "gmail", "inbox", "email address", "bought with", "purchase email"],
+    aliases: ["account", "account email", "account_email", "gmail", "inbox", "bought with", "purchase email"],
     dataType: "text",
   },
   {
-    key: "source_type",
-    label: "Source / Platform",
-    aliases: ["source", "source type", "platform", "ticket type", "source_type", "bought from", "purchased from", "supplier", "provider", "marketplace"],
+    key: "source_type", group: "Ticket / Inventory",
+    label: "Source / Platform (ticket)",
+    aliases: ["source", "source type", "source_type", "bought from", "purchased from", "supplier", "provider"],
     dataType: "text",
+  },
+
+  // ── Sale Details ──
+  {
+    key: "sale_status", group: "Sale Details",
+    label: "Sale Status",
+    aliases: ["sale status", "sale state", "order status"],
+    dataType: "sale_status",
+  },
+  {
+    key: "sold_at", group: "Sale Details",
+    label: "Sale Date",
+    aliases: ["sale date", "sold date", "sold at", "date sold", "order date", "sold_at", "sale date time"],
+    dataType: "date",
+  },
+  {
+    key: "sale_total", group: "Sale Details",
+    label: "Sale Total",
+    aliases: ["sale total", "sale price", "sold for", "sold amount", "selling price", "gross", "gross proceeds", "gross sale", "revenue"],
+    dataType: "number",
+  },
+  {
+    key: "payout_total", group: "Sale Details",
+    label: "Payout Total (net)",
+    aliases: ["payout", "payout total", "net proceeds", "net payout", "net amount", "amount received", "proceeds", "net"],
+    dataType: "number",
+  },
+  {
+    key: "buyer_name", group: "Sale Details",
+    label: "Buyer Name",
+    aliases: ["buyer", "buyer name", "customer", "customer name", "purchaser", "client", "recipient"],
+    dataType: "text",
+  },
+  {
+    key: "marketplace", group: "Sale Details",
+    label: "Platform / Marketplace",
+    aliases: ["platform", "marketplace", "channel", "sold via", "sold on", "sold through", "via", "broker", "site", "exchange", "buyer platform", "sale platform"],
+    dataType: "text",
+  },
+  {
+    key: "buyer_email", group: "Sale Details",
+    label: "Buyer Email",
+    aliases: ["buyer email", "customer email", "client email", "purchaser email"],
+    dataType: "text",
+  },
+  {
+    key: "external_sale_id", group: "Sale Details",
+    label: "Sale Reference / Order ID",
+    aliases: ["sale ref", "sale reference", "order id", "transaction id", "ref no", "external ref", "external id", "external sale id", "sale id"],
+    dataType: "text",
+  },
+  {
+    key: "notes", group: "Sale Details",
+    label: "Notes",
+    aliases: ["notes", "note", "comment", "comments", "description", "memo"],
+    dataType: "text",
+  },
+
+  // ── Transfer ──
+  {
+    key: "transfer_status", group: "Transfer",
+    label: "Transfer Status",
+    aliases: ["transfer status", "transfer state", "delivery status", "transfer"],
+    dataType: "transfer_status",
+  },
+  {
+    key: "transfer_date", group: "Transfer",
+    label: "Transfer Date",
+    aliases: ["transfer date", "transferred date", "delivered date", "delivery date", "transferred on", "transfer_date"],
+    dataType: "date",
+  },
+  {
+    key: "transfer_deadline", group: "Transfer",
+    label: "Transfer Deadline",
+    aliases: ["transfer deadline", "deadline", "transfer by", "transfer before", "must transfer by", "deliver by"],
+    dataType: "date",
+  },
+
+  // ── Payment ──
+  {
+    key: "payment_status", group: "Payment",
+    label: "Payment Status",
+    aliases: ["payment status", "payment state", "paid status", "payout status", "pay status"],
+    dataType: "payment_status",
+  },
+  {
+    key: "expected_payout_date", group: "Payment",
+    label: "Expected Payout Date",
+    aliases: ["expected payout", "expected payout date", "payout expected", "estimated payout", "payout estimate", "expected payment date", "anticipated payout"],
+    dataType: "date",
+  },
+  {
+    key: "payout_date", group: "Payment",
+    label: "Actual Payout Date",
+    aliases: ["payout date", "paid date", "payment date", "received date", "paid on", "payment received date", "actual payout", "actual payout date", "paid at"],
+    dataType: "date",
   },
 ];
 
-const FIELD_OPTIONS = [
-  { value: "skip", label: "— Skip column —" },
-  ...IMPORT_FIELDS.map((f) => ({ value: f.key, label: f.label })),
+const FIELD_GROUPS = [
+  { group: "Ticket / Inventory", fields: IMPORT_FIELDS.filter((f) => f.group === "Ticket / Inventory") },
+  { group: "Sale Details", fields: IMPORT_FIELDS.filter((f) => f.group === "Sale Details") },
+  { group: "Transfer", fields: IMPORT_FIELDS.filter((f) => f.group === "Transfer") },
+  { group: "Payment", fields: IMPORT_FIELDS.filter((f) => f.group === "Payment") },
 ];
+
+// ── Column sets ───────────────────────────────────────────────────────────────
+
+const ORDER_COLUMNS = new Set([
+  "booking_ref", "event_name", "venue", "event_date", "account_email",
+  "section", "row", "seat_from", "seat_to",
+  "qty_bought", "qty_sold", "total_cost", "sold_total", "listing_status", "source_type",
+]);
+
+const SALE_COLUMNS = new Set([
+  "sale_status", "sold_at", "sale_total", "payout_total", "buyer_name",
+  "marketplace", "buyer_email", "external_sale_id", "notes",
+  "transfer_status", "transfer_date", "transfer_deadline",
+  "payment_status", "expected_payout_date", "payout_date",
+]);
 
 // ─── Auto-mapping ─────────────────────────────────────────────────────────────
 
@@ -272,6 +387,43 @@ function parseImportStatus(raw: string): string {
   return "Unlisted";
 }
 
+function parseSaleStatus(raw: string): string | null {
+  const s = raw.trim().toLowerCase();
+  if (["unsold", "listed", "live", "active", "available", "unlisted"].includes(s)) return "_skip";
+  if (["paid", "payment received", "settled"].includes(s)) return "Paid";
+  if (["transfer completed", "transferred", "transfer complete", "complete"].includes(s)) return "Sold – Transfer Completed";
+  if (["awaiting transfer", "pending transfer", "transfer pending", "sold", "sale", "confirmed"].includes(s)) return "Sold – Awaiting Transfer";
+  if (["cancelled", "canceled", "cancel", "issue", "refunded", "problem"].includes(s)) return "Cancelled / Issue";
+  return null;
+}
+
+function parseTransferStatus(raw: string): string {
+  const s = raw.trim().toLowerCase();
+  if (["completed", "complete", "transferred", "done", "transfer completed", "transfer complete", "yes", "sent"].includes(s)) return "Transfer Completed";
+  return "Awaiting Transfer";
+}
+
+function parsePaymentStatus(raw: string): string {
+  const s = raw.trim().toLowerCase();
+  if (["paid", "received", "payment received", "settled", "cleared", "yes", "complete", "completed"].includes(s)) return "Paid";
+  return "Awaiting Payment";
+}
+
+type RowType = "inventory_only" | "sale_awaiting_transfer" | "sale_transferred" | "sale_paid" | "sale_cancelled" | "skip";
+
+function getRowType(obj: Record<string, unknown>): RowType {
+  const hasSaleFields = Boolean(
+    obj.sale_total || obj.sale_status || obj.transfer_status || obj.payment_status ||
+    obj.marketplace || obj.buyer_name || obj.external_sale_id || obj.sold_at
+  );
+  if (!hasSaleFields) return "inventory_only";
+  if ((obj.sale_status as string) === "_skip") return "skip";
+  if ((obj.sale_status as string) === "Cancelled / Issue") return "sale_cancelled";
+  if ((obj.payment_status as string) === "Paid" || (obj.sale_status as string) === "Paid") return "sale_paid";
+  if ((obj.transfer_status as string) === "Transfer Completed" || (obj.sale_status as string) === "Sold – Transfer Completed") return "sale_transferred";
+  return "sale_awaiting_transfer";
+}
+
 // ─── CSV parser ───────────────────────────────────────────────────────────────
 
 function parseCSV(text: string): string[][] {
@@ -329,6 +481,13 @@ function transformRow(
       obj[fieldKey] = parseImportDate(raw);
     } else if (field.dataType === "status") {
       obj[fieldKey] = parseImportStatus(raw);
+    } else if (field.dataType === "sale_status") {
+      const parsed = parseSaleStatus(raw);
+      if (parsed !== null) obj[fieldKey] = parsed;
+    } else if (field.dataType === "transfer_status") {
+      obj[fieldKey] = parseTransferStatus(raw);
+    } else if (field.dataType === "payment_status") {
+      obj[fieldKey] = parsePaymentStatus(raw);
     } else {
       // Handle combined seats field "12-14" → seat_from + seat_to
       if (fieldKey === "seats") {
@@ -601,10 +760,11 @@ export default function SettingsClient() {
   const [importing, setImporting] = useState(false);
   const [importMessage, setImportMessage] = useState("");
   type FailedRow = { rowNum: number; reason: string; data: Record<string, unknown> };
-  const [importResult, setImportResult] = useState<{ inserted: number; updated: number; skipped: number; errors: string[]; failedRows: FailedRow[] } | null>(null);
+  const [importResult, setImportResult] = useState<{ inserted: number; updated: number; skipped: number; salesCreated: number; errors: string[]; failedRows: FailedRow[] } | null>(null);
   const [failedEdits, setFailedEdits] = useState<FailedRow[]>([]);
   const [retrying, setRetrying] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+  const [fixedValues, setFixedValues] = useState<Record<string, string>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   async function handleLogout() {
@@ -870,72 +1030,128 @@ export default function SettingsClient() {
     const errors: string[] = [];
     const failedRows: FailedRow[] = [];
 
-    // Only these columns exist on the orders table
-    const ORDER_COLUMNS = new Set([
-      "booking_ref", "event_name", "venue", "event_date", "purchased_at",
-      "account_email", "section", "row", "seat_from", "seat_to",
-      "qty_bought", "total_cost", "sold_total", "listing_status", "source_type",
-    ]);
-
     for (let i = 0; i < importRows.length; i++) {
       const obj = transformRow(importRows[i], importHeaders, colMap);
-      if (!obj || Object.keys(obj).length < 3) {
-        const reason = "Not enough data (fewer than 3 fields)";
+      if (!obj || Object.keys(obj).length < 2) {
+        const reason = "Not enough data (fewer than 2 fields)";
         errors.push(`Row ${i + 2}: ${reason}`);
         failedRows.push({ rowNum: i + 2, reason, data: obj ?? {} });
         continue;
       }
-
-      // Strip fields that don't exist on the orders table
-      for (const key of Object.keys(obj)) {
-        if (!ORDER_COLUMNS.has(key)) delete obj[key];
+      // Apply fixed values for any field not already mapped from a column
+      for (const [key, value] of Object.entries(fixedValues)) {
+        if (value && !(key in obj)) obj[key] = value;
       }
-
-      // If booking_ref is blank, generate a random UUID — blank rows are always new, never duplicates
-      if (!obj.booking_ref) {
-        obj.booking_ref = crypto.randomUUID();
-      }
-
-      // Default status
-      if (!obj.listing_status) {
-        obj.listing_status = obj.sold_total ? "Sold" : "Unlisted";
-      }
-
       toInsert.push({ rowNum: i + 2, data: obj });
     }
 
     let inserted = 0;
     let updated = 0;
     let skipped = 0;
+    let salesCreated = 0;
 
-    // Insert one row at a time; on duplicate booking ref, update the existing record instead
     for (const { rowNum, data } of toInsert) {
-      const { error } = await supabase.from("orders").insert(data);
-      if (error) {
-        if (error.message.includes("duplicate") && data.booking_ref) {
-          // Update the existing record with the new data from the spreadsheet
-          const { booking_ref, ...updateData } = data as Record<string, unknown>;
-          const { error: updateError } = await supabase
+      // Split into order-level and sale-level fields
+      const orderData: Record<string, unknown> = {};
+      const saleData: Record<string, unknown> = {};
+      for (const [key, value] of Object.entries(data)) {
+        if (ORDER_COLUMNS.has(key)) orderData[key] = value;
+        else if (SALE_COLUMNS.has(key)) saleData[key] = value;
+      }
+
+      if (!orderData.booking_ref) orderData.booking_ref = crypto.randomUUID();
+      if (!orderData.listing_status) {
+        orderData.listing_status = (Object.keys(saleData).length > 0 || orderData.sold_total) ? "Sold" : "Unlisted";
+      }
+
+      const rowType = getRowType({ ...saleData, ...data });
+      let orderId: string | null = null;
+
+      // Insert order (or update on duplicate booking_ref)
+      const { data: insertedOrder, error: orderError } = await supabase
+        .from("orders")
+        .insert(orderData)
+        .select("id")
+        .single();
+
+      if (orderError) {
+        if (orderError.message.includes("duplicate") && orderData.booking_ref) {
+          const { booking_ref, ...updateData } = orderData as Record<string, unknown>;
+          const { data: updatedOrder, error: updateError } = await supabase
             .from("orders")
             .update(updateData)
-            .eq("booking_ref", booking_ref as string);
+            .eq("booking_ref", booking_ref as string)
+            .select("id")
+            .single();
           if (updateError) {
             errors.push(`Row ${rowNum}: ${updateError.message}`);
             skipped++;
           } else {
+            orderId = (updatedOrder as { id: string }).id;
             updated++;
           }
         } else {
-          errors.push(`Row ${rowNum}: ${error.message}`);
-          failedRows.push({ rowNum, reason: error.message, data });
+          errors.push(`Row ${rowNum}: ${orderError.message}`);
+          failedRows.push({ rowNum, reason: orderError.message, data });
           skipped++;
         }
       } else {
+        orderId = (insertedOrder as { id: string }).id;
         inserted++;
+      }
+
+      // Create sale record if we have sale data and an actionable row type
+      if (orderId && rowType !== "inventory_only" && rowType !== "skip") {
+        const transferStatus = (saleData.transfer_status as string) ??
+          (saleData.transfer_date ? "Transfer Completed" : "Awaiting Transfer");
+        const paymentStatus = (saleData.payment_status as string) ??
+          (saleData.payout_date ? "Paid" : "Awaiting Payment");
+
+        let saleStatus = saleData.sale_status as string;
+        if (!saleStatus || saleStatus === "_skip") {
+          if (paymentStatus === "Paid") saleStatus = "Paid";
+          else if (transferStatus === "Transfer Completed") saleStatus = "Sold – Transfer Completed";
+          else saleStatus = "Sold – Awaiting Transfer";
+        }
+
+        const saleTotal = (saleData.sale_total as number) ?? (orderData.sold_total as number) ?? null;
+        const qtySold = (orderData.qty_sold as number) ?? (orderData.qty_bought as number) ?? 1;
+        const payoutTotal = (saleData.payout_total as number) ??
+          (paymentStatus === "Paid" ? saleTotal : null);
+
+        const saleInsert: Record<string, unknown> = {
+          inventory_order_id: orderId,
+          event_name: orderData.event_name,
+          ...(orderData.event_date ? { event_date: orderData.event_date } : {}),
+          ...(orderData.venue ? { venue: orderData.venue } : {}),
+          ...(orderData.section ? { section: orderData.section } : {}),
+          ...(orderData.row ? { row: orderData.row } : {}),
+          ...(orderData.seat_from ? { seat_from: orderData.seat_from } : {}),
+          ...(orderData.seat_to ? { seat_to: orderData.seat_to } : {}),
+          qty_sold: qtySold,
+          sale_status: saleStatus,
+          ...(saleData.sold_at ? { sold_at: saleData.sold_at } : {}),
+          ...(saleTotal !== null ? { sale_total: saleTotal } : {}),
+          ...(payoutTotal !== null ? { payout_total: payoutTotal } : {}),
+          ...(saleData.buyer_name ? { buyer_name: saleData.buyer_name } : {}),
+          ...(saleData.marketplace ? { marketplace: saleData.marketplace } : {}),
+          ...(saleData.buyer_email ? { buyer_email: saleData.buyer_email } : {}),
+          ...(saleData.external_sale_id ? { external_sale_id: saleData.external_sale_id } : {}),
+          transfer_status: transferStatus,
+          ...(saleData.transfer_date ? { transfer_date: saleData.transfer_date } : {}),
+          ...(saleData.transfer_deadline ? { transfer_deadline: saleData.transfer_deadline } : {}),
+          payment_status: paymentStatus,
+          ...(saleData.expected_payout_date ? { expected_payout_date: saleData.expected_payout_date } : {}),
+          ...(saleData.payout_date ? { payout_date: saleData.payout_date } : {}),
+          ...(saleData.notes ? { notes: saleData.notes } : {}),
+        };
+
+        const { error: saleError } = await supabase.from("sales").insert(saleInsert);
+        if (!saleError) salesCreated++;
       }
     }
 
-    const result = { inserted, updated, skipped, errors, failedRows };
+    const result = { inserted, updated, skipped, salesCreated, errors, failedRows };
     setImportResult(result);
     setFailedEdits(failedRows.map((r) => ({ ...r, data: { ...r.data } })));
     setImporting(false);
@@ -950,6 +1166,7 @@ export default function SettingsClient() {
     setImportMessage("");
     setImportResult(null);
     setFailedEdits([]);
+    setFixedValues({});
   }
 
   async function retryFailed() {
@@ -957,23 +1174,41 @@ export default function SettingsClient() {
     setRetrying(true);
     let inserted = importResult?.inserted ?? 0;
     let updated = importResult?.updated ?? 0;
+    let salesCreated = importResult?.salesCreated ?? 0;
     let skipped = 0;
     const remainingFailed: FailedRow[] = [];
 
     for (const row of failedEdits) {
       const data = { ...row.data };
-      if (!data.booking_ref) data.booking_ref = crypto.randomUUID();
-      if (!data.listing_status) data.listing_status = data.sold_total ? "Sold" : "Unlisted";
+      for (const [key, value] of Object.entries(fixedValues)) {
+        if (value && !(key in data)) data[key] = value;
+      }
 
-      const { error } = await supabase.from("orders").insert(data);
+      const orderData: Record<string, unknown> = {};
+      const saleData: Record<string, unknown> = {};
+      for (const [key, value] of Object.entries(data)) {
+        if (ORDER_COLUMNS.has(key)) orderData[key] = value;
+        else if (SALE_COLUMNS.has(key)) saleData[key] = value;
+      }
+      if (!orderData.booking_ref) orderData.booking_ref = crypto.randomUUID();
+      if (!orderData.listing_status) {
+        orderData.listing_status = (Object.keys(saleData).length > 0 || orderData.sold_total) ? "Sold" : "Unlisted";
+      }
+
+      const rowType = getRowType({ ...saleData, ...data });
+      let orderId: string | null = null;
+
+      const { data: insertedOrder, error } = await supabase.from("orders").insert(orderData).select("id").single();
       if (error) {
-        if (error.message.includes("duplicate") && data.booking_ref) {
-          const { booking_ref, ...updateData } = data as Record<string, unknown>;
-          const { error: updateError } = await supabase.from("orders").update(updateData).eq("booking_ref", booking_ref as string);
+        if (error.message.includes("duplicate") && orderData.booking_ref) {
+          const { booking_ref, ...updateData } = orderData as Record<string, unknown>;
+          const { data: updatedOrder, error: updateError } = await supabase
+            .from("orders").update(updateData).eq("booking_ref", booking_ref as string).select("id").single();
           if (updateError) {
             remainingFailed.push({ ...row, reason: updateError.message, data });
             skipped++;
           } else {
+            orderId = (updatedOrder as { id: string }).id;
             updated++;
           }
         } else {
@@ -981,7 +1216,49 @@ export default function SettingsClient() {
           skipped++;
         }
       } else {
+        orderId = (insertedOrder as { id: string }).id;
         inserted++;
+      }
+
+      if (orderId && rowType !== "inventory_only" && rowType !== "skip") {
+        const transferStatus = (saleData.transfer_status as string) ?? (saleData.transfer_date ? "Transfer Completed" : "Awaiting Transfer");
+        const paymentStatus = (saleData.payment_status as string) ?? (saleData.payout_date ? "Paid" : "Awaiting Payment");
+        let saleStatus = saleData.sale_status as string;
+        if (!saleStatus || saleStatus === "_skip") {
+          if (paymentStatus === "Paid") saleStatus = "Paid";
+          else if (transferStatus === "Transfer Completed") saleStatus = "Sold – Transfer Completed";
+          else saleStatus = "Sold – Awaiting Transfer";
+        }
+        const saleTotal = (saleData.sale_total as number) ?? (orderData.sold_total as number) ?? null;
+        const qtySold = (orderData.qty_sold as number) ?? (orderData.qty_bought as number) ?? 1;
+        const payoutTotal = (saleData.payout_total as number) ?? (paymentStatus === "Paid" ? saleTotal : null);
+        const { error: saleError } = await supabase.from("sales").insert({
+          inventory_order_id: orderId,
+          event_name: orderData.event_name,
+          ...(orderData.event_date ? { event_date: orderData.event_date } : {}),
+          ...(orderData.venue ? { venue: orderData.venue } : {}),
+          ...(orderData.section ? { section: orderData.section } : {}),
+          ...(orderData.row ? { row: orderData.row } : {}),
+          ...(orderData.seat_from ? { seat_from: orderData.seat_from } : {}),
+          ...(orderData.seat_to ? { seat_to: orderData.seat_to } : {}),
+          qty_sold: qtySold,
+          sale_status: saleStatus,
+          ...(saleData.sold_at ? { sold_at: saleData.sold_at } : {}),
+          ...(saleTotal !== null ? { sale_total: saleTotal } : {}),
+          ...(payoutTotal !== null ? { payout_total: payoutTotal } : {}),
+          ...(saleData.buyer_name ? { buyer_name: saleData.buyer_name } : {}),
+          ...(saleData.marketplace ? { marketplace: saleData.marketplace } : {}),
+          ...(saleData.buyer_email ? { buyer_email: saleData.buyer_email } : {}),
+          ...(saleData.external_sale_id ? { external_sale_id: saleData.external_sale_id } : {}),
+          transfer_status: transferStatus,
+          ...(saleData.transfer_date ? { transfer_date: saleData.transfer_date } : {}),
+          ...(saleData.transfer_deadline ? { transfer_deadline: saleData.transfer_deadline } : {}),
+          payment_status: paymentStatus,
+          ...(saleData.expected_payout_date ? { expected_payout_date: saleData.expected_payout_date } : {}),
+          ...(saleData.payout_date ? { payout_date: saleData.payout_date } : {}),
+          ...(saleData.notes ? { notes: saleData.notes } : {}),
+        });
+        if (!saleError) salesCreated++;
       }
     }
 
@@ -990,6 +1267,7 @@ export default function SettingsClient() {
       inserted,
       updated,
       skipped,
+      salesCreated,
       errors: remainingFailed.map((r) => `Row ${r.rowNum}: ${r.reason}`),
       failedRows: remainingFailed,
     } : null);
@@ -1376,13 +1654,89 @@ export default function SettingsClient() {
                           value={mapped}
                           onChange={(e) => updateColMap(i, e.target.value)}
                         >
-                          {FIELD_OPTIONS.map((opt) => (
-                            <option key={opt.value} value={opt.value}>{opt.label}</option>
+                          <option value="skip">— Skip column —</option>
+                          {FIELD_GROUPS.map(({ group, fields }) => (
+                            <optgroup key={group} label={group}>
+                              {fields.map((f) => (
+                                <option key={f.key} value={f.key}>{f.label}</option>
+                              ))}
+                            </optgroup>
                           ))}
                         </select>
                       </div>
                     );
                   })}
+                </div>
+                {/* Fixed values panel */}
+                <div style={{ padding: "0 1.5rem 1rem", borderTop: "1px solid var(--border)" }}>
+                  <p className="section-tag" style={{ margin: "1rem 0 0.25rem" }}>Optional fallback values</p>
+                  <p style={{ fontSize: "0.8125rem", color: "var(--muted)", marginBottom: "1rem" }}>
+                    Only used when a row has no value from the column mapping above. Each row's own data always takes priority.
+                    Useful when your entire file shares one value — e.g. every sale is via Viagogo, or every row is Awaiting Transfer.
+                    If your file has mixed statuses per row, map those columns above and leave these blank.
+                  </p>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: "0.75rem" }}>
+                    <label className="field-label">
+                      <span>Platform / Marketplace</span>
+                      <select
+                        className="field"
+                        value={fixedValues.marketplace ?? ""}
+                        onChange={(e) => setFixedValues((p) => ({ ...p, marketplace: e.target.value }))}
+                      >
+                        <option value="">— not set —</option>
+                        <option>Viagogo</option>
+                        <option>StubHub</option>
+                        <option>Lysted</option>
+                        <option>Private Broker</option>
+                        <option>Ticketmaster</option>
+                        <option>AXS</option>
+                        <option>SEE Tickets</option>
+                        <option>Skiddle</option>
+                        <option>Twickets</option>
+                        <option>FIXR</option>
+                        <option>Dice</option>
+                        <option>Other</option>
+                      </select>
+                    </label>
+                    <label className="field-label">
+                      <span>Sale Status</span>
+                      <select
+                        className="field"
+                        value={fixedValues.sale_status ?? ""}
+                        onChange={(e) => setFixedValues((p) => ({ ...p, sale_status: e.target.value }))}
+                      >
+                        <option value="">— not set —</option>
+                        <option value="Sold – Awaiting Transfer">Sold – Awaiting Transfer</option>
+                        <option value="Sold – Transfer Completed">Sold – Transfer Completed</option>
+                        <option value="Paid">Paid</option>
+                        <option value="Cancelled / Issue">Cancelled / Issue</option>
+                      </select>
+                    </label>
+                    <label className="field-label">
+                      <span>Transfer Status</span>
+                      <select
+                        className="field"
+                        value={fixedValues.transfer_status ?? ""}
+                        onChange={(e) => setFixedValues((p) => ({ ...p, transfer_status: e.target.value }))}
+                      >
+                        <option value="">— not set —</option>
+                        <option value="Awaiting Transfer">Awaiting Transfer</option>
+                        <option value="Transfer Completed">Transfer Completed</option>
+                      </select>
+                    </label>
+                    <label className="field-label">
+                      <span>Payment Status</span>
+                      <select
+                        className="field"
+                        value={fixedValues.payment_status ?? ""}
+                        onChange={(e) => setFixedValues((p) => ({ ...p, payment_status: e.target.value }))}
+                      >
+                        <option value="">— not set —</option>
+                        <option value="Awaiting Payment">Awaiting Payment</option>
+                        <option value="Paid">Paid</option>
+                      </select>
+                    </label>
+                  </div>
                 </div>
                 <div className="import-footer">
                   <button type="button" className="ghost-button" onClick={resetImport}>Back</button>
@@ -1454,22 +1808,32 @@ export default function SettingsClient() {
                   <div><p className="section-tag">Complete</p><h4>Import finished</h4></div>
                 </div>
                 <div style={{ padding: "2rem 1.5rem" }}>
-                  <div className="drawer-summary" style={{ gridTemplateColumns: "repeat(4, 1fr)", marginBottom: "1.5rem" }}>
+                  <div className="drawer-summary" style={{ gridTemplateColumns: "repeat(3, 1fr)", marginBottom: "0.75rem" }}>
                     <div>
-                      <span>Imported</span>
+                      <span>Tickets imported</span>
                       <strong className="value-up">{importResult.inserted}</strong>
                     </div>
                     <div>
-                      <span>Updated</span>
+                      <span>Tickets updated</span>
                       <strong className="value-up">{importResult.updated}</strong>
                     </div>
                     <div>
                       <span>Skipped</span>
                       <strong>{importResult.skipped}</strong>
                     </div>
+                  </div>
+                  <div className="drawer-summary" style={{ gridTemplateColumns: "repeat(3, 1fr)", marginBottom: "1.5rem" }}>
+                    <div>
+                      <span>Sales created</span>
+                      <strong style={{ color: importResult.salesCreated > 0 ? "#4ade80" : undefined }}>{importResult.salesCreated}</strong>
+                    </div>
                     <div>
                       <span>Total rows</span>
                       <strong>{importRows.length}</strong>
+                    </div>
+                    <div>
+                      <span>Errors</span>
+                      <strong style={{ color: importResult.errors.length > 0 ? "#f87171" : undefined }}>{importResult.errors.length}</strong>
                     </div>
                   </div>
                   {failedEdits.length > 0 && (
@@ -1504,7 +1868,13 @@ export default function SettingsClient() {
                   )}
                   <div style={{ display: "flex", gap: "0.75rem" }}>
                     <button type="button" className="secondary-button" onClick={resetImport}>Import another file</button>
-                    <Link href="/orders" className="primary-button">View tickets →</Link>
+                    <Link href="/orders" className="ghost-button">View tickets →</Link>
+                    {importResult.salesCreated > 0 && (
+                      <Link href="/sales" className="primary-button">View sales →</Link>
+                    )}
+                    {importResult.salesCreated === 0 && (
+                      <Link href="/orders" className="primary-button">View tickets →</Link>
+                    )}
                   </div>
                 </div>
               </section>

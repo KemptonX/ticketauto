@@ -17,6 +17,18 @@ type Order = {
   listing_status: string | null;
 };
 
+type SalePayment = {
+  id: number;
+  inventory_order_id: number | null;
+  qty_sold: number | null;
+  payout_date: string | null;
+  payment_status: string | null;
+  payout_total: number | null;
+  sale_total: number | null;
+  event_name: string | null;
+  event_date: string | null;
+};
+
 type CashEvent = {
   key: string;
   eventName: string;
@@ -99,6 +111,7 @@ function txMonths(startYear: number): Array<{ year: number; month: number; month
 
 export default function CashFlowClient() {
   const [orders, setOrders] = useState<Order[]>([]);
+  const [salePayments, setSalePayments] = useState<SalePayment[]>([]);
   const [soldQtyByOrderId, setSoldQtyByOrderId] = useState<Map<number, number>>(new Map());
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -139,9 +152,8 @@ export default function CashFlowClient() {
         .order("event_date", { ascending: true }),
       supabase
         .from("sales")
-        .select("inventory_order_id, qty_sold")
-        .not("inventory_order_id", "is", null)
-        .not("sale_status", "in", '("Archived","Deleted")'),
+        .select("id, inventory_order_id, qty_sold, payout_date, payment_status, payout_total, sale_total, event_name, event_date")
+        .not("sale_status", "in", '("Archived","Deleted","Cancelled / Issue")'),
     ]);
 
     if (ordersResult.error) {
@@ -152,9 +164,13 @@ export default function CashFlowClient() {
     }
 
     if (!salesResult.error && salesResult.data) {
+      const payments = (salesResult.data as SalePayment[]);
+      setSalePayments(payments);
       const qtyMap = new Map<number, number>();
-      for (const s of salesResult.data as { inventory_order_id: number; qty_sold: number | null }[]) {
-        qtyMap.set(s.inventory_order_id, (qtyMap.get(s.inventory_order_id) ?? 0) + (s.qty_sold ?? 0));
+      for (const s of payments) {
+        if (s.inventory_order_id != null) {
+          qtyMap.set(s.inventory_order_id, (qtyMap.get(s.inventory_order_id) ?? 0) + (s.qty_sold ?? 0));
+        }
       }
       setSoldQtyByOrderId(qtyMap);
     }
@@ -167,6 +183,16 @@ export default function CashFlowClient() {
     d.setHours(0, 0, 0, 0);
     return d;
   }, []);
+
+  const paymentStats = useMemo(() => {
+    let received = 0, awaiting = 0;
+    for (const s of salePayments) {
+      const amount = s.payout_total ?? s.sale_total ?? 0;
+      if (s.payment_status === "Paid") received += amount;
+      else awaiting += amount;
+    }
+    return { received, awaiting };
+  }, [salePayments]);
 
   const cashEvents = useMemo((): CashEvent[] => {
     const map = new Map<string, CashEvent>();
@@ -223,8 +249,9 @@ export default function CashFlowClient() {
   }, [cashEvents, selectedTY]);
 
   const stats = useMemo(() => {
-    const received = tyEvents.filter(ev => ev.isPast).reduce((s, ev) => s + ev.cashIn, 0);
-    const incoming = tyEvents.filter(ev => !ev.isPast).reduce((s, ev) => s + ev.cashIn, 0);
+    // Use sale payment_status data for received/incoming — more accurate than event_date
+    const received = paymentStats.received;
+    const incoming = paymentStats.awaiting;
     const totalCost = tyEvents.reduce((s, ev) => s + ev.costOut, 0);
     const totalCash = received + incoming;
     const roi = totalCost > 0 ? ((totalCash - totalCost) / totalCost) * 100 : null;
@@ -351,16 +378,16 @@ export default function CashFlowClient() {
         <section className="hero-card analytics-hero-card">
           <div>
             <p className="section-tag">Tax year {txLabel(selectedTY)}</p>
-            <h3>Revenue lands on event day — track exactly when cash arrives.</h3>
+            <h3>Revenue tracks actual payout dates — see exactly when cash lands.</h3>
           </div>
           <div className="hero-meta">
             <div>
-              <span className="hero-meta-label">Cash received</span>
+              <span className="hero-meta-label">Revenue received</span>
               <strong>{formatCurrency(stats.received)}</strong>
             </div>
             <div>
-              <span className="hero-meta-label">Cash incoming</span>
-              <strong style={{ color: "#4fc3ff" }}>{formatCurrency(stats.incoming)}</strong>
+              <span className="hero-meta-label">Awaiting payment</span>
+              <strong style={{ color: "#fbbf24" }}>{formatCurrency(stats.incoming)}</strong>
             </div>
           </div>
         </section>
@@ -486,21 +513,21 @@ export default function CashFlowClient() {
         <section className="kpi-grid">
           <article className="kpi-card analytics-kpi-profit">
             <span className="kpi-accent" />
-            <p>Cash received</p>
+            <p>Revenue received</p>
             <strong>{formatCurrency(stats.received)}</strong>
-            <span>from past events in {txLabel(selectedTY)}</span>
+            <span>paid sales — confirmed income</span>
           </article>
           <article className="kpi-card">
             <span className="kpi-accent" />
-            <p>Cash incoming</p>
-            <strong style={{ color: "#4fc3ff" }}>{formatCurrency(stats.incoming)}</strong>
-            <span>from future sold tickets</span>
+            <p>Awaiting payment</p>
+            <strong style={{ color: "#fbbf24" }}>{formatCurrency(stats.incoming)}</strong>
+            <span>sold but not yet paid out</span>
           </article>
           <article className="kpi-card">
             <span className="kpi-accent" />
             <p>Total cash position</p>
             <strong>{formatCurrency(stats.totalCash)}</strong>
-            <span>received + projected</span>
+            <span>received + expected</span>
           </article>
           <article className="kpi-card">
             <span className="kpi-accent" />
