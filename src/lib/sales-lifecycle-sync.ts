@@ -174,16 +174,7 @@ export async function scanViagogoLifecycleGmail({
         const body = getBody(fullMessage.payload);
         const data = parseTransferEmail(subject, body, headers, xVgId, receivedAt);
         if (!data) {
-          await insertScanLog(supabase, userId, {
-            messageId,
-            xVgId,
-            emailType: "transfer_complete",
-            subject,
-            receivedAt,
-            accountEmail: gmailAccount.email,
-            status: "error",
-            notes: "Failed to parse transfer email",
-          });
+          try { await insertScanLog(supabase, userId, { messageId, xVgId, emailType: "transfer_complete", subject, receivedAt, accountEmail: gmailAccount.email, status: "error", notes: "Failed to parse transfer email" }); } catch { /* ignore */ }
           totals.errors++;
           continue;
         }
@@ -214,16 +205,7 @@ export async function scanViagogoLifecycleGmail({
         const rawHtml = getHtmlBody(fullMessage.payload);
         const data = parsePayoutEmail(subject, body, rawHtml, headers, receivedAt);
         if (!data || data.orderLines.length === 0) {
-          await insertScanLog(supabase, userId, {
-            messageId,
-            xVgId,
-            emailType: "payout",
-            subject,
-            receivedAt,
-            accountEmail: gmailAccount.email,
-            status: "error",
-            notes: "Failed to parse payout email or no order lines found",
-          });
+          try { await insertScanLog(supabase, userId, { messageId, xVgId, emailType: "payout", subject, receivedAt, accountEmail: gmailAccount.email, status: "error", notes: "Failed to parse payout email or no order lines found" }); } catch { /* ignore */ }
           totals.errors++;
           continue;
         }
@@ -255,16 +237,7 @@ export async function scanViagogoLifecycleGmail({
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Unknown error";
-      await insertScanLog(supabase, userId, {
-        messageId,
-        xVgId,
-        emailType: isTransferEmail(subject) ? "transfer_complete" : "payout",
-        subject,
-        receivedAt,
-        accountEmail: gmailAccount.email,
-        status: "error",
-        notes: msg,
-      });
+      try { await insertScanLog(supabase, userId, { messageId, xVgId, emailType: isTransferEmail(subject) ? "transfer_complete" : "payout", subject, receivedAt, accountEmail: gmailAccount.email, status: "error", notes: msg }); } catch { /* ignore */ }
       totals.errors++;
     }
   }
@@ -314,6 +287,15 @@ export async function scanViagogoLifecycleOutlook({
     return isTransferEmail(m.subject) || isPayoutEmail(m.subject);
   });
 
+  // Pre-fetch/create Outlook folders for filing processed emails
+  let outlookFolders: { transfers: string; payouts: string } | null = null;
+  let labelError: string | undefined;
+  try {
+    outlookFolders = await ensureOutlookFolders(accessToken);
+  } catch (e) {
+    labelError = e instanceof Error ? e.message : "Folder setup failed";
+  }
+
   const totals = { scanned: 0, processed: 0, updated: 0, needsReview: 0, alreadyProcessed: 0, errors: 0 };
 
   for (const msg of messages) {
@@ -325,6 +307,11 @@ export async function scanViagogoLifecycleOutlook({
     const alreadyDone = await isAlreadyProcessed(supabase, userId, messageId);
     if (alreadyDone) {
       totals.alreadyProcessed++;
+      // Still move to folder in case it was missed on a previous run
+      if (outlookFolders) {
+        const folderId = isTransferEmail(subject) ? outlookFolders.transfers : outlookFolders.payouts;
+        moveOutlookMessage(accessToken, messageId, folderId).catch(() => undefined);
+      }
       continue;
     }
 
@@ -340,16 +327,7 @@ export async function scanViagogoLifecycleOutlook({
       if (isTransferEmail(subject)) {
         const data = parseTransferEmail(subject, body, fakeHeaders, "", receivedAt);
         if (!data) {
-          await insertScanLog(supabase, userId, {
-            messageId,
-            xVgId: "",
-            emailType: "transfer_complete",
-            subject,
-            receivedAt,
-            accountEmail: outlookAccount.email,
-            status: "error",
-            notes: "Failed to parse transfer email",
-          });
+          try { await insertScanLog(supabase, userId, { messageId, xVgId: "", emailType: "transfer_complete", subject, receivedAt, accountEmail: outlookAccount.email, status: "error", notes: "Failed to parse transfer email" }); } catch { /* ignore */ }
           totals.errors++;
           continue;
         }
@@ -360,7 +338,7 @@ export async function scanViagogoLifecycleOutlook({
           subject,
           receivedAt,
           accountEmail: outlookAccount.email,
-          rawExtracted: { orderId: data.orderId, eventName: data.eventName },
+          rawExtracted: { orderId: data.orderId, eventName: data.eventName, qty: data.qty },
         });
         const result = await processTransferEmail(supabase, userId, data, logId);
         await insertScanResult(supabase, userId, logId, "transfer_complete", result, {
@@ -371,19 +349,11 @@ export async function scanViagogoLifecycleOutlook({
         });
         tally(totals, result);
         totals.processed++;
+        if (outlookFolders) moveOutlookMessage(accessToken, messageId, outlookFolders.transfers).catch(() => undefined);
       } else if (isPayoutEmail(subject)) {
         const data = parsePayoutEmail(subject, body, rawHtml, fakeHeaders, receivedAt);
         if (!data || data.orderLines.length === 0) {
-          await insertScanLog(supabase, userId, {
-            messageId,
-            xVgId: "",
-            emailType: "payout",
-            subject,
-            receivedAt,
-            accountEmail: outlookAccount.email,
-            status: "error",
-            notes: "No order lines parsed from payout email",
-          });
+          try { await insertScanLog(supabase, userId, { messageId, xVgId: "", emailType: "payout", subject, receivedAt, accountEmail: outlookAccount.email, status: "error", notes: "No order lines parsed from payout email" }); } catch { /* ignore */ }
           totals.errors++;
           continue;
         }
@@ -408,24 +378,16 @@ export async function scanViagogoLifecycleOutlook({
           tally(totals, result);
         }
         totals.processed++;
+        if (outlookFolders) moveOutlookMessage(accessToken, messageId, outlookFolders.payouts).catch(() => undefined);
       }
     } catch (err) {
       const msg2 = err instanceof Error ? err.message : "Unknown error";
-      await insertScanLog(supabase, userId, {
-        messageId,
-        xVgId: "",
-        emailType: isTransferEmail(subject) ? "transfer_complete" : "payout",
-        subject,
-        receivedAt,
-        accountEmail: outlookAccount.email,
-        status: "error",
-        notes: msg2,
-      });
+      try { await insertScanLog(supabase, userId, { messageId, xVgId: "", emailType: isTransferEmail(subject) ? "transfer_complete" : "payout", subject, receivedAt, accountEmail: outlookAccount.email, status: "error", notes: msg2 }); } catch { /* ignore */ }
       totals.errors++;
     }
   }
 
-  return { ...totals, email: outlookAccount.email };
+  return { ...totals, email: outlookAccount.email, labelError };
 }
 
 // ── IMAP lifecycle scanner ────────────────────────────────────────────────────
@@ -1272,6 +1234,38 @@ async function outlookGraphRequest<T>(accessToken: string, input: string, init?:
     throw new Error(`Graph API ${res.status}: ${text}`);
   }
   return (await res.json()) as T;
+}
+
+async function ensureOutlookFolders(
+  accessToken: string,
+): Promise<{ transfers: string; payouts: string }> {
+  const data = await outlookGraphRequest<{ value?: Array<{ id: string; displayName: string }> }>(
+    accessToken,
+    "https://graph.microsoft.com/v1.0/me/mailFolders?$top=100&$select=id,displayName",
+  );
+  const folders = data.value ?? [];
+
+  async function getOrCreate(name: string): Promise<string> {
+    const existing = folders.find((f) => f.displayName.toLowerCase() === name.toLowerCase());
+    if (existing) return existing.id;
+    const created = await outlookGraphRequest<{ id: string }>(
+      accessToken,
+      "https://graph.microsoft.com/v1.0/me/mailFolders",
+      { method: "POST", body: JSON.stringify({ displayName: name }) },
+    );
+    return created.id;
+  }
+
+  const [transfers, payouts] = await Promise.all([getOrCreate("Transfers"), getOrCreate("Payouts")]);
+  return { transfers, payouts };
+}
+
+async function moveOutlookMessage(accessToken: string, messageId: string, folderId: string): Promise<void> {
+  await outlookGraphRequest(
+    accessToken,
+    `https://graph.microsoft.com/v1.0/me/messages/${messageId}/move`,
+    { method: "POST", body: JSON.stringify({ destinationId: folderId }) },
+  );
 }
 
 function decodeQuotedPrintable(text: string): string {
