@@ -171,6 +171,7 @@ function computeGroupId(key: string): string {
 export default function OrdersClient() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [soldQtyByOrderId, setSoldQtyByOrderId] = useState<Map<number, number>>(new Map());
+  const [saleTotalByOrderId, setSaleTotalByOrderId] = useState<Map<number, number>>(new Map());
   const [accounts, setAccounts] = useState<string[]>([]);
   const [syncLog, setSyncLog] = useState<SyncLogEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -220,16 +221,21 @@ export default function OrdersClient() {
       .select("*")
       .order("created_at", { ascending: false });
 
-    // Fetch matched sales to get actual qty_sold per order
+    // Fetch matched sales to get actual qty_sold and sale_total per order
     const { data: salesData } = await supabase
       .from("sales")
-      .select("inventory_order_id, qty_sold")
+      .select("inventory_order_id, qty_sold, sale_total")
       .not("inventory_order_id", "is", null);
     const qtyMap = new Map<number, number>();
-    for (const s of (salesData ?? []) as { inventory_order_id: number; qty_sold: number | null }[]) {
+    const saleMap = new Map<number, number>();
+    for (const s of (salesData ?? []) as { inventory_order_id: number; qty_sold: number | null; sale_total: number | null }[]) {
       qtyMap.set(s.inventory_order_id, (qtyMap.get(s.inventory_order_id) ?? 0) + (s.qty_sold ?? 0));
+      if (s.sale_total != null) {
+        saleMap.set(s.inventory_order_id, (saleMap.get(s.inventory_order_id) ?? 0) + s.sale_total);
+      }
     }
     setSoldQtyByOrderId(qtyMap);
+    setSaleTotalByOrderId(saleMap);
 
     if (error) {
       setMessage(error.message);
@@ -719,12 +725,13 @@ export default function OrdersClient() {
   const [copiedGroupId, setCopiedGroupId] = useState<string | null>(null);
 
   const multiShareStats = useMemo((): MultiSaleStats | null => {
-    const sold = orders.filter(o => selectedIds.has(o.id) && o.sold_total != null);
+    const effSold = (o: Order) => (o.sold_total ?? 0) > 0 ? (o.sold_total ?? 0) : (saleTotalByOrderId.get(o.id) ?? 0);
+    const sold = orders.filter(o => selectedIds.has(o.id) && effSold(o) > 0);
     if (sold.length === 0) return null;
     let totalRevenue = 0, totalCost = 0, totalTickets = 0;
     const seenEvents = new Set<string>();
     for (const o of sold) {
-      totalRevenue += o.sold_total ?? 0;
+      totalRevenue += effSold(o);
       const qtySold = soldQtyByOrderId.get(o.id) ?? (o.qty_bought ?? 0);
       totalCost += getProportionalCost(o.total_cost, o.qty_bought, qtySold, o.listing_status);
       totalTickets += qtySold;
@@ -931,11 +938,12 @@ export default function OrdersClient() {
       }
 
       const group = map.get(key)!;
+      const effSold = (o.sold_total ?? 0) > 0 ? (o.sold_total ?? 0) : (saleTotalByOrderId.get(o.id) ?? 0);
       group.orders.push(order);
       group.totalQty += order.qty_bought ?? 0;
       group.totalCost += order.total_cost ?? 0;
-      group.totalSold += order.sold_total ?? 0;
-      if (order.sold_total != null) {
+      group.totalSold += effSold;
+      if (effSold > 0) {
         const qtySold = soldQtyByOrderId.get(order.id) ?? (order.qty_bought ?? 0);
         group.totalEffectiveCost += getProportionalCost(order.total_cost, order.qty_bought, qtySold, order.listing_status);
       }
@@ -955,7 +963,7 @@ export default function OrdersClient() {
         if (remaining > 0) group.listedCount += remaining;
       }
       else if (status === "Archived") {
-        const archivedSold = soldQtyByOrderId.get(order.id) ?? ((order.sold_total ?? 0) > 0 ? qty : 0);
+        const archivedSold = soldQtyByOrderId.get(order.id) ?? (effSold > 0 ? qty : 0);
         if (archivedSold > 0) group.soldCount += archivedSold;
         const remaining = qty - archivedSold;
         if (remaining > 0) group.unlistedCount += remaining;
@@ -973,7 +981,7 @@ export default function OrdersClient() {
       if (b.dateValue) return 1;
       return a.eventName.localeCompare(b.eventName);
     });
-  }, [filteredOrders, sortBy, soldQtyByOrderId]);
+  }, [filteredOrders, sortBy, soldQtyByOrderId, saleTotalByOrderId]);
 
   const selectedOrder =
     orders.find((order) => order.id === selectedOrderId) ?? null;
@@ -990,10 +998,11 @@ export default function OrdersClient() {
       0,
     );
     const totalProfit = filteredOrders.reduce((sum, order) => {
-      if (order.sold_total == null) return sum;
+      const effSold = (order.sold_total ?? 0) > 0 ? (order.sold_total ?? 0) : (saleTotalByOrderId.get(order.id) ?? 0);
+      if (effSold <= 0) return sum;
       const qtySold = soldQtyByOrderId.get(order.id) ?? (order.qty_bought ?? 0);
       const effCost = getProportionalCost(order.total_cost, order.qty_bought, qtySold, order.listing_status);
-      return sum + (order.sold_total - effCost);
+      return sum + (effSold - effCost);
     }, 0);
 
     const roi = totalCost > 0 ? (totalProfit / totalCost) * 100 : 0;
@@ -1024,7 +1033,7 @@ export default function OrdersClient() {
           totalProfit !== 0 ? `${formatCurrency(totalProfit)} net profit` : "No profit yet",
       },
     ];
-  }, [filteredOrders, soldQtyByOrderId]);
+  }, [filteredOrders, soldQtyByOrderId, saleTotalByOrderId]);
 
   return (
     <div className={`orders-shell${(selectedOrder || showAddForm) ? " orders-shell-drawer-open" : ""}`}>
@@ -1313,7 +1322,7 @@ export default function OrdersClient() {
             <div className="inventory-group-list">
               {groupedOrders.map((group) => {
                 const expanded = expandedGroups.includes(group.key);
-                const groupProfit = group.orders.some((o) => o.sold_total != null)
+                const groupProfit = group.totalSold > 0
                   ? group.totalSold - group.totalEffectiveCost
                   : null;
                 const groupRoi = groupProfit != null && group.totalEffectiveCost > 0
@@ -1470,10 +1479,10 @@ export default function OrdersClient() {
                           </thead>
                           <tbody>
                             {group.orders.map((order) => {
-                              const sold = order.sold_total ?? 0;
+                              const sold = (order.sold_total ?? 0) > 0 ? (order.sold_total ?? 0) : (saleTotalByOrderId.get(order.id) ?? 0);
                               const qtySoldRow = soldQtyByOrderId.get(order.id) ?? (order.qty_bought ?? 0);
                               const effCost = getProportionalCost(order.total_cost, order.qty_bought, qtySoldRow, order.listing_status);
-                              const profit = order.sold_total != null ? sold - effCost : null;
+                              const profit = sold > 0 ? sold - effCost : null;
                               const roi = profit != null && effCost > 0 ? (profit / effCost) * 100 : null;
                               const active = selectedOrderId === order.id;
                               const isNew = order.created_at ? new Date(order.created_at).getTime() > Date.now() - 86400000 : false;
@@ -1789,9 +1798,15 @@ export default function OrdersClient() {
                 <span className={`status-badge status-static ${getStatusTone(selectedOrder.listing_status)}`}>
                   {selectedOrder.listing_status || "Unlisted"}
                 </span>
-                <strong className={`drawer-profit ${getDeltaTone((selectedOrder.sold_total ?? 0) - getProportionalCost(selectedOrder.total_cost, selectedOrder.qty_bought, soldQtyByOrderId.get(selectedOrder.id) ?? (selectedOrder.qty_bought ?? 0), selectedOrder.listing_status))}`}>
-                  {renderDeltaValue((selectedOrder.sold_total ?? 0) - getProportionalCost(selectedOrder.total_cost, selectedOrder.qty_bought, soldQtyByOrderId.get(selectedOrder.id) ?? (selectedOrder.qty_bought ?? 0), selectedOrder.listing_status), true)}
-                </strong>
+                {(() => {
+                  const effSold = (selectedOrder.sold_total ?? 0) > 0 ? (selectedOrder.sold_total ?? 0) : (saleTotalByOrderId.get(selectedOrder.id) ?? 0);
+                  const effCost = getProportionalCost(selectedOrder.total_cost, selectedOrder.qty_bought, soldQtyByOrderId.get(selectedOrder.id) ?? (selectedOrder.qty_bought ?? 0), selectedOrder.listing_status);
+                  return (
+                    <strong className={`drawer-profit ${getDeltaTone(effSold - effCost)}`}>
+                      {renderDeltaValue(effSold - effCost, true)}
+                    </strong>
+                  );
+                })()}
               </div>
             </section>
             <div className="drawer-grid">
@@ -1996,7 +2011,7 @@ export default function OrdersClient() {
                 <span>Profit</span>
                 <strong>
                   {formatCurrency(
-                    (selectedOrder.sold_total ?? 0) - getProportionalCost(selectedOrder.total_cost, selectedOrder.qty_bought, soldQtyByOrderId.get(selectedOrder.id) ?? (selectedOrder.qty_bought ?? 0), selectedOrder.listing_status),
+                    ((selectedOrder.sold_total ?? 0) > 0 ? (selectedOrder.sold_total ?? 0) : (saleTotalByOrderId.get(selectedOrder.id) ?? 0)) - getProportionalCost(selectedOrder.total_cost, selectedOrder.qty_bought, soldQtyByOrderId.get(selectedOrder.id) ?? (selectedOrder.qty_bought ?? 0), selectedOrder.listing_status),
                   )}
                 </strong>
               </div>
@@ -2082,10 +2097,10 @@ export default function OrdersClient() {
       {shareGroupKey != null && (() => {
         const g = groupedOrders.find(grp => grp.key === shareGroupKey);
         if (!g) return null;
-        const soldOrders = g.orders.filter(o => o.sold_total != null);
+        const soldOrders = g.orders.filter(o => (o.sold_total ?? 0) > 0 || (saleTotalByOrderId.get(o.id) ?? 0) > 0);
         let totalRevenue = 0, totalCost = 0, totalTickets = 0;
         for (const o of soldOrders) {
-          totalRevenue += o.sold_total ?? 0;
+          totalRevenue += (o.sold_total ?? 0) > 0 ? (o.sold_total ?? 0) : (saleTotalByOrderId.get(o.id) ?? 0);
           const qtySold = soldQtyByOrderId.get(o.id) ?? (o.qty_bought ?? 0);
           totalCost += getProportionalCost(o.total_cost, o.qty_bought, qtySold, o.listing_status);
           totalTickets += qtySold;

@@ -445,6 +445,21 @@ export default function SalesClient() {
     setMessage("Sale moved to Deleted — switch to Deleted tab to restore.");
   }
 
+  async function deleteSelectedSales() {
+    if (selectedSaleIds.size === 0 || massUpdating) return;
+    const confirmed = window.confirm(`Move ${selectedSaleIds.size} sale${selectedSaleIds.size > 1 ? "s" : ""} to Deleted? You can restore them later.`);
+    if (!confirmed) return;
+    setMassUpdating(true);
+    const ids = [...selectedSaleIds];
+    const { error } = await supabase.from("sales").update({ sale_status: "Deleted" }).in("id", ids);
+    if (error) { setMessage(error.message); setMassUpdating(false); return; }
+    setSales((current) => current.filter((s) => !selectedSaleIds.has(s.id)));
+    if (selectedSaleId != null && selectedSaleIds.has(selectedSaleId)) setSelectedSaleId(null);
+    setSelectedSaleIds(new Set());
+    setMassUpdating(false);
+    setMessage(`${ids.length} sale${ids.length > 1 ? "s" : ""} moved to Deleted.`);
+  }
+
   async function restoreSale(sale: Sale) {
     setMessage("");
     const { error } = await supabase.from("sales").update({ sale_status: "Sold" }).eq("id", sale.id);
@@ -1830,6 +1845,25 @@ export default function SalesClient() {
               }}
             >
               Archive
+            </button>
+
+            <button
+              type="button"
+              disabled={massUpdating}
+              onClick={() => void deleteSelectedSales()}
+              style={{
+                display: "flex", alignItems: "center", gap: 5,
+                background: "rgba(248,113,113,0.12)",
+                border: "1px solid rgba(248,113,113,0.3)",
+                borderRadius: 999,
+                padding: "6px 12px",
+                cursor: massUpdating ? "not-allowed" : "pointer",
+                color: "#f87171",
+                fontSize: 12, fontWeight: 600,
+                opacity: massUpdating ? 0.5 : 1,
+              }}
+            >
+              Delete
             </button>
 
             <div style={{ width: 1, height: 20, background: "rgba(255,255,255,0.12)" }} />
