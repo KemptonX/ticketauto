@@ -1357,9 +1357,30 @@ export default function SalesClient() {
                 Deleted
               </button>
             </div>
-            <button className="ghost-button" type="button" onClick={resetFilters}>
-              Reset
-            </button>
+            <div style={{ display: "flex", gap: 8 }}>
+              {selectedSaleIds.size > 0 && (
+                <button
+                  type="button"
+                  disabled={massUpdating}
+                  onClick={() => void deleteSelectedSales()}
+                  style={{
+                    background: "rgba(239,68,68,0.15)",
+                    border: "1px solid rgba(239,68,68,0.5)",
+                    borderRadius: 8,
+                    padding: "6px 14px",
+                    color: "#f87171",
+                    fontSize: 13,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                  }}
+                >
+                  🗑 Delete ({selectedSaleIds.size})
+                </button>
+              )}
+              <button className="ghost-button" type="button" onClick={resetFilters}>
+                Reset
+              </button>
+            </div>
           </div>
 
           <div className="sales-filter-grid">
