@@ -226,7 +226,7 @@ export default function LoginForm() {
               gap: "10px",
               width: "100%",
               padding: "10px 16px",
-              marginBottom: "16px",
+              marginBottom: "10px",
               background: "rgba(88,101,242,0.15)",
               border: "1px solid rgba(88,101,242,0.45)",
               borderRadius: "8px",
@@ -243,9 +243,38 @@ export default function LoginForm() {
             Continue with Discord
           </button>
 
+          <a
+            href="https://whop.com/x-f5f1/x-63-e499/"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: "10px",
+              width: "100%",
+              padding: "10px 16px",
+              marginBottom: "16px",
+              background: "rgba(255,255,255,0.04)",
+              border: "1px solid rgba(255,255,255,0.12)",
+              borderRadius: "8px",
+              color: "rgba(255,255,255,0.75)",
+              fontSize: "0.875rem",
+              fontWeight: 600,
+              textDecoration: "none",
+              boxSizing: "border-box",
+            }}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <rect x="2" y="5" width="20" height="14" rx="2" />
+              <line x1="2" y1="10" x2="22" y2="10" />
+            </svg>
+            Get access — £20/month
+          </a>
+
           <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "16px" }}>
             <div style={{ flex: 1, height: "1px", background: "rgba(255,255,255,0.1)" }} />
-            <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>or</span>
+            <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>or sign in with email</span>
             <div style={{ flex: 1, height: "1px", background: "rgba(255,255,255,0.1)" }} />
           </div>
         </>
