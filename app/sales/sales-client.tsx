@@ -1275,16 +1275,14 @@ export default function SalesClient() {
                 ? "Deselect All"
                 : `Select All (${filteredSales.length})`}
             </button>
-            {selectedSaleIds.size > 0 && (
-              <button
-                className="danger-button"
-                type="button"
-                disabled={massUpdating}
-                onClick={() => void deleteSelectedSales()}
-              >
-                Delete ({selectedSaleIds.size})
-              </button>
-            )}
+            <button
+              className="danger-button"
+              type="button"
+              disabled={massUpdating || selectedSaleIds.size === 0}
+              onClick={() => void deleteSelectedSales()}
+            >
+              {selectedSaleIds.size > 0 ? `Delete (${selectedSaleIds.size})` : "Delete Selected"}
+            </button>
             {!showArchived && !showDeleted && (
               <>
                 <button className="secondary-button" onClick={() => void scanSalesNow()} disabled={scanning} type="button">
