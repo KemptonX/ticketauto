@@ -1,6 +1,4 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { ImapFlow } from "imapflow";
-import { simpleParser } from "mailparser";
 import type { ImapAccount } from "./imap-sync";
 
 // ── Shared types ──────────────────────────────────────────────────────────────
@@ -403,6 +401,11 @@ export async function scanViagogoLifecycleImap({
   userId: string;
   cutoffDate: string;
 }): Promise<LifecycleScanResult> {
+  // Dynamic imports keep imapflow/mailparser out of the top-level module graph
+  // so Next.js doesn't try to bundle these Node.js-native packages at compile time
+  const { ImapFlow } = await import("imapflow");
+  const { simpleParser } = await import("mailparser");
+
   const client = new ImapFlow({
     host: imapAccount.host,
     port: imapAccount.port,
@@ -420,19 +423,26 @@ export async function scanViagogoLifecycleImap({
     await client.connect();
     const lock = await client.getMailboxLock(imapAccount.mailbox || "INBOX");
     try {
-      // Search for Viagogo lifecycle emails since cutoff date
+      // Search by date only — FROM search is not reliably supported across IMAP servers;
+      // sender is filtered in the envelope stage below (same pattern as imap-sync.ts)
       const uidResult = await client.search(
-        { since: new Date(cutoffDate), from: "automated@orders.viagogo.com" },
+        { since: new Date(cutoffDate) },
         { uid: true },
       );
       const allUids = Array.isArray(uidResult) ? uidResult : [];
       if (allUids.length === 0) return { ...totals, email: imapAccount.username };
 
-      // Envelope pre-filter — only keep transfer/payout subjects
+      // Envelope pre-filter — keep only Viagogo transfer/payout emails
       const candidateUids: number[] = [];
       for await (const msg of client.fetch(allUids, { envelope: true }, { uid: true })) {
         const subject = msg.envelope?.subject ?? "";
-        if (isTransferEmail(subject) || isPayoutEmail(subject)) candidateUids.push(msg.uid);
+        const from = (msg.envelope?.from?.[0]?.address ?? "").toLowerCase();
+        if (
+          from.includes("automated@orders.viagogo.com") &&
+          (isTransferEmail(subject) || isPayoutEmail(subject))
+        ) {
+          candidateUids.push(msg.uid);
+        }
       }
       if (candidateUids.length === 0) return { ...totals, email: imapAccount.username };
 
