@@ -464,8 +464,6 @@ export default function SalesClient() {
   async function autoArchivePastSales(loadedSales: Sale[]): Promise<number[]> {
     const now = new Date();
     now.setHours(0, 0, 0, 0);
-    // "Transfer Completed" sales are archived 5 days after the event
-    const fiveDaysAgo = new Date(now.getTime() - 5 * 24 * 60 * 60 * 1000);
 
     const toArchive: number[] = [];
     for (const s of loadedSales) {
@@ -475,10 +473,6 @@ export default function SalesClient() {
       if (!eventDate) continue;
 
       if (s.payment_status === "Paid" && eventDate < now) {
-        // Paid out — archive as soon as event passes
-        toArchive.push(s.id);
-      } else if (s.transfer_status === "Transfer Completed" && eventDate < fiveDaysAgo) {
-        // Transferred — give 5 days grace then archive
         toArchive.push(s.id);
       }
     }
