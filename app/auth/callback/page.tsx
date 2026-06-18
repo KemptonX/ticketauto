@@ -49,7 +49,7 @@ function AuthCallbackInner() {
       }
 
       setStatus("All good — redirecting…");
-      router.push(next);
+      window.location.href = next;
     }
 
     void handleCallback();
