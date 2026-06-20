@@ -391,7 +391,7 @@ export default function DeskClient() {
     });
     const thisMonthTickets = thisMonthAllOrders.reduce((sum, o) => sum + (o.qty_bought ?? 1), 0);
     const thisMonthTicketsSold = thisMonthAllOrders
-      .filter((o) => o.listing_status === "Sold" || (o.sold_total ?? 0) > 0)
+      .filter((o) => o.listing_status === "Sold" || o.listing_status === "Archived")
       .reduce((sum, o) => sum + (o.qty_bought ?? 1), 0);
     const thisMonthTicketsRemaining = thisMonthAllOrders
       .filter((o) => o.listing_status !== "Sold" && o.listing_status !== "Archived")
