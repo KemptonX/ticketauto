@@ -397,8 +397,10 @@ export default function DeskClient() {
       .filter((o) => o.listing_status !== "Sold" && o.listing_status !== "Archived" && (o.sold_total ?? 0) <= 0)
       .reduce((sum, o) => sum + (o.qty_bought ?? 1), 0);
 
-    // Open positions: actively listed
-    const openCount = orders.filter((o) => o.listing_status === "Listed").length;
+    // Unsold stock value this month: cost of orders in the selected month not yet sold
+    const unsoldStockValue = thisMonthAllOrders
+      .filter((o) => o.listing_status !== "Sold" && o.listing_status !== "Archived" && (o.sold_total ?? 0) <= 0)
+      .reduce((sum, o) => sum + (o.total_cost ?? 0), 0);
 
     const capitalIn = orders
       .filter((o) => o.listing_status !== "Sold" && o.listing_status !== "Archived")
@@ -414,7 +416,7 @@ export default function DeskClient() {
 
     const soldCount = orders.filter((o) => o.listing_status === "Sold").length;
 
-    return { capitalIn, closedProfit, availableCount, soldCount, monthlyRevenue, monthlyProfit, monthlyROI, openCount, bestEvent, bestProfit, thisMonthCount, thisMonthSold, thisMonthPayout, thisMonthTickets, thisMonthTicketsSold, thisMonthTicketsRemaining, yearlyProfit, fyStart, fyEnd, monthlyProjected, yearlyProjected };
+    return { capitalIn, closedProfit, availableCount, soldCount, monthlyRevenue, monthlyProfit, monthlyROI, unsoldStockValue, bestEvent, bestProfit, thisMonthCount, thisMonthSold, thisMonthPayout, thisMonthTickets, thisMonthTicketsSold, thisMonthTicketsRemaining, yearlyProfit, fyStart, fyEnd, monthlyProjected, yearlyProjected };
   }, [orders, sales, selectedMonth]);
 
   const ticketsLeftThisMonth = useMemo(() => {
@@ -632,9 +634,9 @@ export default function DeskClient() {
           </article>
           <article className="kpi-card">
             <span className="kpi-accent" />
-            <p>Open positions</p>
-            <strong>{metrics.openCount}</strong>
-            <span>actively listed</span>
+            <p>Unsold stock</p>
+            <strong>{formatCurrency(metrics.unsoldStockValue)}</strong>
+            <span>cost of unsold {new Date(selectedMonth.year, selectedMonth.month, 1).toLocaleString("en-GB", { month: "long" })} tickets</span>
           </article>
           <article className="kpi-card">
             <span className="kpi-accent" />

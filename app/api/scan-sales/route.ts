@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/src/lib/supabase-server";
-import { rematchViagogoSales, syncViagogoSalesImapInbox, syncViagogoSalesInbox, syncViagogoSalesOutlookInbox } from "@/src/lib/viagogo-sales-sync";
+import { rematchViagogoSales, syncViagogoSalesImapInbox, syncViagogoSalesInbox, syncViagogoSalesOutlookInbox, syncStubHubSalesInbox, syncStubHubSalesOutlookInbox, syncStubHubSalesImapInbox } from "@/src/lib/viagogo-sales-sync";
 
 export const runtime = "nodejs";
 
@@ -61,21 +61,36 @@ export async function POST() {
     };
 
     for (const account of readyOAuthAccounts) {
-      const result =
-        account.provider === "outlook"
-          ? await syncViagogoSalesOutlookInbox({ supabase, outlookAccount: account, userId: user.id })
-          : await syncViagogoSalesInbox({ supabase, gmailAccount: account, userId: user.id });
-
-      totals.scanned += result.scanned;
-      totals.inserted += result.inserted;
-      totals.matched += result.matched;
+      if (account.provider === "outlook") {
+        const vg = await syncViagogoSalesOutlookInbox({ supabase, outlookAccount: account, userId: user.id });
+        totals.scanned += vg.scanned;
+        totals.inserted += vg.inserted;
+        totals.matched += vg.matched;
+        const sh = await syncStubHubSalesOutlookInbox({ supabase, outlookAccount: account, userId: user.id });
+        totals.scanned += sh.scanned;
+        totals.inserted += sh.inserted;
+        totals.matched += sh.matched;
+      } else {
+        const vg = await syncViagogoSalesInbox({ supabase, gmailAccount: account, userId: user.id });
+        totals.scanned += vg.scanned;
+        totals.inserted += vg.inserted;
+        totals.matched += vg.matched;
+        const sh = await syncStubHubSalesInbox({ supabase, gmailAccount: account, userId: user.id });
+        totals.scanned += sh.scanned;
+        totals.inserted += sh.inserted;
+        totals.matched += sh.matched;
+      }
     }
 
     for (const account of readyImapAccounts) {
-      const result = await syncViagogoSalesImapInbox({ supabase, imapAccount: account, userId: user.id });
-      totals.scanned += result.scanned;
-      totals.inserted += result.inserted;
-      totals.matched += result.matched;
+      const vg = await syncViagogoSalesImapInbox({ supabase, imapAccount: account, userId: user.id });
+      totals.scanned += vg.scanned;
+      totals.inserted += vg.inserted;
+      totals.matched += vg.matched;
+      const sh = await syncStubHubSalesImapInbox({ supabase, imapAccount: account, userId: user.id });
+      totals.scanned += sh.scanned;
+      totals.inserted += sh.inserted;
+      totals.matched += sh.matched;
     }
 
     totals.matched += await rematchViagogoSales({

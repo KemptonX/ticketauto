@@ -498,17 +498,11 @@ export default function SalesClient() {
   }
 
   async function autoArchivePastSales(loadedSales: Sale[]): Promise<number[]> {
-    const now = new Date();
-    now.setHours(0, 0, 0, 0);
-
     const toArchive: number[] = [];
     for (const s of loadedSales) {
       const status = s.sale_status ?? "";
       if (status === "Archived" || status === "Deleted" || status === "Cancelled / Issue") continue;
-      const eventDate = parseEventDateValue(s.event_date);
-      if (!eventDate) continue;
-
-      if (s.payment_status === "Paid" && eventDate < now) {
+      if (s.payment_status === "Paid") {
         toArchive.push(s.id);
       }
     }
@@ -1262,23 +1256,23 @@ export default function SalesClient() {
             <button className="secondary-button" onClick={exportSalesCSV} type="button">
               Export CSV
             </button>
-            <button
-              className="secondary-button"
-              type="button"
-              onClick={() => {
-                const allIds = new Set(filteredSales.map(s => s.id));
-                const allSelected = filteredSales.length > 0 && filteredSales.every(s => selectedSaleIds.has(s.id));
-                setSelectedSaleIds(allSelected ? new Set() : allIds);
-              }}
-            >
-              {filteredSales.length > 0 && filteredSales.every(s => selectedSaleIds.has(s.id))
-                ? "Deselect All"
-                : `Select All (${filteredSales.length})`}
-            </button>
             {!showArchived && !showDeleted && (
               <>
                 <button className="secondary-button" onClick={() => void scanSalesNow()} disabled={scanning} type="button">
                   {scanning ? "Scanning..." : "Scan Sales"}
+                </button>
+                <button
+                  className="secondary-button"
+                  type="button"
+                  onClick={() => {
+                    const allIds = new Set(filteredSales.map(s => s.id));
+                    const allSelected = filteredSales.length > 0 && filteredSales.every(s => selectedSaleIds.has(s.id));
+                    setSelectedSaleIds(allSelected ? new Set() : allIds);
+                  }}
+                >
+                  {filteredSales.length > 0 && filteredSales.every(s => selectedSaleIds.has(s.id))
+                    ? "Deselect All"
+                    : `Select All (${filteredSales.length})`}
                 </button>
                 <button className="secondary-button" onClick={() => setShowImportModal(true)} type="button">
                   Import CSV

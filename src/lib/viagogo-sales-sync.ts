@@ -1489,6 +1489,605 @@ const SALE_SUBJECT_KEYWORDS = [
   "please upload your e-tickets",
 ];
 
+// ─── StubHub Sales Sync ───────────────────────────────────────────────────────
+
+const STUBHUB_GMAIL_QUERY =
+  'is:unread from:stubhubinternational.com (subject:"You sold your ticket" OR subject:"Payment processed" OR subject:"tickets were delivered") newer_than:14d';
+
+const STUBHUB_SUBJECT_KEYWORDS = [
+  "you sold your ticket",
+  "payment processed on",
+  "tickets were delivered for order",
+];
+
+const SH_MONTH_NAMES = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+
+function parseStubHubSale({
+  headers,
+  subject,
+  text,
+}: {
+  headers: GmailHeader[];
+  subject: string;
+  text: string;
+}): ParsedSale {
+  const lowerSubject = subject.toLowerCase();
+
+  // External sale ID — try subject first, then body
+  const externalSaleId =
+    subject.match(/[Oo]rder#\s*(\d+)/i)?.[1] ||
+    text.match(/OrderID\s*\n#\s*(\d+)/i)?.[1] ||
+    text.match(/Order\s*#\s*:?\s*\n\s*(\d{5,})/i)?.[1] ||
+    "";
+
+  // Event name
+  let eventName = "";
+  if (lowerSubject.startsWith("you sold your ticket")) {
+    eventName =
+      subject.match(/^You sold your tickets? for (.+?)\s*-\s*Order#\s*\d+$/i)?.[1]?.trim() ?? "";
+  } else if (lowerSubject.startsWith("your tickets were delivered")) {
+    eventName =
+      subject.match(/^Your tickets were delivered for order#\s*\d+\s*-\s*(.+)$/i)?.[1]?.trim() ?? "";
+  }
+  if (!eventName) {
+    eventName = text.match(/Sale info\s*\n([^\n]+)/i)?.[1]?.trim() ?? "";
+  }
+  // "Payment processed" body: count line + event name + date
+  if (!eventName) {
+    eventName = text.match(/^\d+\n([A-Z][^\n]{5,})\n\n\d{2}-\d{2}-\d{4}/m)?.[1]?.trim() ?? "";
+  }
+
+  // Event date
+  let eventDate = "";
+  // Emails 1 & 3: "Wed,\n10/06/2026,\n12:00" — DD/MM/YYYY
+  const saleBlockDate = text.match(
+    /(Mon|Tue|Wed|Thu|Fri|Sat|Sun),?\s*\n(\d{1,2})\/(\d{1,2})\/(\d{4}),?\s*\n(\d{1,2}:\d{2})/i,
+  );
+  if (saleBlockDate) {
+    const [, weekday, dd, mm, yyyy, time] = saleBlockDate;
+    const monthName = SH_MONTH_NAMES[parseInt(mm, 10) - 1] ?? mm;
+    eventDate = `${weekday} ${parseInt(dd, 10)} ${monthName} ${yyyy} ${time}`;
+  } else {
+    // Email 2: "06-10-2026 12:00:00" — MM-DD-YYYY (StubHub International payment emails)
+    const payDate = text.match(/(\d{2})-(\d{2})-(\d{4})\s+(\d{2}:\d{2})/);
+    if (payDate) {
+      const [, mm, dd, yyyy, time] = payDate;
+      const monthName = SH_MONTH_NAMES[parseInt(mm, 10) - 1] ?? mm;
+      eventDate = `${parseInt(dd, 10)} ${monthName} ${yyyy} ${time}`;
+    }
+  }
+
+  // Venue: lines immediately after the timezone line, until OrderID or ticket-count line
+  let venue = "";
+  const nonEmptyLines = text.split(/\n/).map((l) => l.trim()).filter(Boolean);
+  const tzIdx = nonEmptyLines.findIndex((l) =>
+    /^(Europe|America|Asia|Pacific|Atlantic|Indian|Arctic)\//.test(l) ||
+    l === "UTC" ||
+    l === "GMT",
+  );
+  if (tzIdx >= 0) {
+    const venueLines: string[] = [];
+    for (let i = tzIdx + 1; i < Math.min(tzIdx + 6, nonEmptyLines.length); i++) {
+      if (/^(OrderID|#\d|\d+\s*tickets?)/i.test(nonEmptyLines[i])) break;
+      venueLines.push(nonEmptyLines[i].replace(/,$/, "").trim());
+    }
+    if (venueLines.length) venue = venueLines.join(", ");
+  }
+
+  // Buyer email — only present in "You sold your ticket" emails
+  const buyerEmail =
+    text.match(/Your buyer[\s\S]{0,400}?([A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,})/i)?.[1]?.toLowerCase() ??
+    "";
+
+  // Quantity
+  const qtySoldStr =
+    text.match(/^(\d+)\s+tickets?$/im)?.[1] ||
+    text.match(/(\d+)\nticket\b/i)?.[1] ||
+    text.match(/Quantity\s*\nx(\d+)/i)?.[1] ||
+    null;
+  const qtySold = qtySoldStr ? parseInt(qtySoldStr, 10) : null;
+
+  // Amounts
+  const saleTotal = parseMoney(text, [
+    /Subtotal\s*\n\s*£\s*([\d,]+\.?\d*)/i,
+    /Total\s+ticket\s+price\s*\n\s*£\s*([\d,]+\.?\d*)/i,
+  ]);
+  const payoutTotal = parseMoney(text, [
+    /Payment\s+Total\s*[\s]+£\s*([\d,]+\.?\d*)/i,
+    /Your\s+payment\s*[\s]+£\s*([\d,]+\.?\d*)/i,
+  ]);
+  const pricePerTicket =
+    qtySold && saleTotal ? Math.round((saleTotal / qtySold) * 100) / 100 : null;
+
+  // Section
+  let section = "";
+  // Emails 1 & 3: section appears after "X tickets" — "General Camping -\nGeneral admission"
+  const sectionAfterQty = text.match(/\d+\s+tickets?\s*\n\n([^\n]+) -\n([^\n]+)/i);
+  if (sectionAfterQty) {
+    section = `${sectionAfterQty[1].trim()} - ${sectionAfterQty[2].trim()}`;
+  } else {
+    // Email 2: section appears before "Row N/A"
+    section = text.match(/([^\n]+)\n\nRow N\/A/i)?.[1]?.trim() ?? "";
+  }
+
+  return {
+    externalSaleId,
+    subject,
+    eventName,
+    venue,
+    eventDate,
+    soldAt:
+      normalizeTimestamp(headers.find((h) => h.name.toLowerCase() === "date")?.value ?? "") ||
+      new Date().toISOString(),
+    buyerEmail,
+    qtySold,
+    pricePerTicket,
+    payoutTotal,
+    saleTotal,
+    section,
+    row: "",
+    seatFrom: "",
+    seatTo: "",
+  };
+}
+
+async function findExistingStubHubSale(
+  supabase: SupabaseClient,
+  {
+    userId,
+    externalSaleId,
+    sourceMessageId,
+  }: {
+    userId: string;
+    externalSaleId: string;
+    sourceMessageId: string;
+  },
+) {
+  if (externalSaleId) {
+    const { data, error } = await supabase
+      .from("sales")
+      .select("id, external_sale_id, source_message_id, inventory_order_id, match_confidence, qty_sold")
+      .eq("user_id", userId)
+      .eq("source", "stubhub")
+      .eq("external_sale_id", externalSaleId)
+      .limit(1)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    if (data) return data as ExistingSale;
+  }
+  const { data, error } = await supabase
+    .from("sales")
+    .select("id, external_sale_id, source_message_id, inventory_order_id, match_confidence, qty_sold")
+    .eq("user_id", userId)
+    .eq("source_message_id", sourceMessageId)
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return (data as ExistingSale | null) || null;
+}
+
+async function listStubHubOutlookMessages(accessToken: string): Promise<OutlookGraphMessage[]> {
+  const url = new URL("https://graph.microsoft.com/v1.0/me/messages");
+  url.searchParams.set("$search", '"stubhub"');
+  url.searchParams.set("$top", "25");
+  url.searchParams.set("$select", "id,subject,body,receivedDateTime,isRead");
+  const data = await outlookGraphRequest<{ value?: OutlookGraphMessage[] }>(
+    accessToken,
+    url.toString(),
+    { headers: { Prefer: 'outlook.body-content-type="text"' } },
+  );
+  return data.value || [];
+}
+
+export async function syncStubHubSalesInbox({
+  supabase,
+  gmailAccount,
+  userId,
+}: {
+  supabase: SupabaseClient;
+  gmailAccount: GmailAccount;
+  userId: string;
+}): Promise<SyncResult> {
+  const accessToken = await getValidAccessToken({ supabase, gmailAccount });
+  const labelId = await getOrCreateLabel(accessToken, PROCESSED_LABEL);
+  const messages = await listMessages(accessToken, STUBHUB_GMAIL_QUERY);
+  const candidateOrders = await loadCandidateOrders(supabase, userId);
+  const orderUsage = await loadOrderUsage(supabase, userId);
+
+  const BATCH_SIZE = 10;
+  const fullMessages: Awaited<ReturnType<typeof getMessage>>[] = [];
+  for (let i = 0; i < messages.length; i += BATCH_SIZE) {
+    const chunk = messages.slice(i, i + BATCH_SIZE);
+    const fetched = await Promise.all(chunk.map((m) => getMessage(accessToken, m.id)));
+    fullMessages.push(...fetched);
+  }
+
+  let inserted = 0;
+  let matched = 0;
+
+  for (let msgIdx = 0; msgIdx < messages.length; msgIdx++) {
+    const message = messages[msgIdx];
+    const fullMessage = fullMessages[msgIdx];
+    const headers = fullMessage.payload.headers || [];
+    const subject = getHeader(headers, "Subject");
+    const body = getBody(fullMessage.payload);
+    const combined = cleanText(`${subject}\n${body}`);
+    const sourceMessageId = getHeader(headers, "Message-ID") || message.id;
+
+    const lowerSubject = subject.toLowerCase();
+    if (!STUBHUB_SUBJECT_KEYWORDS.some((kw) => lowerSubject.includes(kw))) continue;
+
+    const parsed = parseStubHubSale({ headers, subject, text: combined });
+    if (!parsed.externalSaleId) continue;
+
+    const existingSale = await findExistingStubHubSale(supabase, {
+      userId,
+      externalSaleId: parsed.externalSaleId,
+      sourceMessageId,
+    });
+
+    const match = existingSale?.inventory_order_id
+      ? null
+      : findBestInventoryMatch({ orders: candidateOrders, orderUsage, sale: parsed });
+
+    const saleData: SaleInsert = {
+      external_sale_id: parsed.externalSaleId,
+      gmail_account_id: gmailAccount.id,
+      source: "stubhub",
+      source_message_id: sourceMessageId,
+      subject: parsed.subject,
+      event_name: parsed.eventName,
+      venue: parsed.venue,
+      event_date: parsed.eventDate,
+      sold_at: parsed.soldAt,
+      account_email: gmailAccount.email,
+      buyer_email: parsed.buyerEmail,
+      qty_sold: parsed.qtySold,
+      price_per_ticket: parsed.pricePerTicket,
+      sale_total: parsed.saleTotal,
+      payout_total: parsed.payoutTotal,
+      currency: "GBP",
+      section: parsed.section,
+      row: parsed.row,
+      seat_from: parsed.seatFrom,
+      seat_to: parsed.seatTo,
+      sale_status: "Sold – Awaiting Transfer",
+      inventory_order_id: existingSale?.inventory_order_id ?? match?.order.id ?? null,
+      match_confidence:
+        existingSale?.match_confidence ?? (match ? Number(match.score.toFixed(2)) : null),
+      user_id: userId,
+    };
+
+    const mutation = existingSale
+      ? supabase
+          .from("sales")
+          .update({ ...saleData, source_message_id: existingSale.source_message_id || sourceMessageId })
+          .eq("id", existingSale.id)
+      : supabase.from("sales").insert(saleData);
+
+    const { error } = await mutation;
+    if (error) throw new Error(error.message);
+
+    if (!existingSale) inserted += 1;
+
+    if (match) {
+      const currentUsed = orderUsage.get(match.order.id) ?? 0;
+      const newQtySold = currentUsed + (parsed.qtySold ?? 1);
+      orderUsage.set(match.order.id, newQtySold);
+      matched += 1;
+      await updateMatchedOrder(supabase, {
+        userId,
+        order: match.order,
+        payoutTotal: parsed.payoutTotal,
+        totalQtySold: newQtySold,
+      });
+    }
+
+    await markMessageProcessed(accessToken, message.id, labelId);
+  }
+
+  await supabase
+    .from("gmail_accounts")
+    .update({ last_synced_at: new Date().toISOString(), status: "Ready" })
+    .eq("id", gmailAccount.id);
+
+  return { scanned: messages.length, inserted, matched, email: gmailAccount.email };
+}
+
+export async function syncStubHubSalesOutlookInbox({
+  supabase,
+  outlookAccount,
+  userId,
+}: {
+  supabase: SupabaseClient;
+  outlookAccount: OutlookSalesAccount;
+  userId: string;
+}): Promise<SyncResult> {
+  const accessToken = await getValidOutlookToken({ supabase, outlookAccount });
+  const messages = await listStubHubOutlookMessages(accessToken);
+  const candidateOrders = await loadCandidateOrders(supabase, userId);
+  const orderUsage = await loadOrderUsage(supabase, userId);
+
+  let inserted = 0;
+  let matched = 0;
+
+  for (const msg of messages) {
+    if (msg.isRead) continue;
+
+    const subject = msg.subject || "";
+    const lowerSubject = subject.toLowerCase();
+    if (!STUBHUB_SUBJECT_KEYWORDS.some((kw) => lowerSubject.includes(kw))) continue;
+
+    const rawBody = decodeQuotedPrintable(msg.body.content);
+    const bodyText = msg.body.contentType === "html" ? outlookStripHtml(rawBody) : rawBody;
+    const combined = cleanText(`${subject}\n${bodyText}`);
+    const sourceMessageId = msg.id;
+
+    const fakeHeaders: GmailHeader[] = [{ name: "Date", value: msg.receivedDateTime || "" }];
+    const parsed = parseStubHubSale({ headers: fakeHeaders, subject, text: combined });
+    if (!parsed.externalSaleId) continue;
+
+    const existingSale = await findExistingStubHubSale(supabase, {
+      userId,
+      externalSaleId: parsed.externalSaleId,
+      sourceMessageId,
+    });
+
+    const match = existingSale?.inventory_order_id
+      ? null
+      : findBestInventoryMatch({ orders: candidateOrders, orderUsage, sale: parsed });
+
+    const saleData: SaleInsert = {
+      external_sale_id: parsed.externalSaleId,
+      gmail_account_id: outlookAccount.id,
+      source: "stubhub",
+      source_message_id: sourceMessageId,
+      subject: parsed.subject,
+      event_name: parsed.eventName,
+      venue: parsed.venue,
+      event_date: parsed.eventDate,
+      sold_at: parsed.soldAt,
+      account_email: outlookAccount.email,
+      buyer_email: parsed.buyerEmail,
+      qty_sold: parsed.qtySold,
+      price_per_ticket: parsed.pricePerTicket,
+      sale_total: parsed.saleTotal,
+      payout_total: parsed.payoutTotal,
+      currency: "GBP",
+      section: parsed.section,
+      row: parsed.row,
+      seat_from: parsed.seatFrom,
+      seat_to: parsed.seatTo,
+      sale_status: "Sold – Awaiting Transfer",
+      inventory_order_id: existingSale?.inventory_order_id ?? match?.order.id ?? null,
+      match_confidence:
+        existingSale?.match_confidence ?? (match ? Number(match.score.toFixed(2)) : null),
+      user_id: userId,
+    };
+
+    const mutation = existingSale
+      ? supabase
+          .from("sales")
+          .update({ ...saleData, source_message_id: existingSale.source_message_id || sourceMessageId })
+          .eq("id", existingSale.id)
+      : supabase.from("sales").insert(saleData);
+
+    const { error } = await mutation;
+    if (error) throw new Error(error.message);
+
+    if (!existingSale) inserted += 1;
+
+    if (match) {
+      const currentUsed = orderUsage.get(match.order.id) ?? 0;
+      const newQtySold = currentUsed + (parsed.qtySold ?? 1);
+      orderUsage.set(match.order.id, newQtySold);
+      matched += 1;
+      await updateMatchedOrder(supabase, {
+        userId,
+        order: match.order,
+        payoutTotal: parsed.payoutTotal,
+        totalQtySold: newQtySold,
+      });
+    }
+
+    await outlookMarkRead(accessToken, msg.id);
+  }
+
+  await supabase
+    .from("gmail_accounts")
+    .update({ last_synced_at: new Date().toISOString(), status: "Ready" })
+    .eq("id", outlookAccount.id);
+
+  return { scanned: messages.length, inserted, matched, email: outlookAccount.email };
+}
+
+export async function syncStubHubSalesImapInbox({
+  supabase,
+  imapAccount,
+  userId,
+}: {
+  supabase: SupabaseClient;
+  imapAccount: ImapAccount;
+  userId: string;
+}): Promise<SyncResult> {
+  const { ImapFlow } = await import("imapflow");
+  const { simpleParser } = await import("mailparser");
+
+  const client = new ImapFlow({
+    host: imapAccount.host,
+    port: imapAccount.port,
+    secure: imapAccount.use_tls,
+    auth: { user: imapAccount.username, pass: imapAccount.password },
+    logger: false,
+    disableAutoIdle: true,
+    socketTimeout: 30000,
+  });
+
+  let inserted = 0;
+  let matched = 0;
+  let scanned = 0;
+
+  try {
+    await client.connect();
+    const lock = await client.getMailboxLock(imapAccount.mailbox || "INBOX");
+    try {
+      const since14 = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
+      const uidResult = await client.search({ since: since14, seen: false }, { uid: true });
+      const allUids = (Array.isArray(uidResult) ? uidResult : []).slice(-500) as number[];
+
+      if (allUids.length === 0) {
+        return { scanned: 0, inserted, matched, email: imapAccount.username };
+      }
+
+      const candidateUids: number[] = [];
+      const ENV_BATCH = 50;
+      for (let ei = 0; ei < allUids.length; ei += ENV_BATCH) {
+        const chunk = allUids.slice(ei, ei + ENV_BATCH);
+        for await (const msg of client.fetch(chunk, { envelope: true }, { uid: true })) {
+          const subject = msg.envelope?.subject ?? "";
+          const from = (msg.envelope?.from?.[0]?.address ?? "").toLowerCase();
+          if (
+            from.includes("stubhubinternational.com") &&
+            STUBHUB_SUBJECT_KEYWORDS.some((kw) => subject.toLowerCase().includes(kw))
+          ) {
+            candidateUids.push(msg.uid);
+          }
+        }
+      }
+
+      if (candidateUids.length === 0) {
+        return { scanned: 0, inserted, matched, email: imapAccount.username };
+      }
+
+      try { await client.mailboxCreate("My Sales"); } catch { /* already exists */ }
+
+      const candidateOrders = await loadCandidateOrders(supabase, userId);
+      const orderUsage = await loadOrderUsage(supabase, userId);
+
+      const BODY_BATCH = 10;
+      for (let bi = 0; bi < candidateUids.length; bi += BODY_BATCH) {
+        const batchUids = candidateUids.slice(bi, bi + BODY_BATCH);
+        const batchSources = new Map<number, Buffer>();
+        for await (const msg of client.fetch(batchUids, { source: true }, { uid: true })) {
+          if (msg.source) batchSources.set(msg.uid, msg.source as Buffer);
+        }
+
+        for (const uid of batchUids) {
+          const source = batchSources.get(uid);
+          if (!source) continue;
+
+          try {
+            const parsed = await simpleParser(source, { skipHtmlToText: true });
+            scanned++;
+
+            const subject = parsed.subject ?? "";
+            const sourceMessageId = parsed.messageId
+              ? parsed.messageId.replace(/^<|>$/g, "")
+              : `imap-uid-${uid}`;
+
+            const plainPart = parsed.text ?? "";
+            const rawHtml = typeof parsed.html === "string" ? parsed.html : "";
+            const bodyParts: string[] = [];
+            if (plainPart) bodyParts.push(plainPart);
+            if (rawHtml) bodyParts.push(stripHtml(rawHtml));
+            const body = cleanText(bodyParts.join("\n"));
+            const combined = cleanText(`${subject}\n${body}`);
+
+            const fakeHeaders: GmailHeader[] = [
+              { name: "Date", value: parsed.date?.toUTCString() ?? "" },
+            ];
+
+            const saleParsed = parseStubHubSale({ headers: fakeHeaders, subject, text: combined });
+            if (!saleParsed.externalSaleId) { scanned--; continue; }
+
+            const existingSale = await findExistingStubHubSale(supabase, {
+              userId,
+              externalSaleId: saleParsed.externalSaleId,
+              sourceMessageId,
+            });
+
+            const match = existingSale?.inventory_order_id
+              ? null
+              : findBestInventoryMatch({ orders: candidateOrders, orderUsage, sale: saleParsed });
+
+            const saleData: SaleInsert = {
+              external_sale_id: saleParsed.externalSaleId,
+              gmail_account_id: imapAccount.id,
+              source: "stubhub",
+              source_message_id: sourceMessageId,
+              subject: saleParsed.subject,
+              event_name: saleParsed.eventName,
+              venue: saleParsed.venue,
+              event_date: saleParsed.eventDate,
+              sold_at: saleParsed.soldAt,
+              account_email: imapAccount.username,
+              buyer_email: saleParsed.buyerEmail,
+              qty_sold: saleParsed.qtySold,
+              price_per_ticket: saleParsed.pricePerTicket,
+              sale_total: saleParsed.saleTotal,
+              payout_total: saleParsed.payoutTotal,
+              currency: "GBP",
+              section: saleParsed.section,
+              row: saleParsed.row,
+              seat_from: saleParsed.seatFrom,
+              seat_to: saleParsed.seatTo,
+              sale_status: "Sold – Awaiting Transfer",
+              inventory_order_id: existingSale?.inventory_order_id ?? match?.order.id ?? null,
+              match_confidence:
+                existingSale?.match_confidence ?? (match ? Number(match.score.toFixed(2)) : null),
+              user_id: userId,
+            };
+
+            const mutation = existingSale
+              ? supabase
+                  .from("sales")
+                  .update({
+                    ...saleData,
+                    source_message_id: existingSale.source_message_id || sourceMessageId,
+                  })
+                  .eq("id", existingSale.id)
+              : supabase.from("sales").insert(saleData);
+
+            const { error } = await mutation;
+            if (error) throw new Error(error.message);
+
+            if (!existingSale) inserted++;
+
+            if (match) {
+              const currentUsed = orderUsage.get(match.order.id) ?? 0;
+              const newQtySold = currentUsed + (saleParsed.qtySold ?? 1);
+              orderUsage.set(match.order.id, newQtySold);
+              matched++;
+              await updateMatchedOrder(supabase, {
+                userId,
+                order: match.order,
+                payoutTotal: saleParsed.payoutTotal,
+                totalQtySold: newQtySold,
+              });
+            }
+
+            try { await client.messageFlagsAdd(String(uid), ["\\Seen"], { uid: true }); } catch { /* best-effort */ }
+            try { await client.messageMove(String(uid), "My Sales", { uid: true }); } catch { /* best-effort */ }
+          } catch {
+            scanned--;
+          }
+        }
+      }
+    } finally {
+      lock.release();
+    }
+  } finally {
+    try { await client.logout(); } catch { /* ignore */ }
+  }
+
+  await supabase
+    .from("imap_accounts")
+    .update({ last_synced_at: new Date().toISOString() })
+    .eq("id", imapAccount.id);
+
+  return { scanned, inserted, matched, email: imapAccount.username };
+}
+
 export async function syncViagogoSalesImapInbox({
   supabase,
   imapAccount,
