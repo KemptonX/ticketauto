@@ -394,7 +394,7 @@ export default function DeskClient() {
       .filter((o) => o.listing_status === "Sold" || (o.sold_total ?? 0) > 0)
       .reduce((sum, o) => sum + (o.qty_bought ?? 1), 0);
     const thisMonthTicketsRemaining = thisMonthAllOrders
-      .filter((o) => o.listing_status !== "Sold" && o.listing_status !== "Archived" && (o.sold_total ?? 0) <= 0)
+      .filter((o) => o.listing_status !== "Sold" && o.listing_status !== "Archived")
       .reduce((sum, o) => sum + (o.qty_bought ?? 1), 0);
 
     // Unsold stock value this month: cost of active (non-sold, non-archived) orders with events in the selected month
