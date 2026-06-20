@@ -397,9 +397,9 @@ export default function DeskClient() {
       .filter((o) => o.listing_status !== "Sold" && o.listing_status !== "Archived" && (o.sold_total ?? 0) <= 0)
       .reduce((sum, o) => sum + (o.qty_bought ?? 1), 0);
 
-    // Unsold stock value this month: cost of orders in the selected month not yet sold
+    // Unsold stock value this month: cost of all orders with events in the selected month that aren't sold
     const unsoldStockValue = thisMonthAllOrders
-      .filter((o) => o.listing_status !== "Sold" && o.listing_status !== "Archived" && (o.sold_total ?? 0) <= 0)
+      .filter((o) => o.listing_status !== "Sold")
       .reduce((sum, o) => sum + (o.total_cost ?? 0), 0);
 
     const capitalIn = orders
