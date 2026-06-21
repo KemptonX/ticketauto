@@ -40,37 +40,28 @@ type ImportField = {
 
 const FIELDS: ImportField[] = [
   // ── Ticket Details ────────────────────────────────────────────────────────
-  { key: "event_name",           label: "Event Name",            group: "Ticket Details",   aliases: ["event","event name","show","concert","artist","title","name","fixture","event title"], dataType: "text" },
-  { key: "event_date",           label: "Event Date",            group: "Ticket Details",   aliases: ["event date","date","show date","match date","game date","event day"], dataType: "date" },
-  { key: "venue",                label: "Venue",                 group: "Ticket Details",   aliases: ["venue","stadium","arena","location","ground","hall","venue name"], dataType: "text" },
-  { key: "section",              label: "Section / Block",       group: "Ticket Details",   aliases: ["section","block","sec","stand","area","zone","sector","block section"], dataType: "text" },
-  { key: "row",                  label: "Row",                   group: "Ticket Details",   aliases: ["row","row number","row no","row num","row letter"], dataType: "text" },
-  { key: "seats",                label: "Seats (e.g. 1–4)",      group: "Ticket Details",   aliases: ["seat","seats","seat range","seat no","seat nos","seat numbers","seat number"], dataType: "text" },
-  { key: "seat_from",            label: "Seat From",             group: "Ticket Details",   aliases: ["seat from","from seat","first seat","seat start","seat low","seat begin","seat first"], dataType: "text" },
-  { key: "seat_to",              label: "Seat To",               group: "Ticket Details",   aliases: ["seat to","to seat","last seat","seat end","seat high","seat last"], dataType: "text" },
-  { key: "qty_sold",             label: "Tickets Sold",          group: "Ticket Details",   aliases: ["qty sold","tickets sold","qty","quantity","count","sold qty","no of tickets","number of tickets","tickets","number sold","sold"], dataType: "number" },
-  // ── Sales Details ──────────────────────────────────────────────────────────
-  { key: "sale_status",          label: "Sale Status",           group: "Sales Details",    aliases: ["sale status","status","state","sale state","ticket status","listing status"], dataType: "sale_status" },
-  { key: "sold_at",              label: "Sold Date",             group: "Sales Details",    aliases: ["sale date","sold at","sold date","date sold","transaction date","sale time","sold on"], dataType: "date" },
-  { key: "sale_total",           label: "Sold For (gross)",      group: "Sales Details",    aliases: ["sale price","price","sale total","sold for","revenue","total","amount","gross","face value sold","gross revenue","sold amount"], dataType: "number" },
-  { key: "payout_total",         label: "Amount Paid Out",       group: "Sales Details",    aliases: ["payout","payout total","net payout","proceeds","net","net amount","amount received","amount paid out","amount paid","received","net received","take home"], dataType: "number" },
-  { key: "buyer_name",           label: "Buyer Name",            group: "Sales Details",    aliases: ["buyer","buyer name","broker","client","customer","purchaser","sold to","buyer broker","buyer contact name"], dataType: "text" },
-  { key: "marketplace",          label: "Buyer Platform",        group: "Sales Details",    aliases: ["platform","marketplace","via","through","sold via","channel","buyer platform","market","source platform","sold on","listing platform"], dataType: "text" },
-  { key: "buyer_email",          label: "Buyer Email / Contact", group: "Sales Details",    aliases: ["buyer email","email","contact email","buyer address","buyer contact","purchaser email"], dataType: "text" },
-  { key: "external_sale_id",     label: "Sale Reference",        group: "Sales Details",    aliases: ["sale ref","sale reference","sale id","sale number","order ref","reference","ref","ticket ref","sale order id","marketplace order id","order id","order number"], dataType: "text" },
-  // ── Transfer Details ───────────────────────────────────────────────────────
-  { key: "transfer_status",      label: "Transfer Status",       group: "Transfer Details", aliases: ["transfer status","transfer","transferred","transfer state","handover status","transfer complete","transfer done"], dataType: "transfer_status" },
-  { key: "transfer_date",        label: "Transfer Date",         group: "Transfer Details", aliases: ["transfer date","date transferred","transferred at","handover date","transfer completed date","transferred on"], dataType: "date" },
-  { key: "transfer_deadline",    label: "Transfer Deadline",     group: "Transfer Details", aliases: ["transfer deadline","deadline","transfer by","deadline transfer","must transfer by","transfer due","due date"], dataType: "date" },
-  // ── Payment Details ────────────────────────────────────────────────────────
-  { key: "payment_status",       label: "Payment Status",        group: "Payment Details",  aliases: ["payment status","paid","payment","payment state","pay status","payment received","payout status","payment received status"], dataType: "payment_status" },
-  { key: "expected_payout_date", label: "Expected Payout Date",  group: "Payment Details",  aliases: ["expected payout","expected payment","payout expected","payment expected","expected date","payout estimate","expected payout date","payment due date","payout due"], dataType: "date" },
-  { key: "payout_date",          label: "Actual Payout Date",    group: "Payment Details",  aliases: ["payment date","paid date","date paid","payout date","received date","actual payout date","actual payment date","payout received","payment received date"], dataType: "date" },
-  // ── Notes ──────────────────────────────────────────────────────────────────
-  { key: "notes",                label: "Notes",                 group: "Notes / System",   aliases: ["notes","note","comments","comment","remarks","memo","description","general notes","sale notes","transfer notes","payment notes","additional info"], dataType: "text" },
+  { key: "event_name",       label: "Event Name",       group: "Ticket Details",     aliases: ["event","event name","show","concert","artist","title","name","fixture","event title"], dataType: "text" },
+  { key: "event_date",       label: "Event Date",       group: "Ticket Details",     aliases: ["event date","date","show date","match date","game date","event day"], dataType: "date" },
+  { key: "venue",            label: "Venue",            group: "Ticket Details",     aliases: ["venue","stadium","arena","location","ground","hall","venue name"], dataType: "text" },
+  { key: "section",          label: "Section / Block",  group: "Ticket Details",     aliases: ["section","block","sec","stand","area","zone","sector","block section"], dataType: "text" },
+  { key: "row",              label: "Row",              group: "Ticket Details",     aliases: ["row","row number","row no","row num","row letter"], dataType: "text" },
+  { key: "seats",            label: "Seats (e.g. 1–4)", group: "Ticket Details",     aliases: ["seat","seats","seat range","seat no","seat nos","seat numbers","seat number","seat from","seat to","first seat","last seat"], dataType: "text" },
+  { key: "qty_sold",         label: "Tickets Sold",     group: "Ticket Details",     aliases: ["qty sold","tickets sold","qty","quantity","count","sold qty","no of tickets","number of tickets","tickets","number sold","sold"], dataType: "number" },
+  // ── Sales Details ─────────────────────────────────────────────────────────
+  { key: "sold_at",          label: "Sold Date",        group: "Sales Details",      aliases: ["sale date","sold at","sold date","date sold","transaction date","sale time","sold on"], dataType: "date" },
+  { key: "sale_total",       label: "Sale Price",       group: "Sales Details",      aliases: ["sale price","price","sale total","sold for","revenue","total","amount","gross","face value sold","gross revenue","sold amount","total price"], dataType: "number" },
+  { key: "payout_total",     label: "Payout Received",  group: "Sales Details",      aliases: ["payout","payout total","net payout","proceeds","net","net amount","amount received","amount paid out","amount paid","received","net received","take home","payout after fees","total payout","your payment"], dataType: "number" },
+  { key: "marketplace",      label: "Platform",         group: "Sales Details",      aliases: ["platform","marketplace","via","through","sold via","channel","buyer platform","market","source platform","sold on","listing platform"], dataType: "text" },
+  { key: "external_sale_id", label: "Sale Reference",   group: "Sales Details",      aliases: ["sale ref","sale reference","sale id","sale number","order ref","reference","ref","ticket ref","sale order id","marketplace order id","order id","order number"], dataType: "text" },
+  // ── Transfer & Payment ────────────────────────────────────────────────────
+  { key: "transfer_status",  label: "Transfer Status",  group: "Transfer & Payment", aliases: ["transfer status","transfer","transferred","transfer state","handover status","transfer complete","transfer done"], dataType: "transfer_status" },
+  { key: "payment_status",   label: "Payment Status",   group: "Transfer & Payment", aliases: ["payment status","paid","payment","payment state","pay status","payment received","payout status","payment received status"], dataType: "payment_status" },
+  { key: "payout_date",      label: "Date Paid",        group: "Transfer & Payment", aliases: ["payment date","paid date","date paid","payout date","received date","actual payout date","actual payment date","payout received","payment received date"], dataType: "date" },
+  // ── Notes ─────────────────────────────────────────────────────────────────
+  { key: "notes",            label: "Notes",            group: "Notes",              aliases: ["notes","note","comments","comment","remarks","memo","description","general notes","sale notes","transfer notes","payment notes","additional info"], dataType: "text" },
 ];
 
-const FIELD_GROUPS = ["Ticket Details", "Sales Details", "Transfer Details", "Payment Details", "Notes / System"] as const;
+const FIELD_GROUPS = ["Ticket Details", "Sales Details", "Transfer & Payment", "Notes"] as const;
 
 // Columns that actually exist in the sales table and can be inserted
 const SALE_COLS = new Set([
@@ -481,7 +472,7 @@ export default function SalesImportModal({ allOrders, onClose, onImported }: Sal
           {step === "upload" && (
             <div className="add-sale-section">
               <p className="add-sale-section-title">
-                Upload a CSV or Excel file. Supports full broker spreadsheets including sale, transfer and payment data.
+                Upload a CSV or Excel file. Columns are auto-matched — just export your broker spreadsheet as-is.
               </p>
               <div
                 onDragOver={e => { e.preventDefault(); setDragOver(true); }}
@@ -505,10 +496,10 @@ export default function SalesImportModal({ allOrders, onClose, onImported }: Sal
 
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 20 }}>
                 {([
-                  { title: "Ticket Details",  items: ["Event Name, Date, Venue", "Section, Row, Seats", "Tickets Sold"] },
-                  { title: "Sales Details",   items: ["Sale Status, Sold Date", "Sold For / Payout Amount", "Buyer Name, Platform, Sale Ref"] },
-                  { title: "Transfer",        items: ["Transfer Status & Date", "Transfer Deadline"] },
-                  { title: "Payment",         items: ["Payment Status", "Expected & Actual Payout Date", "Amount Paid Out"] },
+                  { title: "Ticket Details",  items: ["Event name, date & venue", "Section, row & seats", "Quantity sold"] },
+                  { title: "Sales Details",   items: ["Sold date & sale price", "Payout received (after fees)", "Platform & sale reference"] },
+                  { title: "Transfer & Payment", items: ["Transfer & payment status", "Date paid"] },
+                  { title: "Notes",           items: ["Free-text notes"] },
                 ] as const).map(g => (
                   <div key={g.title} style={{ padding: "12px 14px", background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 8 }}>
                     <p style={{ fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,0.4)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>{g.title}</p>
