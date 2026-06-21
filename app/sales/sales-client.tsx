@@ -978,7 +978,7 @@ export default function SalesClient() {
       }
       const transStatus = s.transfer_status || "Awaiting Transfer";
       if (transStatus === "Awaiting Transfer" && saleStatus !== "Cancelled / Issue") {
-        awaitingTransferCount += 1;
+        awaitingTransferCount += s.qty_sold ?? 1;
       }
     }
     return { ticketsSold, revenueReceived, awaitingPayment, awaitingTransferCount };
@@ -1056,13 +1056,23 @@ export default function SalesClient() {
         const soldDate = new Date(sale.sold_at);
         if (!group.latestSoldAt || soldDate > group.latestSoldAt) group.latestSoldAt = soldDate;
       }
-      // Don't count overflow/split records as separate sales in the header counts
+      // Don't count split/overflow records as separate sale entries in header counts
       if (sale.split_of_sale_id == null) {
         group.salesCount += 1;
         if (sale.created_at && new Date(sale.created_at).getTime() > Date.now() - 86400000) group.hasNew = true;
         if (sale.inventory_order_id != null) { group.matchedCount += 1; group.inventoryLinked = true; }
         else group.unmatchedCount += 1;
 
+        const platform = sale.marketplace;
+        if (platform) {
+          if (!buyersByKey.has(key)) buyersByKey.set(key, new Set());
+          buyersByKey.get(key)!.add(platform);
+        }
+      }
+
+      // Always count transfer/payment status for ALL sales including splits —
+      // splits represent real tickets that still need to be transferred and paid
+      {
         const transferStatus = sale.transfer_status || "Awaiting Transfer";
         const paymentStatus = sale.payment_status || "Awaiting Payment";
         const saleStatus = sale.sale_status || "Sold – Awaiting Transfer";
@@ -1070,12 +1080,6 @@ export default function SalesClient() {
         else if (transferStatus === "Transfer Completed") group.transferCompletedQty += ticketsSold;
         if (paymentStatus === "Paid" || saleStatus === "Paid") group.paidAmount += soldFor;
         else if (saleStatus !== "Cancelled / Issue") group.awaitingPaymentAmount += soldFor;
-
-        const platform = sale.marketplace;
-        if (platform) {
-          if (!buyersByKey.has(key)) buyersByKey.set(key, new Set());
-          buyersByKey.get(key)!.add(platform);
-        }
       }
       // But always count tickets, revenue, and cost (overflows contribute real qty and revenue)
       group.ticketsSold += ticketsSold;
