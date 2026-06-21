@@ -630,3 +630,4 @@ function parseAxsTotal(text: string) {
   const matches = [...text.matchAll(/Total[:\s]+\*?[£$€]?\s*([0-9]+\.[0-9]{2})\*?/gi)];
   return matches.at(-1)?.[1] || "";
 }
+
