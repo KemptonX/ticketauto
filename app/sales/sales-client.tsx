@@ -967,17 +967,20 @@ export default function SalesClient() {
   const lifecycleMetrics = useMemo(() => {
     let ticketsSold = 0, revenueReceived = 0, awaitingPayment = 0, awaitingTransferCount = 0;
     for (const s of metricSales) {
-      ticketsSold += s.qty_sold ?? 0;
       const payout = s.payout_total ?? s.sale_total ?? 0;
       const payStatus = s.payment_status || "Awaiting Payment";
       const saleStatus = s.sale_status || "Sold – Awaiting Transfer";
+      const isActive = saleStatus !== "Archived" && saleStatus !== "Paid" && saleStatus !== "Deleted";
+
+      if (isActive) ticketsSold += s.qty_sold ?? 0;
+
       if (payStatus === "Paid" || saleStatus === "Paid") {
         revenueReceived += payout;
       } else if (saleStatus !== "Cancelled / Issue") {
         awaitingPayment += payout;
       }
       const transStatus = s.transfer_status || "Awaiting Transfer";
-      if (transStatus === "Awaiting Transfer" && saleStatus !== "Cancelled / Issue") {
+      if (isActive && transStatus === "Awaiting Transfer" && saleStatus !== "Cancelled / Issue") {
         awaitingTransferCount += s.qty_sold ?? 1;
       }
     }
@@ -1298,7 +1301,7 @@ export default function SalesClient() {
 
         <div style={{ display: "flex", gap: 10, paddingBottom: 16, flexWrap: "wrap" }}>
           {([
-            { label: "Tickets Sold",      value: String(lifecycleMetrics.ticketsSold),             color: "rgba(255,255,255,0.9)", filterStatus: null },
+            { label: "Active Tickets Sold", value: String(lifecycleMetrics.ticketsSold),             color: "rgba(255,255,255,0.9)", filterStatus: null },
             { label: "Revenue Received",  value: formatCurrency(lifecycleMetrics.revenueReceived), color: "#4ade80",              filterStatus: "Paid" },
             { label: "Awaiting Payment",  value: formatCurrency(lifecycleMetrics.awaitingPayment), color: "#fbbf24",              filterStatus: null },
             { label: "Awaiting Transfer", value: String(lifecycleMetrics.awaitingTransferCount),   color: "#f97316",              filterStatus: "Sold – Awaiting Transfer" },
