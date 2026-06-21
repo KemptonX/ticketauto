@@ -77,6 +77,7 @@ type SaleInsert = {
   seat_from: string;
   seat_to: string;
   sale_status: string;
+  marketplace?: string | null;
   inventory_order_id: number | null;
   match_confidence: number | null;
   split_of_sale_id?: number | null;
@@ -227,6 +228,7 @@ export async function syncViagogoSalesInbox({
       seat_from: parsed.seatFrom,
       seat_to: parsed.seatTo,
       sale_status: "Sold – Awaiting Transfer",
+      marketplace: "Viagogo",
       user_id: userId,
     };
 
@@ -570,6 +572,7 @@ export async function syncViagogoSalesOutlookInbox({
       seat_from: parsed.seatFrom,
       seat_to: parsed.seatTo,
       sale_status: "Sold – Awaiting Transfer",
+      marketplace: "Viagogo",
       inventory_order_id: existingSale?.inventory_order_id ?? match?.order.id ?? null,
       match_confidence:
         existingSale?.match_confidence ?? (match ? Number(match.score.toFixed(2)) : null),
@@ -1752,6 +1755,7 @@ export async function syncStubHubSalesInbox({
       seat_from: parsed.seatFrom,
       seat_to: parsed.seatTo,
       sale_status: "Sold – Awaiting Transfer",
+      marketplace: "StubHub",
       inventory_order_id: existingSale?.inventory_order_id ?? match?.order.id ?? null,
       match_confidence:
         existingSale?.match_confidence ?? (match ? Number(match.score.toFixed(2)) : null),
@@ -1859,6 +1863,7 @@ export async function syncStubHubSalesOutlookInbox({
       seat_from: parsed.seatFrom,
       seat_to: parsed.seatTo,
       sale_status: "Sold – Awaiting Transfer",
+      marketplace: "StubHub",
       inventory_order_id: existingSale?.inventory_order_id ?? match?.order.id ?? null,
       match_confidence:
         existingSale?.match_confidence ?? (match ? Number(match.score.toFixed(2)) : null),
@@ -2032,6 +2037,7 @@ export async function syncStubHubSalesImapInbox({
               seat_from: saleParsed.seatFrom,
               seat_to: saleParsed.seatTo,
               sale_status: "Sold – Awaiting Transfer",
+              marketplace: "StubHub",
               inventory_order_id: existingSale?.inventory_order_id ?? match?.order.id ?? null,
               match_confidence:
                 existingSale?.match_confidence ?? (match ? Number(match.score.toFixed(2)) : null),
@@ -2234,6 +2240,7 @@ export async function syncViagogoSalesImapInbox({
               seat_from: saleParsed.seatFrom,
               seat_to: saleParsed.seatTo,
               sale_status: "Sold – Awaiting Transfer",
+              marketplace: "Viagogo",
               inventory_order_id: existingSale?.inventory_order_id ?? match?.order.id ?? null,
               match_confidence:
                 existingSale?.match_confidence ?? (match ? Number(match.score.toFixed(2)) : null),

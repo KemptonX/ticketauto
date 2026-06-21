@@ -956,7 +956,7 @@ export default function SalesClient() {
   }, [sales]);
 
   const platformOptions = useMemo(() => {
-    const presets = ["Viagogo", "StubHub", "Lysted", "Private Broker", "Ticketmaster", "AXS"];
+    const presets = ["Viagogo", "StubHub", "TiCombo", "Lysted", "Private Broker", "Ticketmaster", "AXS"];
     const fromSales = sales
       .map((s) => s.marketplace)
       .filter((v): v is string => Boolean(v));
