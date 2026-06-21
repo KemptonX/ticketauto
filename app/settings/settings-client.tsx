@@ -561,6 +561,77 @@ export default function SettingsClient() {
     return "connections";
   });
 
+  // ── Discord account linking state ──
+  const [discordLinked, setDiscordLinked] = useState<{ username: string } | null | undefined>(undefined);
+  const [exportingData, setExportingData] = useState(false);
+  const [exported, setExported] = useState(false);
+  const [linkError, setLinkError] = useState("");
+  const justLinked = searchParams.get("linked") === "true";
+
+  useEffect(() => {
+    void (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const identity = user.identities?.find((i) => i.provider === "discord");
+      if (identity) {
+        const username =
+          (identity.identity_data?.full_name as string | undefined) ??
+          (identity.identity_data?.name as string | undefined) ??
+          (identity.identity_data?.custom_claims?.global_name as string | undefined) ??
+          "Discord";
+        setDiscordLinked({ username });
+      } else {
+        setDiscordLinked(null);
+      }
+    })();
+  }, []);
+
+  async function exportAllData() {
+    setExportingData(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const [{ data: orders }, { data: sales }] = await Promise.all([
+        supabase.from("orders").select("*").eq("user_id", user.id),
+        supabase.from("sales").select("*").eq("user_id", user.id),
+      ]);
+      function toCSV(rows: Record<string, unknown>[]): string {
+        if (!rows?.length) return "";
+        const headers = Object.keys(rows[0]);
+        return [
+          headers.join(","),
+          ...rows.map((r) => headers.map((h) => JSON.stringify(r[h] ?? "")).join(",")),
+        ].join("\n");
+      }
+      function download(csv: string, filename: string) {
+        const blob = new Blob([csv], { type: "text/csv" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url; a.download = filename; a.click();
+        URL.revokeObjectURL(url);
+      }
+      const date = new Date().toISOString().slice(0, 10);
+      if (orders?.length) download(toCSV(orders as Record<string, unknown>[]), `tixtracker-orders-${date}.csv`);
+      await new Promise((r) => setTimeout(r, 400));
+      if (sales?.length) download(toCSV(sales as Record<string, unknown>[]), `tixtracker-sales-${date}.csv`);
+      setExported(true);
+    } finally {
+      setExportingData(false);
+    }
+  }
+
+  async function linkDiscordAccount() {
+    setLinkError("");
+    const { error } = await supabase.auth.linkIdentity({
+      provider: "discord",
+      options: {
+        redirectTo: "https://tixtracker.app/auth/callback?mode=link&next=/settings?tab=connections",
+        scopes: "identify email",
+      },
+    });
+    if (error) setLinkError(error.message);
+  }
+
   // ── Discord notifications state ──
   const [discordWebhookUrl, setDiscordWebhookUrl] = useState("");
   const [discordSaved, setDiscordSaved] = useState(false);
@@ -1598,6 +1669,90 @@ export default function SettingsClient() {
                   ))}
                 </div>
               )}
+            </section>
+
+            {/* ── Discord account linking ── */}
+            <section className="table-card connections-list-card">
+              <div className="table-card-header">
+                <div>
+                  <p className="section-tag">Account</p>
+                  <h4>Link Discord account</h4>
+                </div>
+                {discordLinked && (
+                  <span style={{ fontSize: 12, padding: "3px 10px", borderRadius: 20, background: "rgba(74,222,128,0.12)", color: "#4ade80", border: "1px solid rgba(74,222,128,0.3)", fontWeight: 600 }}>
+                    Connected
+                  </span>
+                )}
+              </div>
+              <div style={{ padding: "1.25rem 1.5rem 1.5rem", display: "flex", flexDirection: "column", gap: "1rem" }}>
+                {discordLinked === undefined ? (
+                  <p style={{ fontSize: 13, color: "rgba(255,255,255,0.35)" }}>Checking account…</p>
+                ) : discordLinked !== null ? (
+                  /* Already linked */
+                  <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                    {justLinked && (
+                      <div style={{ padding: "10px 14px", borderRadius: 8, background: "rgba(74,222,128,0.1)", border: "1px solid rgba(74,222,128,0.25)", fontSize: 13, color: "#4ade80" }}>
+                        Discord linked successfully — you can now sign in with Discord.
+                      </div>
+                    )}
+                    <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", borderRadius: 8, background: "rgba(88,101,242,0.1)", border: "1px solid rgba(88,101,242,0.25)" }}>
+                      <svg width="20" height="15" viewBox="0 0 18 14" fill="none"><path d="M15.245 1.175A14.91 14.91 0 0 0 11.567 0c-.167.302-.362.71-.496 1.033a13.784 13.784 0 0 0-4.143 0A11.124 11.124 0 0 0 6.431 0 14.968 14.968 0 0 0 2.75 1.179C.395 4.753-.242 8.238.076 11.674c1.54 1.148 3.033 1.846 4.502 2.303a10.8 10.8 0 0 0 .95-1.57 9.723 9.723 0 0 1-1.495-.73c.125-.093.248-.19.366-.29 2.884 1.353 6.016 1.353 8.866 0 .12.1.243.197.366.29a9.72 9.72 0 0 1-1.499.731c.28.558.604 1.086.952 1.57 1.47-.457 2.965-1.155 4.505-2.304.37-3.955-.627-7.408-2.644-10.499zM6.013 9.554c-.895 0-1.63-.835-1.63-1.857 0-1.022.717-1.859 1.63-1.859.914 0 1.647.836 1.63 1.859 0 1.022-.715 1.857-1.63 1.857zm6.025 0c-.896 0-1.63-.835-1.63-1.857 0-1.022.716-1.859 1.63-1.859.913 0 1.646.836 1.63 1.859 0 1.022-.716 1.857-1.63 1.857z" fill="#a5aaff"/></svg>
+                      <div>
+                        <p style={{ fontSize: 13, fontWeight: 600, color: "#a5aaff", margin: 0 }}>@{discordLinked.username}</p>
+                        <p style={{ fontSize: 12, color: "rgba(255,255,255,0.4)", margin: 0 }}>You can sign in with Discord or email</p>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  /* Not linked — show steps */
+                  <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
+                    <p style={{ fontSize: 13, color: "rgba(255,255,255,0.5)", margin: 0 }}>
+                      Link your Discord account so you can sign in with Discord going forward. Your existing data, orders, and sales are preserved.
+                    </p>
+
+                    {/* Step 1 — Export */}
+                    <div style={{ padding: "14px 16px", borderRadius: 10, background: "rgba(251,191,36,0.07)", border: "1px solid rgba(251,191,36,0.2)" }}>
+                      <p style={{ fontSize: 12, fontWeight: 700, color: "#fbbf24", textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 6px" }}>Step 1 — Back up your data first</p>
+                      <p style={{ fontSize: 13, color: "rgba(255,255,255,0.5)", margin: "0 0 12px" }}>
+                        Export your orders and sales as a safety net before linking. This takes 2 seconds and means nothing can be lost.
+                      </p>
+                      <button
+                        type="button"
+                        className={exported ? "secondary-button" : "primary-button"}
+                        disabled={exportingData}
+                        onClick={() => void exportAllData()}
+                        style={{ fontSize: 13 }}
+                      >
+                        {exportingData ? "Exporting…" : exported ? "✓ Exported — download again?" : "Export all data (CSV)"}
+                      </button>
+                    </div>
+
+                    {/* Step 2 — Link */}
+                    <div style={{ padding: "14px 16px", borderRadius: 10, background: "rgba(88,101,242,0.07)", border: "1px solid rgba(88,101,242,0.2)" }}>
+                      <p style={{ fontSize: 12, fontWeight: 700, color: "#a5aaff", textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 6px" }}>Step 2 — Link Discord</p>
+                      <p style={{ fontSize: 13, color: "rgba(255,255,255,0.5)", margin: "0 0 12px" }}>
+                        You&apos;ll be sent to Discord to authorise. When you return, your accounts are merged and you can log in with either method.
+                      </p>
+                      <button
+                        type="button"
+                        className="primary-button"
+                        style={{ background: "rgba(88,101,242,0.25)", border: "1px solid rgba(88,101,242,0.5)", color: "#a5aaff", fontSize: 13, display: "flex", alignItems: "center", gap: 8 }}
+                        onClick={() => void linkDiscordAccount()}
+                      >
+                        <svg width="16" height="12" viewBox="0 0 18 14" fill="none"><path d="M15.245 1.175A14.91 14.91 0 0 0 11.567 0c-.167.302-.362.71-.496 1.033a13.784 13.784 0 0 0-4.143 0A11.124 11.124 0 0 0 6.431 0 14.968 14.968 0 0 0 2.75 1.179C.395 4.753-.242 8.238.076 11.674c1.54 1.148 3.033 1.846 4.502 2.303a10.8 10.8 0 0 0 .95-1.57 9.723 9.723 0 0 1-1.495-.73c.125-.093.248-.19.366-.29 2.884 1.353 6.016 1.353 8.866 0 .12.1.243.197.366.29a9.72 9.72 0 0 1-1.499.731c.28.558.604 1.086.952 1.57 1.47-.457 2.965-1.155 4.505-2.304.37-3.955-.627-7.408-2.644-10.499zM6.013 9.554c-.895 0-1.63-.835-1.63-1.857 0-1.022.717-1.859 1.63-1.859.914 0 1.647.836 1.63 1.859 0 1.022-.715 1.857-1.63 1.857zm6.025 0c-.896 0-1.63-.835-1.63-1.857 0-1.022.716-1.859 1.63-1.859.913 0 1.646.836 1.63 1.859 0 1.022-.716 1.857-1.63 1.857z" fill="currentColor"/></svg>
+                        Link Discord account
+                      </button>
+                      {linkError && (
+                        <div style={{ marginTop: 10, padding: "8px 12px", borderRadius: 6, background: "rgba(248,113,113,0.1)", border: "1px solid rgba(248,113,113,0.25)", fontSize: 12, color: "#f87171" }}>
+                          {linkError.includes("already") || linkError.includes("in use")
+                            ? "This Discord account is already linked to a different TixTracker login. If you previously signed in with Discord to test, you'll need to delete that test account first — contact support."
+                            : linkError}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
             </section>
           </>
         )}

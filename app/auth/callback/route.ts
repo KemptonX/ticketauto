@@ -74,6 +74,9 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const code = searchParams.get("code");
   const urlError = searchParams.get("error");
+  // mode=link means an existing user is linking their Discord — skip Whop check
+  const isLinkMode = searchParams.get("mode") === "link";
+  const next = searchParams.get("next") ?? "/settings?tab=connections";
 
   if (urlError) {
     return NextResponse.redirect(
@@ -111,6 +114,11 @@ export async function GET(request: Request) {
         exchangeError?.message ?? "auth-failed",
       )}`,
     );
+  }
+
+  // Linking flow: user already has a valid session and is just adding Discord identity
+  if (isLinkMode) {
+    return NextResponse.redirect(`https://tixtracker.app/${next.replace(/^\//, "")}?linked=true`);
   }
 
   const apiKey = process.env.WHOP_API_KEY;
@@ -188,5 +196,5 @@ export async function GET(request: Request) {
     }
   }
 
-  return NextResponse.redirect("https://tixtracker.app/dashboard");
+  return NextResponse.redirect(`https://tixtracker.app/dashboard`);
 }
