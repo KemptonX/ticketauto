@@ -18,9 +18,7 @@ const ALLOWED_STATUSES = new Set([
 
 type WhopMembership = {
   id: string;
-  product_id?: string;
-  plan_id?: string;
-  user_id?: string;
+  product?: string;   // Whop API v2 uses "product" not "product_id"
   status: string;
   valid?: boolean;
   email?: string;
@@ -44,15 +42,18 @@ async function fetchWhopMemberships(
   return parsed.data ?? [];
 }
 
+// Whop API v2 returns all company memberships regardless of query params,
+// so we must filter locally by identity (discordId or email) and product.
 function pickActiveMembership(
   memberships: WhopMembership[],
-  allowedProductId: string | undefined,
+  allowedProductIds: Set<string>,
+  identity?: { discordId?: string; email?: string },
 ): WhopMembership | undefined {
   memberships.forEach((m) =>
     console.log(
-      "[whop] membership id=%s product_id=%s status=%s valid=%s email=%s discord_id=%s",
+      "[whop] membership id=%s product=%s status=%s valid=%s email=%s discord_id=%s",
       m.id,
-      m.product_id,
+      m.product,
       m.status,
       m.valid,
       m.email,
@@ -60,7 +61,10 @@ function pickActiveMembership(
     ),
   );
   return memberships.find((m) => {
-    const productMatch = !allowedProductId || m.product_id === allowedProductId;
+    // Ensure membership belongs to this user
+    if (identity?.discordId && m.discord?.id !== identity.discordId) return false;
+    if (identity?.email && !identity.discordId && m.email !== identity.email) return false;
+    const productMatch = allowedProductIds.size === 0 || allowedProductIds.has(m.product ?? "");
     const accessOk = m.valid === true || ALLOWED_STATUSES.has(m.status);
     return productMatch && accessOk;
   });
@@ -136,23 +140,28 @@ export async function GET(request: Request) {
         .filter(Boolean),
     );
 
+    // Comma-separated product IDs — supports old + new products simultaneously
+    const allowedProductIds = new Set(
+      (process.env.WHOP_ALLOWED_PRODUCT_ID ?? "")
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean),
+    );
+
     const isOwner = !!discordId && ownerIds.has(discordId);
-    console.log("[auth] owner_bypass=%s", isOwner);
+    console.log("[auth] owner_bypass=%s allowed_products=%s", isOwner, [...allowedProductIds].join(","));
 
     if (discordIdentity && !isOwner) {
-      // Don't pass product_id to the API — filter locally so a misconfigured
-      // WHOP_ALLOWED_PRODUCT_ID doesn't silently hide valid memberships in logs.
-      const allowedProductId = process.env.WHOP_ALLOWED_PRODUCT_ID || undefined;
-
       let activeMembership: WhopMembership | undefined;
 
-      // 1. Primary: match by Discord account ID
+      // 1. Primary: match by Discord account ID (API returns all company memberships,
+      //    so we filter locally by discordId to match only this user's memberships)
       if (discordId) {
         const memberships = await fetchWhopMemberships(
           new URLSearchParams({ discord_account_id: discordId }),
           apiKey,
         );
-        activeMembership = pickActiveMembership(memberships, allowedProductId);
+        activeMembership = pickActiveMembership(memberships, allowedProductIds, { discordId });
       }
 
       // 2. Fallback: match by email (catches Whop accounts with Discord not linked)
@@ -162,7 +171,7 @@ export async function GET(request: Request) {
           new URLSearchParams({ email: userEmail }),
           apiKey,
         );
-        activeMembership = pickActiveMembership(memberships, allowedProductId);
+        activeMembership = pickActiveMembership(memberships, allowedProductIds, { email: userEmail });
         if (activeMembership) {
           console.log("[auth] matched via email fallback membership=%s", activeMembership.id);
         }
