@@ -403,14 +403,16 @@ export default function SalesImportModal({ allOrders, onClose, onImported }: Sal
     const errors: FailedRow[] = [];
     const syncIds = new Set<number>();
 
+    // Build batch — validate client-side, collect errors without hitting the DB yet
+    const batch: Record<string, unknown>[] = [];
+    const batchMeta: { rowNum: number; rowType: ReturnType<typeof getRowType>; payout: number }[] = [];
+
     for (let i = 0; i < importRows.length; i++) {
       const obj = transformRow(importRows[i], headers, colMap);
 
-      // Skip explicitly unsold rows
       if (obj._skip) { skipped++; continue; }
       delete obj._skip;
 
-      // Strip columns that don't exist in the sales table
       for (const k of Object.keys(obj)) { if (!SALE_COLS.has(k)) delete obj[k]; }
 
       if (!obj.event_name) {
@@ -418,7 +420,6 @@ export default function SalesImportModal({ allOrders, onClose, onImported }: Sal
         continue;
       }
 
-      // If payout missing and payment confirmed, default payout to sale total
       if ((obj.payment_status as string) === "Paid" && !obj.payout_total && obj.sale_total) {
         obj.payout_total = obj.sale_total;
       }
@@ -436,19 +437,32 @@ export default function SalesImportModal({ allOrders, onClose, onImported }: Sal
       obj.source = "import";
       obj.source_message_id = `import-${Date.now()}-${i}`;
 
-      const { error } = await supabase.from("sales").insert(obj);
-      if (error) {
-        errors.push({ rowNum: i + 2, reason: error.message });
-      } else {
-        inserted++;
-        const t = getRowType(obj);
-        if (t === "awaiting-transfer") awaitingTransfer++;
-        else if (t === "transferred-pending-payment") { transferredPending++; awaitingPaymentAmount += (obj.payout_total as number) ?? 0; }
-        else if (t === "paid-archived") { paidArchived++; paidAmount += (obj.payout_total as number) ?? 0; }
+      batch.push(obj);
+      batchMeta.push({ rowNum: i + 2, rowType: getRowType(obj), payout: (obj.payout_total as number) ?? 0 });
+    }
+
+    // Single batch insert — dramatically faster than one insert per row
+    if (batch.length > 0) {
+      const CHUNK = 200;
+      for (let c = 0; c < batch.length; c += CHUNK) {
+        const chunk = batch.slice(c, c + CHUNK);
+        const chunkMeta = batchMeta.slice(c, c + CHUNK);
+        const { error } = await supabase.from("sales").insert(chunk);
+        if (error) {
+          errors.push({ rowNum: chunkMeta[0].rowNum, reason: `Batch error: ${error.message}` });
+        } else {
+          for (const m of chunkMeta) {
+            inserted++;
+            if (m.rowType === "awaiting-transfer") awaitingTransfer++;
+            else if (m.rowType === "transferred-pending-payment") { transferredPending++; awaitingPaymentAmount += m.payout; }
+            else if (m.rowType === "paid-archived") { paidArchived++; paidAmount += m.payout; }
+          }
+        }
       }
     }
 
-    for (const id of syncIds) { await syncOrder(id); }
+    // Sync matched orders in parallel
+    await Promise.all([...syncIds].map((id) => syncOrder(id)));
 
     setResult({ inserted, matched, unmatched, skipped, errors, awaitingTransfer, transferredPending, paidArchived, awaitingPaymentAmount, paidAmount });
     setStep("done");
