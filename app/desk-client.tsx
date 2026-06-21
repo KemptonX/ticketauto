@@ -166,27 +166,18 @@ export default function DeskClient() {
   async function exportMatchedCSV() {
     setExporting(true);
     try {
-      const { data: salesData } = await supabase
-        .from("sales")
-        .select("id, external_sale_id, inventory_order_id, event_name, venue, event_date, sold_at, qty_sold, sale_total, payout_total, marketplace, buyer_name, buyer_email, sale_status, transfer_status, transfer_date, payment_status, expected_payout_date, payout_date, notes, account_email, section, row, seat_from, seat_to")
-        .not("inventory_order_id", "is", null)
-        .not("sale_status", "in", '("Archived","Deleted")');
-
-      if (!salesData || salesData.length === 0) {
-        alert("No matched sales to export.");
-        return;
-      }
-
-      const orderIds = [...new Set(salesData.map((s) => s.inventory_order_id as number))];
-      const { data: ordersData } = await supabase
-        .from("orders")
-        .select("id, booking_ref, event_name, venue, event_date, account_email, section, row, seat_from, seat_to, qty_bought, total_cost, listing_status, source_type")
-        .in("id", orderIds);
-
-      const orderMap = new Map<number, Record<string, unknown>>();
-      for (const o of (ordersData ?? [])) {
-        orderMap.set((o as { id: number }).id, o as Record<string, unknown>);
-      }
+      // Fetch ALL orders and ALL non-deleted sales in parallel
+      const [{ data: ordersData }, { data: salesData }] = await Promise.all([
+        supabase
+          .from("orders")
+          .select("id, booking_ref, event_name, venue, event_date, account_email, section, row, seat_from, seat_to, qty_bought, total_cost, listing_status, source_type")
+          .order("event_date", { ascending: true }),
+        supabase
+          .from("sales")
+          .select("id, external_sale_id, inventory_order_id, event_name, venue, event_date, sold_at, qty_sold, sale_total, payout_total, marketplace, buyer_name, buyer_email, sale_status, transfer_status, transfer_date, payment_status, expected_payout_date, payout_date, notes, account_email, section, row, seat_from, seat_to")
+          .not("sale_status", "eq", "Deleted")
+          .order("event_date", { ascending: true }),
+      ]);
 
       const csv = (rows: (string | number | null | undefined)[][]) => {
         const esc = (v: string | number | null | undefined) => {
@@ -206,14 +197,24 @@ export default function DeskClient() {
         "Expected Payout Date", "Payout Date", "Notes",
       ];
 
-      const rows = salesData.map((s) => {
-        const o = orderMap.get(s.inventory_order_id as number) ?? {};
+      // Build order map and track which orders have sales
+      const orderMap = new Map<number, Record<string, unknown>>();
+      for (const o of (ordersData ?? [])) {
+        orderMap.set((o as { id: number }).id, o as Record<string, unknown>);
+      }
+      const ordersWithSales = new Set<number>();
+
+      // Rows from sales (matched + unmatched)
+      const saleRows = (salesData ?? []).map((s) => {
+        const orderId = s.inventory_order_id as number | null;
+        const o = orderId ? (orderMap.get(orderId) ?? {}) : {};
+        if (orderId) ordersWithSales.add(orderId);
         return [
-          o.booking_ref, o.event_name ?? s.event_name, o.venue ?? s.venue,
+          o.booking_ref ?? null, o.event_name ?? s.event_name, o.venue ?? s.venue,
           o.event_date ?? s.event_date, o.account_email ?? s.account_email,
           o.section ?? s.section, o.row ?? s.row,
           o.seat_from ?? s.seat_from, o.seat_to ?? s.seat_to,
-          o.qty_bought, o.total_cost, o.listing_status, o.source_type,
+          o.qty_bought ?? null, o.total_cost ?? null, o.listing_status ?? null, o.source_type ?? null,
           s.external_sale_id, s.sold_at, s.qty_sold, s.sale_total, s.payout_total,
           s.marketplace, s.buyer_name, s.buyer_email, s.sale_status,
           s.transfer_status, s.transfer_date, s.payment_status,
@@ -221,11 +222,30 @@ export default function DeskClient() {
         ];
       });
 
-      const blob = new Blob([csv([headers, ...rows])], { type: "text/csv" });
+      // Rows from orders with no sales (personal / unsold tickets)
+      const personalRows = (ordersData ?? [])
+        .filter((o) => !ordersWithSales.has((o as { id: number }).id))
+        .map((o) => {
+          const order = o as Record<string, unknown>;
+          return [
+            order.booking_ref, order.event_name, order.venue, order.event_date, order.account_email,
+            order.section, order.row, order.seat_from, order.seat_to,
+            order.qty_bought, order.total_cost, order.listing_status, order.source_type,
+            null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+          ];
+        });
+
+      const allRows = [...saleRows, ...personalRows];
+      if (allRows.length === 0) {
+        alert("Nothing to export.");
+        return;
+      }
+
+      const blob = new Blob([csv([headers, ...allRows])], { type: "text/csv" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `matched-export-${new Date().toISOString().slice(0, 10)}.csv`;
+      a.download = `tixtracker-export-${new Date().toISOString().slice(0, 10)}.csv`;
       a.click();
       URL.revokeObjectURL(url);
     } finally {
