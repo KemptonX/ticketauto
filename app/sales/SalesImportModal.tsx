@@ -45,7 +45,9 @@ const FIELDS: ImportField[] = [
   { key: "venue",            label: "Venue",            group: "Ticket Details",     aliases: ["venue","stadium","arena","location","ground","hall","venue name"], dataType: "text" },
   { key: "section",          label: "Section / Block",  group: "Ticket Details",     aliases: ["section","block","sec","stand","area","zone","sector","block section"], dataType: "text" },
   { key: "row",              label: "Row",              group: "Ticket Details",     aliases: ["row","row number","row no","row num","row letter"], dataType: "text" },
-  { key: "seats",            label: "Seats (e.g. 1–4)", group: "Ticket Details",     aliases: ["seat","seats","seat range","seat no","seat nos","seat numbers","seat number","seat from","seat to","first seat","last seat"], dataType: "text" },
+  { key: "seats",            label: "Seats (e.g. 1–4)", group: "Ticket Details",     aliases: ["seat","seats","seat range","seat no","seat nos","seat numbers","seat number","first seat","last seat"], dataType: "text" },
+  { key: "seat_from",       label: "Seat From",        group: "Ticket Details",     aliases: ["seat from","from seat","seat start","seat begin","first seat no"], dataType: "text" },
+  { key: "seat_to",         label: "Seat To",          group: "Ticket Details",     aliases: ["seat to","to seat","seat end","seat finish","last seat no"], dataType: "text" },
   { key: "qty_sold",         label: "Tickets Sold",     group: "Ticket Details",     aliases: ["qty sold","tickets sold","qty","quantity","count","sold qty","no of tickets","number of tickets","tickets","number sold","sold"], dataType: "number" },
   // ── Sales Details ─────────────────────────────────────────────────────────
   { key: "sold_at",          label: "Sold Date",        group: "Sales Details",      aliases: ["sale date","sold at","sold date","date sold","transaction date","sale time","sold on"], dataType: "date" },
@@ -53,6 +55,7 @@ const FIELDS: ImportField[] = [
   { key: "payout_total",     label: "Payout Received",  group: "Sales Details",      aliases: ["payout","payout total","net payout","proceeds","net","net amount","amount received","amount paid out","amount paid","received","net received","take home","payout after fees","total payout","your payment"], dataType: "number" },
   { key: "marketplace",      label: "Platform",         group: "Sales Details",      aliases: ["platform","marketplace","via","through","sold via","channel","buyer platform","market","source platform","sold on","listing platform"], dataType: "text" },
   { key: "external_sale_id", label: "Sale Reference",   group: "Sales Details",      aliases: ["sale ref","sale reference","sale id","sale number","order ref","reference","ref","ticket ref","sale order id","marketplace order id","order id","order number"], dataType: "text" },
+  { key: "sale_status",     label: "Sale Status",      group: "Sales Details",      aliases: ["sale status","status","order status","ticket status","sale state"], dataType: "sale_status" },
   // ── Transfer & Payment ────────────────────────────────────────────────────
   { key: "transfer_status",  label: "Transfer Status",  group: "Transfer & Payment", aliases: ["transfer status","transfer","transferred","transfer state","handover status","transfer complete","transfer done"], dataType: "transfer_status" },
   { key: "payment_status",   label: "Payment Status",   group: "Transfer & Payment", aliases: ["payment status","paid","payment","payment state","pay status","payment received","payout status","payment received status"], dataType: "payment_status" },
@@ -187,7 +190,11 @@ function transformRow(rawRow: string[], headers: string[], colMap: Record<number
     } else if (key === "seats") {
       const range = raw.match(/^(\w+)\s*[-–]\s*(\w+)$/);
       if (range) { obj.seat_from = range[1]; obj.seat_to = range[2]; }
-      else obj.seat_from = raw;
+      else if (!obj.seat_from) obj.seat_from = raw;
+    } else if (key === "seat_from") {
+      obj.seat_from = raw;
+    } else if (key === "seat_to") {
+      obj.seat_to = raw;
     } else {
       obj[key] = raw;
     }
@@ -420,6 +427,14 @@ export default function SalesImportModal({ allOrders, onClose, onImported }: Sal
         continue;
       }
 
+      // Skip rows that have no sale data — these are order-only rows from a TixTracker export
+      // (e.g. personal/unsold tickets that have event info but no qty_sold / sale_total)
+      const hasSaleData = obj.qty_sold != null || obj.sale_total != null || obj.payout_total != null || obj.external_sale_id;
+      if (!hasSaleData) {
+        skipped++;
+        continue;
+      }
+
       if ((obj.payment_status as string) === "Paid" && !obj.payout_total && obj.sale_total) {
         obj.payout_total = obj.sale_total;
       }
@@ -441,7 +456,8 @@ export default function SalesImportModal({ allOrders, onClose, onImported }: Sal
       batchMeta.push({ rowNum: i + 2, rowType: getRowType(obj), payout: (obj.payout_total as number) ?? 0 });
     }
 
-    // Single batch insert — dramatically faster than one insert per row
+    // Batch insert in chunks — falls back to row-by-row on chunk failure
+    // so one bad row can't silently drop 200 good rows
     if (batch.length > 0) {
       const CHUNK = 200;
       for (let c = 0; c < batch.length; c += CHUNK) {
@@ -449,7 +465,19 @@ export default function SalesImportModal({ allOrders, onClose, onImported }: Sal
         const chunkMeta = batchMeta.slice(c, c + CHUNK);
         const { error } = await supabase.from("sales").insert(chunk);
         if (error) {
-          errors.push({ rowNum: chunkMeta[0].rowNum, reason: `Batch error: ${error.message}` });
+          // Chunk failed — retry each row individually to rescue the good ones
+          for (let j = 0; j < chunk.length; j++) {
+            const { error: rowErr } = await supabase.from("sales").insert(chunk[j]);
+            if (rowErr) {
+              errors.push({ rowNum: chunkMeta[j].rowNum, reason: rowErr.message });
+            } else {
+              const m = chunkMeta[j];
+              inserted++;
+              if (m.rowType === "awaiting-transfer") awaitingTransfer++;
+              else if (m.rowType === "transferred-pending-payment") { transferredPending++; awaitingPaymentAmount += m.payout; }
+              else if (m.rowType === "paid-archived") { paidArchived++; paidAmount += m.payout; }
+            }
+          }
         } else {
           for (const m of chunkMeta) {
             inserted++;
