@@ -93,7 +93,23 @@ export async function GET(request: Request) {
   const pkce = allCookies.find((c) => c.name.includes("code-verifier"));
   const debugInfo = allCookies.find((c) => c.name === "pkce_debug");
   console.log("[auth/callback] cookies:", allCookies.map((c) => c.name).join(", "));
-  console.log("[auth/callback] pkce present:", !!pkce, "debug:", debugInfo?.value);
+  console.log("[auth/callback] pkce present:", !!pkce, "value prefix:", pkce?.value?.slice(0, 30));
+
+  // @supabase/ssr stores the PKCE verifier as "base64-<base64url(JSON.stringify(verifier))>".
+  // Pre-decode it here so getItem can find it without relying on ssr's internal
+  // stringFromBase64URL, which appears to silently return null in this env.
+  function decodeBase64UrlCookie(raw: string): string | null {
+    const PREFIX = "base64-";
+    if (!raw.startsWith(PREFIX)) return raw || null;
+    const b64url = raw.slice(PREFIX.length);
+    const b64 = b64url.replace(/-/g, "+").replace(/_/g, "/");
+    const padding = "=".repeat((4 - (b64.length % 4)) % 4);
+    try {
+      return Buffer.from(b64 + padding, "base64").toString("utf-8");
+    } catch {
+      return null;
+    }
+  }
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -101,7 +117,13 @@ export async function GET(request: Request) {
     {
       cookies: {
         getAll() {
-          return cookieStore.getAll();
+          return cookieStore.getAll().map((c) => {
+            if (c.name.endsWith("-code-verifier") && c.value.startsWith("base64-")) {
+              const decoded = decodeBase64UrlCookie(c.value);
+              if (decoded) return { ...c, value: decoded };
+            }
+            return c;
+          });
         },
         setAll(cookiesToSet) {
           cookiesToSet.forEach(({ name, value, options }) => {
@@ -115,7 +137,8 @@ export async function GET(request: Request) {
   const { data, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
 
   if (exchangeError || !data.user) {
-    const debugMsg = `${exchangeError?.message ?? "auth-failed"} | cookies: ${allCookies.map((c) => c.name).join(",")} | debug: ${debugInfo?.value ?? "none"}`;
+    const pkceRaw = pkce?.value ?? "missing";
+    const debugMsg = `${exchangeError?.message ?? "auth-failed"} | pkce-raw: ${pkceRaw.slice(0, 60)} | cookies: ${allCookies.map((c) => c.name).join(",")} | debug: ${debugInfo?.value ?? "none"}`;
     return NextResponse.redirect(
       `https://tixtracker.app/login?error=${encodeURIComponent(debugMsg)}`,
     );
