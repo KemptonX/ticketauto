@@ -27,23 +27,14 @@ export default function LoginForm() {
   }, [searchParams]);
 
 
-  async function handleDiscordLogin() {
+  function handleDiscordLogin() {
     setLoading(true);
     setError("");
     setMessage("");
-
-    const { error: oauthError } = await supabase.auth.signInWithOAuth({
-      provider: "discord",
-      options: {
-        redirectTo: "https://tixtracker.app/auth/callback",
-        scopes: "identify email",
-      },
-    });
-
-    if (oauthError) {
-      setError(oauthError.message);
-      setLoading(false);
-    }
+    // Navigate to the server-side OAuth route so the PKCE code verifier is
+    // stored as an HTTP Set-Cookie header rather than via document.cookie,
+    // which is unreliable across Next.js SSR / redirect chains.
+    window.location.href = "/api/auth/discord";
   }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
