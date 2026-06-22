@@ -1,72 +1,47 @@
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
-import { createServerClient } from "@supabase/ssr";
+import { createHash, randomBytes } from "crypto";
 
 export const runtime = "nodejs";
 
+function generateVerifier(): string {
+  // 43-128 chars of URL-safe chars — RFC 7636 compliant
+  return randomBytes(32).toString("base64url");
+}
+
+function generateChallenge(verifier: string): string {
+  return createHash("sha256").update(verifier).digest("base64url");
+}
+
 export async function GET() {
-  const cookieStore = await cookies();
+  const verifier = generateVerifier();
+  const challenge = generateChallenge(verifier);
 
-  type PendingCookie = {
-    name: string;
-    value: string;
-    options: Record<string, unknown>;
-  };
-  const outgoing: PendingCookie[] = [];
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return cookieStore.getAll();
-        },
-        setAll(cookiesToSet) {
-          for (const { name, value, options } of cookiesToSet) {
-            outgoing.push({ name, value, options: options as Record<string, unknown> });
-          }
-        },
-      },
-    },
-  );
-
-  const { data, error } = await supabase.auth.signInWithOAuth({
+  // Build the Supabase authorize URL — browser navigates here, Supabase
+  // redirects to Discord, Discord redirects back to our /auth/callback.
+  const params = new URLSearchParams({
     provider: "discord",
-    options: {
-      redirectTo: "https://tixtracker.app/auth/callback",
-      scopes: "identify email",
-      skipBrowserRedirect: true,
-    },
+    redirect_to: "https://tixtracker.app/auth/callback",
+    scopes: "identify email",
+    code_challenge: challenge,
+    code_challenge_method: "s256",
   });
 
-  if (error || !data.url) {
-    return NextResponse.redirect(
-      `https://tixtracker.app/login?error=${encodeURIComponent(error?.message ?? "oauth-failed")}`,
-    );
-  }
+  const oauthUrl = `${supabaseUrl}/auth/v1/authorize?${params.toString()}`;
 
   const isProd = process.env.NODE_ENV === "production";
-  const response = NextResponse.redirect(data.url);
+  const response = NextResponse.redirect(oauthUrl);
 
-  for (const { name, value, options } of outgoing) {
-    const maxAge = typeof options.maxAge === "number" ? options.maxAge : 34560000;
-    response.cookies.set(name, value, {
-      path: "/",
-      sameSite: "lax" as const,
-      httpOnly: false,
-      maxAge,
-      ...(isProd ? { domain: ".tixtracker.app", secure: true } : {}),
-    });
-  }
-
-  // Debug: encode what we set so it appears in the error if cookie doesn't arrive
-  response.cookies.set("pkce_debug", JSON.stringify({ count: outgoing.length, names: outgoing.map(c => c.name) }), {
+  // Store the raw verifier in a plain cookie — avoids @supabase/ssr's
+  // base64 encoding step that was silently producing empty cookie values.
+  response.cookies.set("pkce_verifier", verifier, {
     path: "/",
     sameSite: "lax",
-    httpOnly: false,
-    maxAge: 300,
-    ...(isProd ? { domain: ".tixtracker.app", secure: true } : {}),
+    httpOnly: true,
+    secure: isProd,
+    maxAge: 300, // 5 min — enough for the OAuth round-trip
+    ...(isProd ? { domain: ".tixtracker.app" } : {}),
   });
 
   return response;
