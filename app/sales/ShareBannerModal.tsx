@@ -15,6 +15,7 @@ type Sale = {
   qty_sold: number | null;
   price_per_ticket: number | null;
   sale_total: number | null;
+  payout_total?: number | null;
   section: string | null;
   row: string | null;
   seat_from: string | null;
@@ -142,7 +143,7 @@ export function SaleBanner({ sale, order, animated, hideDetails = false }: Banne
     ? { ...sale, event_name:"••••••••••••", venue:"••••••••", event_date:null, section:null, row:null }
     : sale;
 
-  const revenue = s.sale_total ?? 0;
+  const revenue = s.sale_total ?? s.payout_total ?? 0;
   const cost = (() => {
     if (!order?.total_cost) return 0;
     if (!order.qty_bought || !s.qty_sold || order.qty_bought <= 0) return order.total_cost;
@@ -553,7 +554,7 @@ function _drawSaleBanner(
   sale: Sale, order: MatchedOrder | null, logo: HTMLImageElement | null,
 ) {
   const sc = W / 500;
-  const revenue = sale.sale_total ?? 0;
+  const revenue = sale.sale_total ?? sale.payout_total ?? 0;
   const cost = (() => {
     if (!order?.total_cost) return 0;
     if (!order.qty_bought || !sale.qty_sold || order.qty_bought <= 0) return order.total_cost;

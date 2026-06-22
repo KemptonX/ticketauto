@@ -129,7 +129,7 @@ function computeGroupId(key: string): string {
 
 export default function SalesClient() {
   const [sales, setSales] = useState<Sale[]>([]);
-  const [metricSales, setMetricSales] = useState<Pick<Sale, "qty_sold" | "sale_total" | "payment_status" | "sale_status" | "transfer_status">[]>([]);
+  const [metricSales, setMetricSales] = useState<Pick<Sale, "qty_sold" | "sale_total" | "payout_total" | "payment_status" | "sale_status" | "transfer_status">[]>([]);
   const [matchedOrders, setMatchedOrders] = useState<Record<number, MatchedOrder>>({});
   const [allOrders, setAllOrders] = useState<MatchedOrder[]>([]);
   const [loading, setLoading] = useState(true);
@@ -282,7 +282,7 @@ export default function SalesClient() {
       : query.not("sale_status", "in", '("Archived","Deleted","Paid")'),
       supabase
         .from("sales")
-        .select("qty_sold, sale_total, payment_status, sale_status, transfer_status")
+        .select("qty_sold, sale_total, payout_total, payment_status, sale_status, transfer_status")
         .not("sale_status", "in", '("Deleted")'),
     ]);
 
@@ -527,8 +527,8 @@ export default function SalesClient() {
       throw new Error(error.message);
     }
 
-    const linkedSales = (data || []) as { sale_total?: number | null; qty_sold?: number | null }[];
-    const soldTotal = linkedSales.reduce((sum, sale) => sum + (sale.sale_total ?? 0), 0);
+    const linkedSales = (data || []) as { sale_total?: number | null; payout_total?: number | null; qty_sold?: number | null }[];
+    const soldTotal = linkedSales.reduce((sum, sale) => sum + (sale.sale_total ?? sale.payout_total ?? 0), 0);
     const qtySold = linkedSales.reduce((sum, sale) => sum + (sale.qty_sold ?? 0), 0);
     const qtyBought = (orderData as { qty_bought?: number | null } | null)?.qty_bought ?? 0;
 
@@ -611,7 +611,7 @@ export default function SalesClient() {
 
     type Pending = { saleId: number; qty: number; payout: number | null; ref: Sale; overflowOf: number | null };
     const queue: Pending[] = unmatchedSales.map((s) => ({
-      saleId: s.id, qty: s.qty_sold ?? 1, payout: s.sale_total, ref: s, overflowOf: null,
+      saleId: s.id, qty: s.qty_sold ?? 1, payout: s.sale_total ?? s.payout_total, ref: s, overflowOf: null,
     }));
 
     for (const pending of queue) {
@@ -963,7 +963,7 @@ export default function SalesClient() {
   const lifecycleMetrics = useMemo(() => {
     let ticketsSold = 0, revenueReceived = 0, awaitingPayment = 0, awaitingTransferCount = 0;
     for (const s of metricSales) {
-      const payout = s.sale_total ?? 0;
+      const payout = s.sale_total ?? s.payout_total ?? 0;
       const payStatus = s.payment_status || "Awaiting Payment";
       const saleStatus = s.sale_status || "Sold – Awaiting Transfer";
       const isActive = saleStatus !== "Archived" && saleStatus !== "Paid" && saleStatus !== "Deleted";
@@ -1018,7 +1018,7 @@ export default function SalesClient() {
       const eventDate = sale.event_date || "Date missing";
       const key = `${eventName}__${venue}__${eventDate}`;
       const ticketsSold = sale.qty_sold ?? 0;
-      const soldFor = sale.sale_total ?? 0;
+      const soldFor = sale.sale_total ?? sale.payout_total ?? 0;
       const referenceOrder = getReferenceOrderForSale(sale, matchedOrders, allOrders);
       const profit = getSaleProfit(sale, referenceOrder);
       const cost = getSaleCost(sale, referenceOrder);
@@ -1162,7 +1162,7 @@ export default function SalesClient() {
     const seenEvents = new Set<string>();
     for (const s of arr) {
       totalTickets += s.qty_sold ?? 0;
-      totalRevenue += s.sale_total ?? 0;
+      totalRevenue += s.sale_total ?? s.payout_total ?? 0;
       totalCost += getSaleCost(s, getReferenceOrderForSale(s, matchedOrders, allOrders));
       if (s.event_name) seenEvents.add(s.event_name);
     }
@@ -1629,7 +1629,7 @@ export default function SalesClient() {
                                   )}
                                 </div>
                                 <strong className="inventory-cost-value">
-                                  {formatCurrency(sale.sale_total)}
+                                  {formatCurrency(sale.sale_total ?? sale.payout_total)}
                                 </strong>
                                 <span
                                   className="status-badge status-static"
@@ -2664,7 +2664,7 @@ function getSaleProfit(sale: Sale, order?: MatchedOrder | null) {
     return 0;
   }
 
-  return (sale.sale_total ?? 0) - getSaleCost(sale, order);
+  return (sale.sale_total ?? sale.payout_total ?? 0) - getSaleCost(sale, order);
 }
 
 function getSaleCost(sale: Sale, order?: MatchedOrder | null) {
