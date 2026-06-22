@@ -315,6 +315,7 @@ async function syncOrder(orderId: number) {
 
 type ImportResult = {
   inserted: number;
+  duplicates: number;
   matched: number;
   unmatched: number;
   skipped: number;
@@ -404,7 +405,7 @@ export default function SalesImportModal({ allOrders, onClose, onImported }: Sal
     setImporting(true);
     setMessage("");
 
-    let inserted = 0, matched = 0, unmatched = 0, skipped = 0;
+    let inserted = 0, duplicates = 0, matched = 0, unmatched = 0, skipped = 0;
     let awaitingTransfer = 0, transferredPending = 0, paidArchived = 0;
     let awaitingPaymentAmount = 0, paidAmount = 0;
     const errors: FailedRow[] = [];
@@ -469,7 +470,11 @@ export default function SalesImportModal({ allOrders, onClose, onImported }: Sal
           for (let j = 0; j < chunk.length; j++) {
             const { error: rowErr } = await supabase.from("sales").insert(chunk[j]);
             if (rowErr) {
-              errors.push({ rowNum: chunkMeta[j].rowNum, reason: rowErr.message });
+              if (rowErr.message.includes("duplicate key") || rowErr.message.includes("unique constraint")) {
+                duplicates++;
+              } else {
+                errors.push({ rowNum: chunkMeta[j].rowNum, reason: rowErr.message });
+              }
             } else {
               const m = chunkMeta[j];
               inserted++;
@@ -492,7 +497,7 @@ export default function SalesImportModal({ allOrders, onClose, onImported }: Sal
     // Sync matched orders in parallel
     await Promise.all([...syncIds].map((id) => syncOrder(id)));
 
-    setResult({ inserted, matched, unmatched, skipped, errors, awaitingTransfer, transferredPending, paidArchived, awaitingPaymentAmount, paidAmount });
+    setResult({ inserted, duplicates, matched, unmatched, skipped, errors, awaitingTransfer, transferredPending, paidArchived, awaitingPaymentAmount, paidAmount });
     setStep("done");
     setImporting(false);
   }
@@ -694,11 +699,13 @@ export default function SalesImportModal({ allOrders, onClose, onImported }: Sal
                   { label: "Imported",             value: result.inserted,              color: "#4ade80" },
                   { label: "Matched to inventory", value: result.matched,               color: "#4fc3ff" },
                   { label: "Unmatched",             value: result.unmatched,             color: "#fbbf24" },
-                  { label: "Skipped / Errors",      value: result.skipped + result.errors.length, color: result.errors.length > 0 ? "#f87171" : "rgba(255,255,255,0.4)" },
+                  { label: "Already imported",      value: result.duplicates,            color: "rgba(255,255,255,0.4)" },
+                  { label: "Skipped",               value: result.skipped,               color: "rgba(255,255,255,0.4)" },
                   { label: "Awaiting transfer",     value: result.awaitingTransfer,      color: "#f97316" },
                   { label: "Transferred — unpaid",  value: result.transferredPending,    color: "#fbbf24" },
                   { label: "Paid / Archived",       value: result.paidArchived,          color: "#4ade80" },
                   { label: "Revenue imported",      value: (result.awaitingPaymentAmount + result.paidAmount) > 0 ? `£${(result.awaitingPaymentAmount + result.paidAmount).toFixed(2)}` : "—", color: "#4ade80" },
+                  { label: "Errors",                value: result.errors.length,         color: result.errors.length > 0 ? "#f87171" : "rgba(255,255,255,0.4)" },
                 ].map(m => (
                   <div key={m.label} style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: "12px 14px" }}>
                     <div style={{ fontSize: 20, fontWeight: 700, color: m.color }}>{m.value}</div>
@@ -706,6 +713,13 @@ export default function SalesImportModal({ allOrders, onClose, onImported }: Sal
                   </div>
                 ))}
               </div>
+              {result.duplicates > 0 && (
+                <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 8, padding: "12px 14px", marginBottom: 10 }}>
+                  <p style={{ fontSize: 12, color: "rgba(255,255,255,0.5)" }}>
+                    {result.duplicates} row{result.duplicates !== 1 ? "s were" : " was"} already in your sales and skipped — re-importing existing records is safe, nothing was overwritten.
+                  </p>
+                </div>
+              )}
               {result.errors.length > 0 && (
                 <div style={{ background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.2)", borderRadius: 8, padding: "12px 14px" }}>
                   <p style={{ fontSize: 12, fontWeight: 600, color: "#f87171", marginBottom: 8 }}>
