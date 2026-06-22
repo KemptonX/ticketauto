@@ -89,16 +89,13 @@ export async function GET(request: Request) {
   }
 
   const cookieStore = await cookies();
-  const allCookies = cookieStore.getAll();
 
   // Our /api/auth/discord route stores the PKCE verifier directly in "pkce_verifier"
   // (bypassing @supabase/ssr's broken base64 cookie path). Inject it as the
   // synthetic code-verifier cookie that @supabase/ssr's exchangeCodeForSession expects.
-  const ownVerifier = allCookies.find((c) => c.name === "pkce_verifier")?.value ?? null;
+  const ownVerifier = cookieStore.get("pkce_verifier")?.value ?? null;
   const supabaseRef = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL!).hostname.split(".")[0];
   const codeVerifierKey = `sb-${supabaseRef}-auth-token-code-verifier`;
-
-  console.log("[auth/callback] verifier present:", !!ownVerifier, "cookies:", allCookies.map((c) => c.name).join(", "));
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -125,9 +122,8 @@ export async function GET(request: Request) {
   const { data, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
 
   if (exchangeError || !data.user) {
-    const debugMsg = `${exchangeError?.message ?? "auth-failed"} | verifier: ${ownVerifier ? "present" : "missing"} | cookies: ${allCookies.map((c) => c.name).join(",")}`;
     return NextResponse.redirect(
-      `https://tixtracker.app/login?error=${encodeURIComponent(debugMsg)}`,
+      `https://tixtracker.app/login?error=${encodeURIComponent(exchangeError?.message ?? "auth-failed")}`,
     );
   }
 
