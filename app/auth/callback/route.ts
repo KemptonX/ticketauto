@@ -89,6 +89,11 @@ export async function GET(request: Request) {
   }
 
   const cookieStore = await cookies();
+  const allCookies = cookieStore.getAll();
+  console.log("[auth/callback] incoming cookie names:", allCookies.map((c) => c.name));
+  const pkce = allCookies.find((c) => c.name.includes("code-verifier"));
+  console.log("[auth/callback] pkce cookie present:", !!pkce, pkce?.name);
+
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,

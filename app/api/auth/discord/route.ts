@@ -7,10 +7,6 @@ export const runtime = "nodejs";
 export async function GET() {
   const cookieStore = await cookies();
 
-  // Collect cookies that supabase wants to set (PKCE code verifier) before
-  // the redirect. cookies().set() in a Route Handler is NOT automatically
-  // merged into NextResponse.redirect(), so we collect them here and set
-  // them explicitly on the response object instead.
   type PendingCookie = {
     name: string;
     value: string;
@@ -53,15 +49,18 @@ export async function GET() {
   const isProd = process.env.NODE_ENV === "production";
   const response = NextResponse.redirect(data.url);
 
+  console.log("[discord-oauth] outgoing cookies count:", outgoing.length);
   for (const { name, value, options } of outgoing) {
     const maxAge = typeof options.maxAge === "number" ? options.maxAge : 34560000;
-    response.cookies.set(name, value, {
+    const cookieOpts = {
       path: "/",
-      sameSite: "lax",
+      sameSite: "lax" as const,
       httpOnly: false,
       maxAge,
       ...(isProd ? { domain: ".tixtracker.app", secure: true } : {}),
-    });
+    };
+    console.log("[discord-oauth] setting cookie:", name, "len:", value.length, "opts:", JSON.stringify(cookieOpts));
+    response.cookies.set(name, value, cookieOpts);
   }
 
   return response;
