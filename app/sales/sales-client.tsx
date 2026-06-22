@@ -338,7 +338,7 @@ export default function SalesClient() {
     setRefreshing(false);
   }
 
-  function exportSalesCSV() {
+  async function exportSalesCSV() {
     const headers = [
       "Sale Reference",
       "Event Name",
@@ -364,7 +364,22 @@ export default function SalesClient() {
       "Account",
       "Matched Order ID",
     ];
-    const rows = sales.map((s) => [
+
+    // Fetch ALL sales across every status (active, archived, paid, linked to orders)
+    // so the export is complete regardless of which view is currently open
+    const { data: allSales, error: exportErr } = await supabase
+      .from("sales")
+      .select("*")
+      .neq("sale_status", "Deleted")
+      .order("sold_at", { ascending: false })
+      .order("created_at", { ascending: false });
+
+    if (exportErr || !allSales) {
+      setMessage(exportErr?.message ?? "Export failed");
+      return;
+    }
+
+    const rows = (allSales as Sale[]).map((s) => [
       s.external_sale_id ?? "",
       s.event_name ?? "",
       s.venue ?? "",
@@ -1256,7 +1271,7 @@ export default function SalesClient() {
             <button className="secondary-button" onClick={() => void loadSales(true)} disabled={refreshing} type="button">
               {refreshing ? "Refreshing..." : "Refresh"}
             </button>
-            <button className="secondary-button" onClick={exportSalesCSV} type="button">
+            <button className="secondary-button" onClick={() => void exportSalesCSV()} type="button">
               Export CSV
             </button>
             {!showArchived && !showDeleted && (
