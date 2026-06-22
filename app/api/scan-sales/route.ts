@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/src/lib/supabase-server";
-import { rematchViagogoSales, syncViagogoSalesImapInbox, syncViagogoSalesInbox, syncViagogoSalesOutlookInbox, syncStubHubSalesInbox, syncStubHubSalesOutlookInbox, syncStubHubSalesImapInbox } from "@/src/lib/viagogo-sales-sync";
+import { rematchViagogoSales, syncViagogoSalesImapInbox, syncViagogoSalesInbox, syncViagogoSalesOutlookInbox, syncStubHubSalesInbox, syncStubHubSalesOutlookInbox, syncStubHubSalesImapInbox, syncTicomboSalesInbox, syncTicomboSalesOutlookInbox, syncTicomboSalesImapInbox } from "@/src/lib/viagogo-sales-sync";
 
 export const runtime = "nodejs";
 
@@ -70,6 +70,10 @@ export async function POST() {
         totals.scanned += sh.scanned;
         totals.inserted += sh.inserted;
         totals.matched += sh.matched;
+        const tc = await syncTicomboSalesOutlookInbox({ supabase, outlookAccount: account, userId: user.id });
+        totals.scanned += tc.scanned;
+        totals.inserted += tc.inserted;
+        totals.matched += tc.matched;
       } else {
         const vg = await syncViagogoSalesInbox({ supabase, gmailAccount: account, userId: user.id });
         totals.scanned += vg.scanned;
@@ -79,6 +83,10 @@ export async function POST() {
         totals.scanned += sh.scanned;
         totals.inserted += sh.inserted;
         totals.matched += sh.matched;
+        const tc = await syncTicomboSalesInbox({ supabase, gmailAccount: account, userId: user.id });
+        totals.scanned += tc.scanned;
+        totals.inserted += tc.inserted;
+        totals.matched += tc.matched;
       }
     }
 
@@ -91,6 +99,10 @@ export async function POST() {
       totals.scanned += sh.scanned;
       totals.inserted += sh.inserted;
       totals.matched += sh.matched;
+      const tc = await syncTicomboSalesImapInbox({ supabase, imapAccount: account, userId: user.id });
+      totals.scanned += tc.scanned;
+      totals.inserted += tc.inserted;
+      totals.matched += tc.matched;
     }
 
     totals.matched += await rematchViagogoSales({
