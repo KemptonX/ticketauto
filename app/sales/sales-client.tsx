@@ -25,6 +25,7 @@ type Sale = {
   qty_sold: number | null;
   price_per_ticket: number | null;
   sale_total: number | null;
+  payout_total?: number | null;
   currency: string | null;
   section: string | null;
   row: string | null;
@@ -374,7 +375,7 @@ export default function SalesClient() {
       s.seat_to ?? "",
       s.qty_sold ?? "",
       s.sold_at ?? "",
-      s.sale_total ?? "",
+      s.sale_total ?? s.payout_total ?? "",
       s.marketplace ?? "",
       s.buyer_name ?? "",
       s.buyer_email ?? "",
