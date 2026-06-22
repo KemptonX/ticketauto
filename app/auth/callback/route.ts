@@ -90,9 +90,10 @@ export async function GET(request: Request) {
 
   const cookieStore = await cookies();
   const allCookies = cookieStore.getAll();
-  console.log("[auth/callback] incoming cookie names:", allCookies.map((c) => c.name));
   const pkce = allCookies.find((c) => c.name.includes("code-verifier"));
-  console.log("[auth/callback] pkce cookie present:", !!pkce, pkce?.name);
+  const debugInfo = allCookies.find((c) => c.name === "pkce_debug");
+  console.log("[auth/callback] cookies:", allCookies.map((c) => c.name).join(", "));
+  console.log("[auth/callback] pkce present:", !!pkce, "debug:", debugInfo?.value);
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -114,10 +115,9 @@ export async function GET(request: Request) {
   const { data, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
 
   if (exchangeError || !data.user) {
+    const debugMsg = `${exchangeError?.message ?? "auth-failed"} | cookies: ${allCookies.map((c) => c.name).join(",")} | debug: ${debugInfo?.value ?? "none"}`;
     return NextResponse.redirect(
-      `https://tixtracker.app/login?error=${encodeURIComponent(
-        exchangeError?.message ?? "auth-failed",
-      )}`,
+      `https://tixtracker.app/login?error=${encodeURIComponent(debugMsg)}`,
     );
   }
 

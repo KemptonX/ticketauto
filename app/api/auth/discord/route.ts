@@ -49,19 +49,25 @@ export async function GET() {
   const isProd = process.env.NODE_ENV === "production";
   const response = NextResponse.redirect(data.url);
 
-  console.log("[discord-oauth] outgoing cookies count:", outgoing.length);
   for (const { name, value, options } of outgoing) {
     const maxAge = typeof options.maxAge === "number" ? options.maxAge : 34560000;
-    const cookieOpts = {
+    response.cookies.set(name, value, {
       path: "/",
       sameSite: "lax" as const,
       httpOnly: false,
       maxAge,
       ...(isProd ? { domain: ".tixtracker.app", secure: true } : {}),
-    };
-    console.log("[discord-oauth] setting cookie:", name, "len:", value.length, "opts:", JSON.stringify(cookieOpts));
-    response.cookies.set(name, value, cookieOpts);
+    });
   }
+
+  // Debug: encode what we set so it appears in the error if cookie doesn't arrive
+  response.cookies.set("pkce_debug", JSON.stringify({ count: outgoing.length, names: outgoing.map(c => c.name) }), {
+    path: "/",
+    sameSite: "lax",
+    httpOnly: false,
+    maxAge: 300,
+    ...(isProd ? { domain: ".tixtracker.app", secure: true } : {}),
+  });
 
   return response;
 }
