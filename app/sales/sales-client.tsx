@@ -25,7 +25,6 @@ type Sale = {
   qty_sold: number | null;
   price_per_ticket: number | null;
   sale_total: number | null;
-  payout_total: number | null;
   currency: string | null;
   section: string | null;
   row: string | null;
@@ -65,7 +64,7 @@ type MatchedOrder = {
 
 type AddSaleForm = {
   qty_sold: string;
-  payout_total: string;
+  sale_price: string;
   buyer_email: string;
   sold_at: string;
   event_name: string;
@@ -129,7 +128,7 @@ function computeGroupId(key: string): string {
 
 export default function SalesClient() {
   const [sales, setSales] = useState<Sale[]>([]);
-  const [metricSales, setMetricSales] = useState<Pick<Sale, "qty_sold" | "payout_total" | "sale_total" | "payment_status" | "sale_status" | "transfer_status">[]>([]);
+  const [metricSales, setMetricSales] = useState<Pick<Sale, "qty_sold" | "sale_total" | "payment_status" | "sale_status" | "transfer_status">[]>([]);
   const [matchedOrders, setMatchedOrders] = useState<Record<number, MatchedOrder>>({});
   const [allOrders, setAllOrders] = useState<MatchedOrder[]>([]);
   const [loading, setLoading] = useState(true);
@@ -146,7 +145,7 @@ export default function SalesClient() {
   const [matchingOrderId, setMatchingOrderId] = useState<number | null>(null);
   const [unmatching, setUnmatching] = useState(false);
   const [savingSale, setSavingSale] = useState(false);
-  const [saleEdits, setSaleEdits] = useState<{ qty_sold: string; price_per_ticket: string; sale_total: string; payout_total: string; sale_status: string; transfer_status: string; payment_status: string; transfer_date: string; payout_date: string; expected_payout_date: string; marketplace: string; buyer_name: string; notes: string } | null>(null);
+  const [saleEdits, setSaleEdits] = useState<{ qty_sold: string; price_per_ticket: string; sale_total: string; sale_status: string; transfer_status: string; payment_status: string; transfer_date: string; payout_date: string; expected_payout_date: string; marketplace: string; buyer_name: string; notes: string } | null>(null);
   const [showImportModal, setShowImportModal] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
   const [showDeleted, setShowDeleted] = useState(false);
@@ -154,7 +153,7 @@ export default function SalesClient() {
   const [showAddSale, setShowAddSale] = useState(false);
   const [addSaleOrderId, setAddSaleOrderId] = useState<number | null>(null);
   const [addSaleSearch, setAddSaleSearch] = useState("");
-  const [addSaleForm, setAddSaleForm] = useState<AddSaleForm>({ qty_sold: "1", payout_total: "", buyer_email: "", sold_at: "", event_name: "", venue: "", event_date: "", section: "", row: "", seat_from: "", seat_to: "", marketplace: "" });
+  const [addSaleForm, setAddSaleForm] = useState<AddSaleForm>({ qty_sold: "1", sale_price: "", buyer_email: "", sold_at: "", event_name: "", venue: "", event_date: "", section: "", row: "", seat_from: "", seat_to: "", marketplace: "" });
   const [savingNewSale, setSavingNewSale] = useState(false);
   const [showEmailModal, setShowEmailModal] = useState(false);
   const [emailSubject, setEmailSubject] = useState("");
@@ -196,7 +195,6 @@ export default function SalesClient() {
         qty_sold: selectedSaleRaw.qty_sold != null ? String(selectedSaleRaw.qty_sold) : "",
         price_per_ticket: selectedSaleRaw.price_per_ticket != null ? String(selectedSaleRaw.price_per_ticket) : "",
         sale_total: selectedSaleRaw.sale_total != null ? String(selectedSaleRaw.sale_total) : "",
-        payout_total: selectedSaleRaw.payout_total != null ? String(selectedSaleRaw.payout_total) : "",
         sale_status: selectedSaleRaw.sale_status || "Sold – Awaiting Transfer",
         transfer_status: selectedSaleRaw.transfer_status || "Awaiting Transfer",
         payment_status: selectedSaleRaw.payment_status || "Awaiting Payment",
@@ -223,7 +221,6 @@ export default function SalesClient() {
     const qty_sold = saleEdits.qty_sold !== "" ? Number(saleEdits.qty_sold) : null;
     const price_per_ticket = saleEdits.price_per_ticket !== "" ? Number(saleEdits.price_per_ticket) : null;
     const sale_total = saleEdits.sale_total !== "" ? Number(saleEdits.sale_total) : null;
-    const payout_total = saleEdits.payout_total !== "" ? Number(saleEdits.payout_total) : null;
     const sale_status = saleEdits.sale_status || selectedSaleRaw.sale_status || "Sold – Awaiting Transfer";
     const transfer_status = saleEdits.transfer_status || "Awaiting Transfer";
     const payment_status = saleEdits.payment_status || "Awaiting Payment";
@@ -236,7 +233,7 @@ export default function SalesClient() {
 
     const { error } = await supabase
       .from("sales")
-      .update({ qty_sold, price_per_ticket, sale_total, payout_total, sale_status, transfer_status, payment_status, transfer_date, payout_date, expected_payout_date, marketplace, buyer_name, notes })
+      .update({ qty_sold, price_per_ticket, sale_total, sale_status, transfer_status, payment_status, transfer_date, payout_date, expected_payout_date, marketplace, buyer_name, notes })
       .eq("id", selectedSaleRaw.id);
 
     if (error) {
@@ -251,7 +248,7 @@ export default function SalesClient() {
     } else {
       setSales((current) =>
         current.map((s) =>
-          s.id === selectedSaleRaw.id ? { ...s, qty_sold, price_per_ticket, sale_total, payout_total, sale_status, transfer_status, payment_status, transfer_date, payout_date, expected_payout_date, marketplace, buyer_name, notes } : s,
+          s.id === selectedSaleRaw.id ? { ...s, qty_sold, price_per_ticket, sale_total, sale_status, transfer_status, payment_status, transfer_date, payout_date, expected_payout_date, marketplace, buyer_name, notes } : s,
         ),
       );
     }
@@ -284,7 +281,7 @@ export default function SalesClient() {
       : query.not("sale_status", "in", '("Archived","Deleted","Paid")'),
       supabase
         .from("sales")
-        .select("qty_sold, payout_total, sale_total, payment_status, sale_status, transfer_status")
+        .select("qty_sold, sale_total, payment_status, sale_status, transfer_status")
         .not("sale_status", "in", '("Deleted")'),
     ]);
 
@@ -353,7 +350,6 @@ export default function SalesClient() {
       "Qty Sold",
       "Sale Date",
       "Sale Total",
-      "Payout Total",
       "Platform",
       "Buyer Name",
       "Buyer Email",
@@ -379,7 +375,6 @@ export default function SalesClient() {
       s.qty_sold ?? "",
       s.sold_at ?? "",
       s.sale_total ?? "",
-      s.payout_total ?? "",
       s.marketplace ?? "",
       s.buyer_name ?? "",
       s.buyer_email ?? "",
@@ -531,8 +526,8 @@ export default function SalesClient() {
       throw new Error(error.message);
     }
 
-    const linkedSales = (data || []) as { sale_total?: number | null; payout_total?: number | null; qty_sold?: number | null }[];
-    const soldTotal = linkedSales.reduce((sum, sale) => sum + (sale.payout_total ?? sale.sale_total ?? 0), 0);
+    const linkedSales = (data || []) as { sale_total?: number | null; qty_sold?: number | null }[];
+    const soldTotal = linkedSales.reduce((sum, sale) => sum + (sale.sale_total ?? 0), 0);
     const qtySold = linkedSales.reduce((sum, sale) => sum + (sale.qty_sold ?? 0), 0);
     const qtyBought = (orderData as { qty_bought?: number | null } | null)?.qty_bought ?? 0;
 
@@ -615,7 +610,7 @@ export default function SalesClient() {
 
     type Pending = { saleId: number; qty: number; payout: number | null; ref: Sale; overflowOf: number | null };
     const queue: Pending[] = unmatchedSales.map((s) => ({
-      saleId: s.id, qty: s.qty_sold ?? 1, payout: s.payout_total, ref: s, overflowOf: null,
+      saleId: s.id, qty: s.qty_sold ?? 1, payout: s.sale_total, ref: s, overflowOf: null,
     }));
 
     for (const pending of queue) {
@@ -649,7 +644,8 @@ export default function SalesClient() {
           .update({
             inventory_order_id: bestOrder.id,
             qty_sold: toAssign,
-            payout_total: assignedPayout,
+            sale_total: assignedPayout,
+            price_per_ticket: toAssign > 0 && assignedPayout != null ? Math.round(assignedPayout / toAssign * 100) / 100 : null,
             match_confidence: bestScore > 0 ? bestScore / 100 : null,
           })
           .eq("id", pending.saleId);
@@ -678,8 +674,7 @@ export default function SalesClient() {
               sale_status: pending.ref.sale_status,
               price_per_ticket: pending.ref.price_per_ticket,
               qty_sold: remainder,
-              payout_total: overflowPayout,
-              sale_total: pending.ref.sale_total != null ? Math.round(pending.ref.sale_total * (1 - fraction) * 100) / 100 : null,
+              sale_total: overflowPayout,
               split_of_sale_id: pending.overflowOf ?? pending.saleId,
               inventory_order_id: null,
               match_confidence: null,
@@ -799,7 +794,7 @@ export default function SalesClient() {
   function openAddSale() {
     setAddSaleOrderId(null);
     setAddSaleSearch("");
-    setAddSaleForm({ qty_sold: "1", payout_total: "", buyer_email: "", sold_at: new Date().toISOString().slice(0, 10), event_name: "", venue: "", event_date: "", section: "", row: "", seat_from: "", seat_to: "", marketplace: "" });
+    setAddSaleForm({ qty_sold: "1", sale_price: "", buyer_email: "", sold_at: new Date().toISOString().slice(0, 10), event_name: "", venue: "", event_date: "", section: "", row: "", seat_from: "", seat_to: "", marketplace: "" });
     setShowAddSale(true);
   }
 
@@ -811,7 +806,7 @@ export default function SalesClient() {
 
   async function addSaleManually() {
     const order = addSaleOrderId != null ? allOrders.find((o) => o.id === addSaleOrderId) : null;
-    const payout = addSaleForm.payout_total !== "" ? Number(addSaleForm.payout_total) : null;
+    const payout = addSaleForm.sale_price !== "" ? Number(addSaleForm.sale_price) : null;
     const qty = addSaleForm.qty_sold !== "" ? Number(addSaleForm.qty_sold) : null;
 
     const newSale = {
@@ -824,7 +819,6 @@ export default function SalesClient() {
       account_email: order?.account_email ?? null,
       buyer_email: addSaleForm.buyer_email || null,
       qty_sold: qty,
-      payout_total: payout,
       sale_total: payout,
       price_per_ticket: qty && payout ? payout / qty : payout,
       currency: "GBP",
@@ -968,7 +962,7 @@ export default function SalesClient() {
   const lifecycleMetrics = useMemo(() => {
     let ticketsSold = 0, revenueReceived = 0, awaitingPayment = 0, awaitingTransferCount = 0;
     for (const s of metricSales) {
-      const payout = s.payout_total ?? s.sale_total ?? 0;
+      const payout = s.sale_total ?? 0;
       const payStatus = s.payment_status || "Awaiting Payment";
       const saleStatus = s.sale_status || "Sold – Awaiting Transfer";
       const isActive = saleStatus !== "Archived" && saleStatus !== "Paid" && saleStatus !== "Deleted";
@@ -1023,7 +1017,7 @@ export default function SalesClient() {
       const eventDate = sale.event_date || "Date missing";
       const key = `${eventName}__${venue}__${eventDate}`;
       const ticketsSold = sale.qty_sold ?? 0;
-      const soldFor = sale.payout_total ?? sale.sale_total ?? 0;
+      const soldFor = sale.sale_total ?? 0;
       const referenceOrder = getReferenceOrderForSale(sale, matchedOrders, allOrders);
       const profit = getSaleProfit(sale, referenceOrder);
       const cost = getSaleCost(sale, referenceOrder);
@@ -1167,7 +1161,7 @@ export default function SalesClient() {
     const seenEvents = new Set<string>();
     for (const s of arr) {
       totalTickets += s.qty_sold ?? 0;
-      totalRevenue += s.payout_total ?? s.sale_total ?? 0;
+      totalRevenue += s.sale_total ?? 0;
       totalCost += getSaleCost(s, getReferenceOrderForSale(s, matchedOrders, allOrders));
       if (s.event_name) seenEvents.add(s.event_name);
     }
@@ -1634,7 +1628,7 @@ export default function SalesClient() {
                                   )}
                                 </div>
                                 <strong className="inventory-cost-value">
-                                  {formatCurrency(sale.payout_total ?? sale.sale_total)}
+                                  {formatCurrency(sale.sale_total)}
                                 </strong>
                                 <span
                                   className="status-badge status-static"
@@ -2588,8 +2582,8 @@ export default function SalesClient() {
                       min="0"
                       step="0.01"
                       placeholder="0.00"
-                      value={addSaleForm.payout_total}
-                      onChange={(e) => setAddSaleForm((f) => ({ ...f, payout_total: e.target.value }))}
+                      value={addSaleForm.sale_price}
+                      onChange={(e) => setAddSaleForm((f) => ({ ...f, sale_price: e.target.value }))}
                     />
                   </label>
                   <label>
@@ -2621,7 +2615,7 @@ export default function SalesClient() {
               <button
                 className="primary-button"
                 type="button"
-                disabled={savingNewSale || !addSaleForm.payout_total}
+                disabled={savingNewSale || !addSaleForm.sale_price}
                 onClick={() => void addSaleManually()}
               >
                 {savingNewSale ? "Saving..." : "Add Sale"}
@@ -2669,7 +2663,7 @@ function getSaleProfit(sale: Sale, order?: MatchedOrder | null) {
     return 0;
   }
 
-  return (sale.payout_total ?? sale.sale_total ?? 0) - getSaleCost(sale, order);
+  return (sale.sale_total ?? 0) - getSaleCost(sale, order);
 }
 
 function getSaleCost(sale: Sale, order?: MatchedOrder | null) {
