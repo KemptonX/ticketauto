@@ -461,25 +461,25 @@ export default function SalesImportModal({ allOrders, onClose, onImported }: Sal
             const { error: rowErr } = await supabase.from("sales").insert(chunk[j]);
             if (rowErr) {
               if (rowErr.message.includes("duplicate key") || rowErr.message.includes("unique constraint")) {
-                // Find the existing record — if it was soft-deleted, restore it with the new data
+                // Record already exists — find it and update with the latest CSV data (upsert behaviour)
                 const extId = chunk[j].external_sale_id as string | null;
                 const src = chunk[j].source as string;
                 const { data: existing } = extId
                   ? await supabase
                       .from("sales")
-                      .select("id, sale_status")
+                      .select("id")
                       .eq("source", src)
                       .eq("external_sale_id", extId)
                       .maybeSingle()
                   : { data: null };
 
-                if (existing && (existing as { id: number; sale_status: string }).sale_status === "Deleted") {
-                  const { error: restoreErr } = await supabase
+                if (existing) {
+                  const { error: updateErr } = await supabase
                     .from("sales")
                     .update(chunk[j])
-                    .eq("id", (existing as { id: number; sale_status: string }).id);
-                  if (restoreErr) {
-                    errors.push({ rowNum: chunkMeta[j].rowNum, reason: restoreErr.message });
+                    .eq("id", (existing as { id: number }).id);
+                  if (updateErr) {
+                    errors.push({ rowNum: chunkMeta[j].rowNum, reason: updateErr.message });
                   } else {
                     const m = chunkMeta[j];
                     inserted++;
@@ -488,7 +488,6 @@ export default function SalesImportModal({ allOrders, onClose, onImported }: Sal
                     else if (m.rowType === "paid-archived") { paidArchived++; paidAmount += m.payout; }
                   }
                 } else {
-                  // Active or archived — don't overwrite, count as already imported
                   duplicates++;
                 }
               } else {
