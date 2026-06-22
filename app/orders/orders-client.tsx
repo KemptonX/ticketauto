@@ -258,12 +258,54 @@ export default function OrdersClient() {
   }
 
   async function exportOrdersCSV() {
-    const { data, error } = await supabase
-      .from("orders")
-      .select("*")
-      .not("listing_status", "in", '("Ignored","Personal")')
-      .order("created_at", { ascending: false });
-    if (error || !data) { setMessage("Export failed"); return; }
+    type SaleExportRow = {
+      id: number;
+      inventory_order_id: number | null;
+      external_sale_id: string | null;
+      sold_at: string | null;
+      qty_sold: number | null;
+      sale_total: number | null;
+      payout_total: number | null;
+      marketplace: string | null;
+      buyer_name: string | null;
+      buyer_email: string | null;
+      sale_status: string | null;
+      transfer_status: string | null;
+      transfer_date: string | null;
+      payment_status: string | null;
+      expected_payout_date: string | null;
+      payout_date: string | null;
+      notes: string | null;
+      account_email: string | null;
+    };
+
+    const [ordersResult, salesResult] = await Promise.all([
+      supabase
+        .from("orders")
+        .select("*")
+        .not("listing_status", "in", '("Ignored","Personal")')
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("sales")
+        .select("id, inventory_order_id, external_sale_id, sold_at, qty_sold, sale_total, payout_total, marketplace, buyer_name, buyer_email, sale_status, transfer_status, transfer_date, payment_status, expected_payout_date, payout_date, notes, account_email")
+        .neq("sale_status", "Deleted"),
+    ]);
+
+    if (ordersResult.error || !ordersResult.data) { setMessage("Export failed"); return; }
+
+    const allOrders = ordersResult.data as typeof orders;
+    const allSales = (salesResult.data ?? []) as SaleExportRow[];
+
+    // Group sales by the order they belong to
+    const salesByOrder = new Map<number, SaleExportRow[]>();
+    for (const s of allSales) {
+      if (s.inventory_order_id != null) {
+        const bucket = salesByOrder.get(s.inventory_order_id) ?? [];
+        bucket.push(s);
+        salesByOrder.set(s.inventory_order_id, bucket);
+      }
+    }
+
     const headers = [
       "Booking Ref",
       "Event Name",
@@ -276,28 +318,72 @@ export default function OrdersClient() {
       "Seat From",
       "Seat To",
       "Qty Bought",
-      "Total Cost",
-      "Sold Total",
+      "Order Cost",
       "Ticket Status",
       "Source",
+      "Sale Reference",
+      "Sale Date",
+      "Qty Sold",
+      "Sale Total",
+      "Marketplace",
+      "Buyer Name",
+      "Buyer Email",
+      "Sale Status",
+      "Transfer Status",
+      "Transfer Date",
+      "Payment Status",
+      "Expected Payout Date",
+      "Payout Date",
+      "Notes",
+      "Sale Account",
     ];
-    const rows = (data as typeof orders).map((o) => [
-      o.booking_ref ?? "",
-      o.event_name ?? "",
-      o.venue ?? "",
-      o.event_date ?? "",
-      o.purchased_at ?? "",
-      o.account_email ?? "",
-      o.section ?? "",
-      o.row ?? "",
-      o.seat_from ?? "",
-      o.seat_to ?? "",
-      o.qty_bought ?? "",
-      o.total_cost ?? "",
-      o.sold_total ?? "",
-      o.listing_status ?? "",
-      o.source_type ?? "",
-    ]);
+
+    const rows: (string | number)[][] = [];
+
+    for (const o of allOrders) {
+      const linkedSales = salesByOrder.get(o.id) ?? [];
+      const orderBase = [
+        o.booking_ref ?? "",
+        o.event_name ?? "",
+        o.venue ?? "",
+        o.event_date ?? "",
+        o.purchased_at ?? "",
+        o.account_email ?? "",
+        o.section ?? "",
+        o.row ?? "",
+        o.seat_from ?? "",
+        o.seat_to ?? "",
+        o.qty_bought ?? "",
+        o.total_cost ?? "",
+        o.listing_status ?? "",
+        o.source_type ?? "",
+      ];
+      if (linkedSales.length === 0) {
+        rows.push([...orderBase, "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""]);
+      } else {
+        for (const s of linkedSales) {
+          rows.push([
+            ...orderBase,
+            s.external_sale_id ?? "",
+            s.sold_at ?? "",
+            s.qty_sold ?? "",
+            s.sale_total ?? s.payout_total ?? "",
+            s.marketplace ?? "",
+            s.buyer_name ?? "",
+            s.buyer_email ?? "",
+            s.sale_status ?? "",
+            s.transfer_status ?? "",
+            s.transfer_date ?? "",
+            s.payment_status ?? "",
+            s.expected_payout_date ?? "",
+            s.payout_date ?? "",
+            s.notes ?? "",
+            s.account_email ?? "",
+          ]);
+        }
+      }
+    }
+
     downloadCSV(`tickets-${dateStamp()}.csv`, headers, rows);
   }
 
