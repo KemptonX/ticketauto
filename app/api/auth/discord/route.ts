@@ -4,11 +4,19 @@ import { createServerClient } from "@supabase/ssr";
 
 export const runtime = "nodejs";
 
-// Server-side OAuth initiation — stores the PKCE code verifier in a proper
-// HTTP Set-Cookie response header instead of via document.cookie, which is
-// unreliable in Next.js SSR environments with cross-domain redirects.
 export async function GET() {
   const cookieStore = await cookies();
+
+  // Collect cookies that supabase wants to set (PKCE code verifier) before
+  // the redirect. cookies().set() in a Route Handler is NOT automatically
+  // merged into NextResponse.redirect(), so we collect them here and set
+  // them explicitly on the response object instead.
+  type PendingCookie = {
+    name: string;
+    value: string;
+    options: Record<string, unknown>;
+  };
+  const outgoing: PendingCookie[] = [];
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -19,13 +27,9 @@ export async function GET() {
           return cookieStore.getAll();
         },
         setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) => {
-            cookieStore.set(name, value, {
-              ...options,
-              domain: process.env.NODE_ENV === "production" ? ".tixtracker.app" : undefined,
-              sameSite: "lax",
-            });
-          });
+          for (const { name, value, options } of cookiesToSet) {
+            outgoing.push({ name, value, options: options as Record<string, unknown> });
+          }
         },
       },
     },
@@ -46,5 +50,19 @@ export async function GET() {
     );
   }
 
-  return NextResponse.redirect(data.url);
+  const isProd = process.env.NODE_ENV === "production";
+  const response = NextResponse.redirect(data.url);
+
+  for (const { name, value, options } of outgoing) {
+    const maxAge = typeof options.maxAge === "number" ? options.maxAge : 34560000;
+    response.cookies.set(name, value, {
+      path: "/",
+      sameSite: "lax",
+      httpOnly: false,
+      maxAge,
+      ...(isProd ? { domain: ".tixtracker.app", secure: true } : {}),
+    });
+  }
+
+  return response;
 }
