@@ -1955,23 +1955,6 @@ export default function SalesClient() {
                 />
               </label>
               <label>
-                <span style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
-                  Payout (after fees)
-                  {selectedSale.payout_total == null && (
-                    <span className="status-badge status-static status-problem" style={{ fontSize: "10px", padding: "1px 6px" }}>Missing</span>
-                  )}
-                </span>
-                <input
-                  className="field"
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  placeholder="What Viagogo paid you"
-                  value={saleEdits?.payout_total ?? ""}
-                  onChange={(e) => setSaleEdits((prev) => prev ? { ...prev, payout_total: e.target.value } : prev)}
-                />
-              </label>
-              <label>
                 <span>Profit</span>
                 <div className={`field ${getDeltaTone(selectedProfit)}`}>
                   {selectedSale.inventory_order_id != null ? renderDeltaValue(selectedProfit) : "—"}
@@ -2598,7 +2581,7 @@ export default function SalesClient() {
                     />
                   </label>
                   <label>
-                    <span>Total payout (£)</span>
+                    <span>Sale price (£)</span>
                     <input
                       className="field"
                       type="number"

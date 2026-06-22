@@ -52,7 +52,6 @@ const FIELDS: ImportField[] = [
   // ── Sales Details ─────────────────────────────────────────────────────────
   { key: "sold_at",          label: "Sold Date",        group: "Sales Details",      aliases: ["sale date","sold at","sold date","date sold","transaction date","sale time","sold on"], dataType: "date" },
   { key: "sale_total",       label: "Sale Price",       group: "Sales Details",      aliases: ["sale price","price","sale total","sold for","revenue","total","amount","gross","face value sold","gross revenue","sold amount","total price"], dataType: "number" },
-  { key: "payout_total",     label: "Payout Received",  group: "Sales Details",      aliases: ["payout","payout total","net payout","proceeds","net","net amount","amount received","amount paid out","amount paid","received","net received","take home","payout after fees","total payout","your payment"], dataType: "number" },
   { key: "marketplace",      label: "Platform",         group: "Sales Details",      aliases: ["platform","marketplace","via","through","sold via","channel","buyer platform","market","source platform","sold on","listing platform"], dataType: "text" },
   { key: "external_sale_id", label: "Sale Reference",   group: "Sales Details",      aliases: ["sale ref","sale reference","sale id","sale number","order ref","reference","ref","ticket ref","sale order id","marketplace order id","order id","order number"], dataType: "text" },
   { key: "sale_status",     label: "Sale Status",      group: "Sales Details",      aliases: ["sale status","status","order status","ticket status","sale state"], dataType: "sale_status" },
@@ -69,7 +68,7 @@ const FIELD_GROUPS = ["Ticket Details", "Sales Details", "Transfer & Payment", "
 // Columns that actually exist in the sales table and can be inserted
 const SALE_COLS = new Set([
   "event_name","event_date","venue","section","row","seat_from","seat_to",
-  "qty_sold","sale_total","payout_total","buyer_name","marketplace","buyer_email",
+  "qty_sold","sale_total","buyer_name","marketplace","buyer_email",
   "external_sale_id","sale_status","transfer_status","payment_status",
   "sold_at","transfer_date","payout_date","expected_payout_date","notes",
 ]);
@@ -219,11 +218,6 @@ function transformRow(rawRow: string[], headers: string[], colMap: Record<number
   } else if (payStatus === "Paid") {
     // Payment confirmed overrides sale_status to Paid
     obj.sale_status = "Paid";
-  }
-
-  // If paid but payout_total missing, default to sale_total
-  if (payStatus === "Paid" && !obj.payout_total && obj.sale_total) {
-    obj.payout_total = obj.sale_total;
   }
 
   return obj;
@@ -436,10 +430,6 @@ export default function SalesImportModal({ allOrders, onClose, onImported }: Sal
         continue;
       }
 
-      if ((obj.payment_status as string) === "Paid" && !obj.payout_total && obj.sale_total) {
-        obj.payout_total = obj.sale_total;
-      }
-
       const bestMatch = findBestOrder(obj, allOrders);
       if (bestMatch) {
         obj.inventory_order_id = bestMatch.order.id;
@@ -471,7 +461,36 @@ export default function SalesImportModal({ allOrders, onClose, onImported }: Sal
             const { error: rowErr } = await supabase.from("sales").insert(chunk[j]);
             if (rowErr) {
               if (rowErr.message.includes("duplicate key") || rowErr.message.includes("unique constraint")) {
-                duplicates++;
+                // Find the existing record — if it was soft-deleted, restore it with the new data
+                const extId = chunk[j].external_sale_id as string | null;
+                const src = chunk[j].source as string;
+                const { data: existing } = extId
+                  ? await supabase
+                      .from("sales")
+                      .select("id, sale_status")
+                      .eq("source", src)
+                      .eq("external_sale_id", extId)
+                      .maybeSingle()
+                  : { data: null };
+
+                if (existing && (existing as { id: number; sale_status: string }).sale_status === "Deleted") {
+                  const { error: restoreErr } = await supabase
+                    .from("sales")
+                    .update(chunk[j])
+                    .eq("id", (existing as { id: number; sale_status: string }).id);
+                  if (restoreErr) {
+                    errors.push({ rowNum: chunkMeta[j].rowNum, reason: restoreErr.message });
+                  } else {
+                    const m = chunkMeta[j];
+                    inserted++;
+                    if (m.rowType === "awaiting-transfer") awaitingTransfer++;
+                    else if (m.rowType === "transferred-pending-payment") { transferredPending++; awaitingPaymentAmount += m.payout; }
+                    else if (m.rowType === "paid-archived") { paidArchived++; paidAmount += m.payout; }
+                  }
+                } else {
+                  // Active or archived — don't overwrite, count as already imported
+                  duplicates++;
+                }
               } else {
                 errors.push({ rowNum: chunkMeta[j].rowNum, reason: rowErr.message });
               }
@@ -544,7 +563,7 @@ export default function SalesImportModal({ allOrders, onClose, onImported }: Sal
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 20 }}>
                 {([
                   { title: "Ticket Details",  items: ["Event name, date & venue", "Section, row & seats", "Quantity sold"] },
-                  { title: "Sales Details",   items: ["Sold date & sale price", "Payout received (after fees)", "Platform & sale reference"] },
+                  { title: "Sales Details",   items: ["Sold date & sale price", "Platform & sale reference"] },
                   { title: "Transfer & Payment", items: ["Transfer & payment status", "Date paid"] },
                   { title: "Notes",           items: ["Free-text notes"] },
                 ] as const).map(g => (
