@@ -611,7 +611,7 @@ export default function SalesClient() {
 
     type Pending = { saleId: number; qty: number; payout: number | null; ref: Sale; overflowOf: number | null };
     const queue: Pending[] = unmatchedSales.map((s) => ({
-      saleId: s.id, qty: s.qty_sold ?? 1, payout: s.sale_total ?? s.payout_total, ref: s, overflowOf: null,
+      saleId: s.id, qty: s.qty_sold ?? 1, payout: s.sale_total ?? s.payout_total ?? null, ref: s, overflowOf: null,
     }));
 
     for (const pending of queue) {
