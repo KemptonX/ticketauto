@@ -339,19 +339,69 @@ export default function SalesClient() {
   }
 
   async function exportSalesCSV() {
+    type OrderRow = {
+      id: number;
+      booking_ref: string | null;
+      event_name: string | null;
+      venue: string | null;
+      event_date: string | null;
+      account_email: string | null;
+      section: string | null;
+      row: string | null;
+      seat_from: string | null;
+      seat_to: string | null;
+      qty_bought: number | null;
+      total_cost: number | null;
+      listing_status: string | null;
+      source_type: string | null;
+    };
+
+    // Fetch ALL sources in parallel
+    const [salesResult, ordersResult] = await Promise.all([
+      supabase
+        .from("sales")
+        .select("*")
+        .neq("sale_status", "Deleted")
+        .order("sold_at", { ascending: false })
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("orders")
+        .select("id, booking_ref, event_name, venue, event_date, account_email, section, row, seat_from, seat_to, qty_bought, total_cost, listing_status, source_type")
+        .not("listing_status", "in", '("Ignored","Personal")')
+        .order("created_at", { ascending: false }),
+    ]);
+
+    if (salesResult.error || !salesResult.data) {
+      setMessage(salesResult.error?.message ?? "Export failed");
+      return;
+    }
+
+    const allSales = salesResult.data as Sale[];
+    const allOrders = (ordersResult.data ?? []) as OrderRow[];
+
+    // Build order lookup and track which orders have at least one sale
+    const orderMap = new Map<number, OrderRow>();
+    for (const o of allOrders) orderMap.set(o.id, o);
+    const ordersWithSales = new Set<number>();
+
     const headers = [
-      "Sale Reference",
+      "Order Ref",
       "Event Name",
       "Venue",
       "Event Date",
+      "Order Account",
       "Section",
       "Row",
       "Seat From",
       "Seat To",
-      "Qty Sold",
+      "Qty Bought",
+      "Order Cost",
+      "Ticket Status",
+      "Sale Reference",
       "Sale Date",
+      "Qty Sold",
       "Sale Total",
-      "Platform",
+      "Marketplace",
       "Buyer Name",
       "Buyer Email",
       "Sale Status",
@@ -361,49 +411,67 @@ export default function SalesClient() {
       "Expected Payout Date",
       "Payout Date",
       "Notes",
-      "Account",
-      "Matched Order ID",
+      "Sale Account",
     ];
 
-    // Fetch ALL sales across every status (active, archived, paid, linked to orders)
-    // so the export is complete regardless of which view is currently open
-    const { data: allSales, error: exportErr } = await supabase
-      .from("sales")
-      .select("*")
-      .neq("sale_status", "Deleted")
-      .order("sold_at", { ascending: false })
-      .order("created_at", { ascending: false });
+    const rows: (string | number)[][] = [];
 
-    if (exportErr || !allSales) {
-      setMessage(exportErr?.message ?? "Export failed");
-      return;
+    // One row per sale, enriched with linked order data when available
+    for (const s of allSales) {
+      const o = s.inventory_order_id ? (orderMap.get(s.inventory_order_id) ?? null) : null;
+      if (o) ordersWithSales.add(o.id);
+      rows.push([
+        o?.booking_ref ?? "",
+        o?.event_name ?? s.event_name ?? "",
+        o?.venue ?? s.venue ?? "",
+        o?.event_date ?? s.event_date ?? "",
+        o?.account_email ?? "",
+        o?.section ?? s.section ?? "",
+        o?.row ?? s.row ?? "",
+        o?.seat_from ?? s.seat_from ?? "",
+        o?.seat_to ?? s.seat_to ?? "",
+        o?.qty_bought ?? "",
+        o?.total_cost ?? "",
+        o?.listing_status ?? "",
+        s.external_sale_id ?? "",
+        s.sold_at ?? "",
+        s.qty_sold ?? "",
+        s.sale_total ?? s.payout_total ?? "",
+        s.marketplace ?? "",
+        s.buyer_name ?? "",
+        s.buyer_email ?? "",
+        s.sale_status ?? "",
+        s.transfer_status ?? "",
+        s.transfer_date ?? "",
+        s.payment_status ?? "",
+        s.expected_payout_date ?? "",
+        s.payout_date ?? "",
+        s.notes ?? "",
+        s.account_email ?? "",
+      ]);
     }
 
-    const rows = (allSales as Sale[]).map((s) => [
-      s.external_sale_id ?? "",
-      s.event_name ?? "",
-      s.venue ?? "",
-      s.event_date ?? "",
-      s.section ?? "",
-      s.row ?? "",
-      s.seat_from ?? "",
-      s.seat_to ?? "",
-      s.qty_sold ?? "",
-      s.sold_at ?? "",
-      s.sale_total ?? s.payout_total ?? "",
-      s.marketplace ?? "",
-      s.buyer_name ?? "",
-      s.buyer_email ?? "",
-      s.sale_status ?? "",
-      s.transfer_status ?? "",
-      s.transfer_date ?? "",
-      s.payment_status ?? "",
-      s.expected_payout_date ?? "",
-      s.payout_date ?? "",
-      s.notes ?? "",
-      s.account_email ?? "",
-      s.inventory_order_id ?? "",
-    ]);
+    // Add orders that have no matched sales so their cost is still visible
+    for (const o of allOrders) {
+      if (!ordersWithSales.has(o.id)) {
+        rows.push([
+          o.booking_ref ?? "",
+          o.event_name ?? "",
+          o.venue ?? "",
+          o.event_date ?? "",
+          o.account_email ?? "",
+          o.section ?? "",
+          o.row ?? "",
+          o.seat_from ?? "",
+          o.seat_to ?? "",
+          o.qty_bought ?? "",
+          o.total_cost ?? "",
+          o.listing_status ?? "",
+          "", "", "", "", "", "", "", "", "", "", "", "", "", "", "",
+        ]);
+      }
+    }
+
     downloadCSV(`sales-${dateStamp()}.csv`, headers, rows);
   }
 
