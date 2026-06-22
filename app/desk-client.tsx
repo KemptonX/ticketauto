@@ -167,10 +167,11 @@ export default function DeskClient() {
     setExporting(true);
     try {
       // Fetch ALL orders and ALL non-deleted sales in parallel
+      // sold_total on the order is populated for old-way imports that have no separate sale record
       const [{ data: ordersData }, { data: salesData }] = await Promise.all([
         supabase
           .from("orders")
-          .select("id, booking_ref, event_name, venue, event_date, account_email, section, row, seat_from, seat_to, qty_bought, total_cost, listing_status, source_type")
+          .select("id, booking_ref, event_name, venue, event_date, account_email, section, row, seat_from, seat_to, qty_bought, total_cost, sold_total, listing_status, source_type")
           .order("event_date", { ascending: true }),
         supabase
           .from("sales")
@@ -190,8 +191,8 @@ export default function DeskClient() {
 
       const headers = [
         "Booking Ref", "Event Name", "Venue", "Event Date", "Account Email",
-        "Section", "Row", "Seat From", "Seat To", "Qty Bought", "Total Cost", "Ticket Status", "Source",
-        "Sale Reference", "Sale Date", "Qty Sold", "Sale Total", "Payout Total",
+        "Section", "Row", "Seat From", "Seat To", "Qty Bought", "Order Cost", "Ticket Status", "Source",
+        "Sale Reference", "Sale Date", "Qty Sold", "Sale Total",
         "Platform", "Buyer Name", "Buyer Email", "Sale Status",
         "Transfer Status", "Transfer Date", "Payment Status",
         "Expected Payout Date", "Payout Date", "Notes",
@@ -204,25 +205,30 @@ export default function DeskClient() {
       }
       const ordersWithSales = new Set<number>();
 
-      // Rows from sales (matched + unmatched)
+      // One row per sale, merged with its linked order when available.
+      // Revenue uses sale_total ?? payout_total so both email-scanned records
+      // (payout_total) and manually added / imported records (sale_total) always
+      // land in the same "Sale Total" column.
       const saleRows = (salesData ?? []).map((s) => {
         const orderId = s.inventory_order_id as number | null;
         const o = orderId ? (orderMap.get(orderId) ?? {}) : {};
-        if (orderId) ordersWithSales.add(orderId);
+        if (orderId) ordersWithSales.add(orderId as number);
+        const revenue = (s.sale_total as number | null) ?? (s.payout_total as number | null) ?? null;
         return [
           o.booking_ref ?? null, o.event_name ?? s.event_name, o.venue ?? s.venue,
           o.event_date ?? s.event_date, o.account_email ?? s.account_email,
           o.section ?? s.section, o.row ?? s.row,
           o.seat_from ?? s.seat_from, o.seat_to ?? s.seat_to,
           o.qty_bought ?? null, o.total_cost ?? null, o.listing_status ?? null, o.source_type ?? null,
-          s.external_sale_id, s.sold_at, s.qty_sold, s.sale_total, s.payout_total,
+          s.external_sale_id, s.sold_at, s.qty_sold, revenue,
           s.marketplace, s.buyer_name, s.buyer_email, s.sale_status,
           s.transfer_status, s.transfer_date, s.payment_status,
           s.expected_payout_date, s.payout_date, s.notes,
         ];
       });
 
-      // Rows from orders with no sales (personal / unsold tickets)
+      // Orders with no linked sale records — use sold_total from the order itself
+      // so old-way imports that stored revenue directly on the order still appear
       const personalRows = (ordersData ?? [])
         .filter((o) => !ordersWithSales.has((o as { id: number }).id))
         .map((o) => {
@@ -231,7 +237,8 @@ export default function DeskClient() {
             order.booking_ref, order.event_name, order.venue, order.event_date, order.account_email,
             order.section, order.row, order.seat_from, order.seat_to,
             order.qty_bought, order.total_cost, order.listing_status, order.source_type,
-            null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+            null, null, null, order.sold_total ?? null,
+            null, null, null, null, null, null, null, null, null, null,
           ];
         });
 
