@@ -51,9 +51,10 @@ function pickActiveMembership(
 ): WhopMembership | undefined {
   memberships.forEach((m) =>
     console.log(
-      "[whop] membership id=%s product=%s status=%s valid=%s email=%s discord_id=%s",
+      "[whop] membership id=%s product=%s plan=%s status=%s valid=%s email=%s discord_id=%s",
       m.id,
       m.product,
+      (m as Record<string, unknown>).plan ?? "none",
       m.status,
       m.valid,
       m.email,
@@ -64,7 +65,12 @@ function pickActiveMembership(
     // Ensure membership belongs to this user
     if (identity?.discordId && m.discord?.id !== identity.discordId) return false;
     if (identity?.email && !identity.discordId && m.email !== identity.email) return false;
-    const productMatch = allowedProductIds.size === 0 || allowedProductIds.has(m.product ?? "");
+    // allowedProductIds may contain product IDs (prod_xxx) or plan IDs (plan_xxx)
+    const planId = String((m as Record<string, unknown>).plan ?? "");
+    const productMatch =
+      allowedProductIds.size === 0 ||
+      allowedProductIds.has(m.product ?? "") ||
+      allowedProductIds.has(planId);
     const accessOk = m.valid === true || ALLOWED_STATUSES.has(m.status);
     return productMatch && accessOk;
   });

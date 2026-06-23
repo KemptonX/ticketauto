@@ -308,7 +308,7 @@ export default async function HomePage() {
             <div className="lp-pricing-glow" />
             <div className="lp-pricing-badge">Full access</div>
             <div className="lp-pricing-price">
-              <span className="lp-pricing-currency">€</span>
+              <span className="lp-pricing-currency">£</span>
               <span className="lp-pricing-amount">19.99</span>
               <span className="lp-pricing-period">/ month</span>
             </div>
