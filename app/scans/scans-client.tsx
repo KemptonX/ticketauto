@@ -14,7 +14,6 @@ const navItems = [
   { label: "Costs", href: "/costs", active: false },
   { label: "Calculator", href: "/viagogo-calculator", active: false },
   { label: "Scans", href: "/scans", active: true },
-  { label: "Clients", href: "/clients", active: false },
   { label: "FAQ", href: "/faq", active: false, target: "_blank", rel: "noopener noreferrer" },
 ];
 

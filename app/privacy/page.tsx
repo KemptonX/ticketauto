@@ -40,18 +40,29 @@ export default function PrivacyPage() {
         </p>
         <h3>Google user data</h3>
         <p>
-          If you choose to connect your Google account, TixTracker requests <strong>read-only</strong>{" "}
-          access to your Gmail account (<code>https://www.googleapis.com/auth/gmail.readonly</code>).
-          We use this access only to identify ticket-related emails including ticket purchases, sale
-          confirmations, transfer confirmations and payout emails from supported platforms (Ticketmaster,
-          AXS, Viagogo, StubHub, Ticombo).
+          If you choose to connect your Google account, TixTracker requests Gmail access
+          (<code>https://www.googleapis.com/auth/gmail.modify</code> and{" "}
+          <code>https://www.googleapis.com/auth/gmail.labels</code>) to scan ticket-related emails,
+          mark successfully processed emails as read, and organise them with Gmail labels.
         </p>
         <p>TixTracker uses Google user data only to provide the following features inside your account:</p>
         <ul>
           <li>Automatically importing ticket purchase orders from confirmation emails</li>
           <li>Importing sale, transfer and payout information from provider emails</li>
           <li>Populating your TixTracker dashboard with ticket inventory, profit and analytics</li>
+          <li>
+            Marking successfully processed ticket emails as read so they are not re-scanned
+            unnecessarily
+          </li>
+          <li>
+            Creating and applying Gmail labels (such as &ldquo;My Tickets&rdquo;) to processed ticket
+            emails to help you identify which emails have already been imported
+          </li>
         </ul>
+        <p>
+          TixTracker only scans emails from supported ticket providers (Ticketmaster, AXS, Viagogo,
+          StubHub, Ticombo). Unrelated personal emails are never read or processed.
+        </p>
         <p>
           Extracted information may include: event name, venue, event date, order reference, ticket
           quantity, section, row, seat numbers, purchase price, sale price, payout amount, buyer
@@ -69,8 +80,10 @@ export default function PrivacyPage() {
         <h2>3. What We Do Not Do With Google Data</h2>
         <ul>
           <li>We do <strong>not</strong> send emails from your account</li>
-          <li>We do <strong>not</strong> delete or modify your emails</li>
-          <li>We do <strong>not</strong> mark your emails as read</li>
+          <li>We do <strong>not</strong> compose emails</li>
+          <li>We do <strong>not</strong> delete emails</li>
+          <li>We do <strong>not</strong> permanently delete emails</li>
+          <li>We do <strong>not</strong> archive unrelated emails</li>
           <li>We do <strong>not</strong> access Gmail data for advertising</li>
           <li>We do <strong>not</strong> sell Google user data</li>
           <li>We do <strong>not</strong> use Google user data for serving ads</li>
@@ -81,7 +94,8 @@ export default function PrivacyPage() {
           </li>
         </ul>
         <p>
-          TixTracker only processes ticket-related email data from supported providers. We do not
+          TixTracker Gmail access is limited to: reading ticket-related emails, marking those emails
+          as read after successful import, and applying organisational labels to them. We do not
           scan or store unrelated personal emails.
         </p>
 

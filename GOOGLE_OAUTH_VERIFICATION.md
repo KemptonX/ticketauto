@@ -22,27 +22,43 @@ tixtracker.app
 | `openid` | Standard OpenID Connect — user identity |
 | `https://www.googleapis.com/auth/userinfo.email` | User's email address |
 | `https://www.googleapis.com/auth/userinfo.profile` | User's display name |
-| `https://www.googleapis.com/auth/gmail.readonly` | Read ticket-related emails |
+| `https://www.googleapis.com/auth/gmail.modify` | Read ticket emails; mark processed emails as read |
+| `https://www.googleapis.com/auth/gmail.labels` | Create and apply organisational labels to processed ticket emails |
 
-**Note:** TixTracker does NOT request `gmail.modify`, `mail.google.com` or `gmail.send`.
+**Note:** TixTracker does NOT request `mail.google.com`, `gmail.send`, `gmail.compose` or `gmail.readonly`.
 
 ## 7. Scope Justification (for Google submission form)
 
-TixTracker uses read-only Gmail access to scan a user's ticket-related emails and
-automatically import ticket purchase, sale, transfer and payout information into their
-private TixTracker dashboard.
+TixTracker uses Gmail access to scan a user's ticket-related emails and automatically
+import ticket purchase, sale, transfer and payout information into their private
+TixTracker dashboard. The app also marks successfully processed ticket emails as read
+and applies Gmail labels to them for organisation and duplicate-scan prevention.
 
 The Gmail data is used to help users track ticket inventory, sales, transfer status,
 payouts, profit and cash flow without manually entering each order.
 
 TixTracker only reads ticket-related emails from supported providers such as
 Ticketmaster, AXS, Viagogo, StubHub and Ticombo. The app does not send emails,
-delete emails, modify emails, mark emails as read, or access Gmail data for advertising.
+compose emails, delete emails, permanently delete emails, or access Gmail data for
+advertising.
 
-The requested scope (`gmail.readonly`) is required because ticket order confirmations,
-resale confirmations, transfer confirmations and payout emails are delivered to the
-user's Gmail inbox. Read-only access is the narrowest scope that allows TixTracker to
-provide this feature.
+**gmail.modify** is required because:
+- Ticket order confirmations, resale confirmations, transfer confirmations and payout
+  emails are delivered to the user's Gmail inbox and must be read to extract ticket
+  data.
+- After successfully importing a ticket email, TixTracker marks it as read so the same
+  email is not re-scanned on subsequent runs.
+
+**gmail.labels** is required because:
+- TixTracker creates and applies a Gmail label (e.g. "My Tickets") to successfully
+  processed ticket emails so users can clearly see which emails have already been
+  imported into TixTracker.
+- This label is used only for organising ticket emails processed by TixTracker and is
+  never applied to unrelated emails.
+
+TixTracker does not request `mail.google.com`, `gmail.send`, `gmail.compose` or
+`gmail.readonly`. The combination of `gmail.modify` + `gmail.labels` is the minimum
+required to deliver the described functionality.
 
 ## 8. Redirect URI — add ALL of these in Google Cloud Console → Credentials → OAuth 2.0 Client IDs
 
@@ -112,7 +128,7 @@ Users can disconnect Gmail at any time via Settings → Connections → "Disconn
 
 ## 13. Checklist Before Submitting
 
-- [x] Scope changed from `gmail.modify` to `gmail.readonly`
+- [x] Scopes set to `gmail.modify` + `gmail.labels` (not gmail.readonly, not mail.google.com)
 - [x] Privacy Policy live at https://www.tixtracker.app/privacy
 - [x] Terms of Service live at https://www.tixtracker.app/terms
 - [x] Gmail connection is separate from login

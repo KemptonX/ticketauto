@@ -8,7 +8,8 @@ const GOOGLE_SCOPES = [
   "openid",
   "https://www.googleapis.com/auth/userinfo.email",
   "https://www.googleapis.com/auth/userinfo.profile",
-  "https://www.googleapis.com/auth/gmail.readonly",
+  "https://www.googleapis.com/auth/gmail.modify",
+  "https://www.googleapis.com/auth/gmail.labels",
 ];
 
 export async function GET(request: Request) {
