@@ -356,6 +356,13 @@ export default async function HomePage() {
       <footer className="lp-footer">
         <img src="/logo.png" alt="TixTracker" className="lp-footer-logo" />
         <p className="lp-footer-copy">© 2025 TixTracker · Built for professional ticket resellers.</p>
+        <nav className="lp-footer-links" aria-label="Legal links">
+          <a href="/privacy" className="lp-footer-link">Privacy Policy</a>
+          <span className="lp-footer-sep">·</span>
+          <a href="/terms" className="lp-footer-link">Terms of Service</a>
+          <span className="lp-footer-sep">·</span>
+          <a href="mailto:support@tixtracker.app" className="lp-footer-link">Contact</a>
+        </nav>
       </footer>
 
     </div>

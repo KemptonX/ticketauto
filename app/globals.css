@@ -5822,3 +5822,149 @@ select {
   }
 
 } /* end @media (max-width: 768px) */
+
+/* ─── Legal Pages (Privacy / Terms) ─────────────────────────────────────────── */
+
+.legal-page {
+  min-height: 100vh;
+  background: var(--background);
+  color: var(--text-primary);
+  display: flex;
+  flex-direction: column;
+}
+
+.legal-header {
+  padding: 20px 32px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.legal-logo-link {
+  display: inline-block;
+  line-height: 0;
+}
+
+.legal-logo {
+  height: 24px;
+  width: auto;
+  mix-blend-mode: screen;
+}
+
+.legal-content {
+  flex: 1;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 48px 32px 64px;
+  width: 100%;
+}
+
+.legal-content h1 {
+  font-size: 1.9rem;
+  font-weight: 700;
+  margin: 0 0 6px;
+  color: var(--text-primary);
+}
+
+.legal-updated {
+  font-size: 0.82rem;
+  color: rgba(255, 255, 255, 0.35);
+  margin: 0 0 36px;
+}
+
+.legal-content h2 {
+  font-size: 1.05rem;
+  font-weight: 600;
+  margin: 36px 0 10px;
+  color: var(--text-primary);
+  padding-bottom: 6px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.legal-content h3 {
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin: 20px 0 6px;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.legal-content p {
+  font-size: 0.9rem;
+  line-height: 1.7;
+  color: rgba(255, 255, 255, 0.65);
+  margin: 0 0 14px;
+}
+
+.legal-content ul {
+  padding-left: 1.4rem;
+  margin: 0 0 14px;
+}
+
+.legal-content li {
+  font-size: 0.9rem;
+  line-height: 1.7;
+  color: rgba(255, 255, 255, 0.65);
+  margin-bottom: 4px;
+}
+
+.legal-content code {
+  font-size: 0.8rem;
+  background: rgba(255, 255, 255, 0.07);
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.legal-content a {
+  color: #a78bfa;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.legal-content a:hover {
+  color: #c4b5fd;
+}
+
+.legal-footer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 20px 32px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  font-size: 0.82rem;
+  color: rgba(255, 255, 255, 0.35);
+}
+
+.legal-footer a {
+  color: rgba(255, 255, 255, 0.45);
+  text-decoration: none;
+}
+
+.legal-footer a:hover {
+  color: rgba(255, 255, 255, 0.75);
+}
+
+/* ─── Homepage footer links ──────────────────────────────────────────────────── */
+
+.lp-footer-links {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.lp-footer-link {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.25);
+  text-decoration: none;
+  transition: color 0.15s;
+}
+
+.lp-footer-link:hover {
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.lp-footer-sep {
+  color: rgba(255, 255, 255, 0.12);
+  font-size: 12px;
+  user-select: none;
+}

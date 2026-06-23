@@ -1475,12 +1475,20 @@ export default function SettingsClient() {
 
             <section className="command-card connections-command-card">
               <div className="command-header">
-                <div><p className="section-tag">Gmail</p><h4>Connect or stage an inbox</h4></div>
+                <div><p className="section-tag">Gmail</p><h4>Connect Gmail</h4></div>
               </div>
               <div className="connections-cta-row">
                 <div className="connections-cta-copy">
-                  <strong>Fastest setup</strong>
-                  <span>Use Google OAuth to authorise Gmail directly.</span>
+                  <strong>Scan ticket emails automatically</strong>
+                  <span>
+                    Connect Gmail so TixTracker can scan ticket-related emails and import ticket
+                    purchases, sales, transfer confirmations and payout information into your
+                    dashboard.
+                  </span>
+                  <span style={{ fontSize: "0.78rem", color: "rgba(255,255,255,0.35)", marginTop: "6px", display: "block" }}>
+                    TixTracker uses read-only Gmail access. We do not send, delete or modify emails,
+                    mark emails as read, or sell your Google data.
+                  </span>
                 </div>
                 <Link href="/api/gmail/connect" className="primary-button">Connect Gmail</Link>
               </div>
@@ -1663,7 +1671,9 @@ export default function SettingsClient() {
                         <button type="button" className="secondary-button" onClick={() => void toggleAccount(account)}>
                           {account.is_active ? "Pause" : "Resume"}
                         </button>
-                        <button type="button" className="ghost-button danger-button" onClick={() => void removeAccount(account)}>Remove</button>
+                        <button type="button" className="ghost-button danger-button" onClick={() => void removeAccount(account)}>
+                          {account.provider === "gmail" ? "Disconnect Gmail" : "Remove"}
+                        </button>
                       </div>
                     </article>
                   ))}

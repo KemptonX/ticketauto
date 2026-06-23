@@ -255,7 +255,9 @@ export async function syncGmailInbox({
   userId: string;
 }): Promise<SyncResult> {
   const accessToken = await getValidAccessToken({ supabase, gmailAccount });
-  const labelId = await getOrCreateLabel(accessToken, PROCESSED_LABEL);
+  // getOrCreateLabel requires write access; with gmail.readonly tokens it may fail.
+  // Catch the error so the scan still runs — emails just won't receive the label.
+  const labelId = await getOrCreateLabel(accessToken, PROCESSED_LABEL).catch(() => null);
   const messages = await listMessages(accessToken, GMAIL_QUERY_FILTERED);
 
   // Fetch full message bodies in parallel batches of 10
@@ -291,7 +293,12 @@ export async function syncGmailInbox({
 
     if (result.action === "no_ref") continue;
 
-    await markMessageProcessed(accessToken, message.id, labelId);
+    // markMessageProcessed requires write access (removes UNREAD label, adds "My Tickets").
+    // With gmail.readonly tokens this will be rejected; catch and continue so data import
+    // still completes. Deduplication is handled by booking_ref unique constraint in the DB.
+    if (labelId) {
+      await markMessageProcessed(accessToken, message.id, labelId).catch(() => { /* read-only token */ });
+    }
 
     if (result.action === "inserted") {
       inserted += 1;
@@ -453,7 +460,7 @@ async function getOrCreateLabel(accessToken: string, name: string) {
   if (existing) {
     return existing.id;
   }
-
+  // createLabel is a write operation that fails with gmail.readonly tokens
   const created = await createLabel(accessToken, name);
   return created.id;
 }
