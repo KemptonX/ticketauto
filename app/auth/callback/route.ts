@@ -103,6 +103,11 @@ export async function GET(request: Request) {
   const supabaseRef = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL!).hostname.split(".")[0];
   const codeVerifierKey = `sb-${supabaseRef}-auth-token-code-verifier`;
 
+  // Collect all cookies that auth operations write, so we can attach them
+  // directly to the redirect response. cookieStore.set() alone is NOT carried
+  // into NextResponse.redirect() — those are separate response objects.
+  const outgoing: Array<{ name: string; value: string; options: Record<string, unknown> }> = [];
+
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -118,7 +123,9 @@ export async function GET(request: Request) {
         },
         setAll(cookiesToSet) {
           cookiesToSet.forEach(({ name, value, options }) => {
-            cookieStore.set(name, value, options);
+            // Also write to cookieStore so in-request reads see the new values
+            try { cookieStore.set(name, value, options); } catch { /* read-only guard */ }
+            outgoing.push({ name, value, options: (options ?? {}) as Record<string, unknown> });
           });
         },
       },
@@ -213,5 +220,27 @@ export async function GET(request: Request) {
     }
   }
 
-  return NextResponse.redirect(`https://tixtracker.app/dashboard`);
+  // Redirect directly to www so cookies set by this handler (origin: tixtracker.app/auth/callback)
+  // aren't dropped by a subsequent Vercel CDN redirect from tixtracker.app → www.tixtracker.app.
+  // Explicitly copy session cookies onto the response — cookieStore.set() doesn't carry into
+  // NextResponse.redirect() because they are separate response objects in Next.js.
+  const successResponse = NextResponse.redirect("https://www.tixtracker.app/dashboard");
+  for (const c of outgoing) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    successResponse.cookies.set(c.name, c.value, {
+      ...(c.options as any),
+      // Ensure cookies work on both tixtracker.app and www.tixtracker.app
+      domain: ".tixtracker.app",
+    });
+  }
+  // Expire the PKCE verifier now that the code exchange is complete
+  successResponse.cookies.set("pkce_verifier", "", {
+    path: "/",
+    maxAge: 0,
+    httpOnly: true,
+    sameSite: "lax",
+    secure: true,
+    domain: ".tixtracker.app",
+  });
+  return successResponse;
 }
