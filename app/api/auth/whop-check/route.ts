@@ -4,7 +4,9 @@ import { createSupabaseServerClient } from "@/src/lib/supabase-server";
 export const runtime = "nodejs";
 
 const WHOP_API_BASE = process.env.WHOP_API_BASE_URL || "https://api.whop.com/api/v2";
-const ALLOWED_STATUSES = new Set(["active", "trialing", "canceling"]);
+const ALLOWED_STATUSES = new Set([
+  "active", "trialing", "completed", "canceling", "past_due", "pastDue",
+]);
 
 export async function POST() {
   const apiKey = process.env.WHOP_API_KEY;
@@ -12,7 +14,12 @@ export async function POST() {
   // No Whop key configured — allow through
   if (!apiKey) return NextResponse.json({ ok: true });
 
-  const allowedProductId = process.env.WHOP_ALLOWED_PRODUCT_ID;
+  const allowedIds = new Set(
+    (process.env.WHOP_ALLOWED_PRODUCT_ID ?? "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean),
+  );
   const ownerIds = new Set(
     (process.env.WHOP_OWNER_DISCORD_IDS ?? "")
       .split(",")
@@ -38,8 +45,7 @@ export async function POST() {
   if (ownerIds.has(discordId)) return NextResponse.json({ ok: true });
 
   try {
-    const params = new URLSearchParams({ discord_account_id: discordId, status: "active" });
-    if (allowedProductId) params.set("product_id", allowedProductId);
+    const params = new URLSearchParams({ discord_account_id: discordId });
 
     const whopRes = await fetch(`${WHOP_API_BASE}/memberships?${params.toString()}`, {
       headers: { Authorization: `Bearer ${apiKey}` },
@@ -51,10 +57,18 @@ export async function POST() {
     }
 
     const whopData = (await whopRes.json()) as {
-      data?: { id: string; status: string }[];
+      data?: { id: string; status: string; valid?: boolean; product?: string; plan?: string }[];
     };
 
-    const active = whopData.data?.find((m) => ALLOWED_STATUSES.has(m.status));
+    const active = whopData.data?.find((m) => {
+      const planId = String(m.plan ?? "");
+      const productMatch =
+        allowedIds.size === 0 ||
+        allowedIds.has(m.product ?? "") ||
+        allowedIds.has(planId);
+      const accessOk = m.valid === true || ALLOWED_STATUSES.has(m.status);
+      return productMatch && accessOk;
+    });
 
     if (!active) {
       return NextResponse.json(

@@ -4,7 +4,9 @@ import { setSession } from "@/src/lib/whop-auth";
 export const runtime = "nodejs";
 
 const WHOP_API_BASE_URL = process.env.WHOP_API_BASE_URL || "https://api.whop.com/api/v1";
-const ALLOWED_STATUSES = new Set(["active", "trialing", "canceling"]);
+const ALLOWED_STATUSES = new Set([
+  "active", "trialing", "completed", "canceling", "past_due", "pastDue",
+]);
 
 export async function POST(request: Request) {
   try {
@@ -56,10 +58,17 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "License is not active" }, { status: 403 });
     }
 
-    const allowedProductId = process.env.WHOP_ALLOWED_PRODUCT_ID;
+    const allowedIds = new Set(
+      (process.env.WHOP_ALLOWED_PRODUCT_ID ?? "").split(",").map((s) => s.trim()).filter(Boolean),
+    );
     const membershipProductId = membership.product?.id || null;
+    const membershipPlanId = (membership as Record<string, unknown> & { plan?: { id?: string } }).plan?.id || null;
 
-    if (allowedProductId && membershipProductId !== allowedProductId) {
+    if (
+      allowedIds.size > 0 &&
+      !allowedIds.has(membershipProductId ?? "") &&
+      !allowedIds.has(membershipPlanId ?? "")
+    ) {
       return NextResponse.json({ error: "License is for the wrong product" }, { status: 403 });
     }
 

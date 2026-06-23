@@ -5,7 +5,9 @@ import { createServerClient } from "@supabase/ssr";
 export const runtime = "nodejs";
 
 const WHOP_API_BASE = process.env.WHOP_API_BASE_URL || "https://api.whop.com/api/v2";
-const ALLOWED_STATUSES = new Set(["active", "trialing", "canceling"]);
+const ALLOWED_STATUSES = new Set([
+  "active", "trialing", "completed", "canceling", "past_due", "pastDue",
+]);
 
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
@@ -52,9 +54,9 @@ export async function GET(request: Request) {
 
   // Whop membership check — only runs for Discord logins and only if keys are configured
   const apiKey = process.env.WHOP_API_KEY;
-  const allowedProductId = process.env.WHOP_ALLOWED_PRODUCT_ID;
-
-  // Comma-separated Discord IDs that bypass the Whop check (for owners/admins who don't have a membership)
+  const allowedIds = new Set(
+    (process.env.WHOP_ALLOWED_PRODUCT_ID ?? "").split(",").map((s) => s.trim()).filter(Boolean),
+  );
   const ownerDiscordIds = new Set(
     (process.env.WHOP_OWNER_DISCORD_IDS ?? "").split(",").map((s) => s.trim()).filter(Boolean),
   );
@@ -65,11 +67,9 @@ export async function GET(request: Request) {
     if (discordIdentity) {
       const discordId = discordIdentity.id;
 
-      // Owners bypass the membership check
       if (!ownerDiscordIds.has(discordId)) {
         try {
-          const params = new URLSearchParams({ discord_account_id: discordId, status: "active" });
-          if (allowedProductId) params.set("product_id", allowedProductId);
+          const params = new URLSearchParams({ discord_account_id: discordId });
 
           const whopRes = await fetch(`${WHOP_API_BASE}/memberships?${params.toString()}`, {
             headers: { Authorization: `Bearer ${apiKey}` },
@@ -82,10 +82,18 @@ export async function GET(request: Request) {
           }
 
           const whopData = (await whopRes.json()) as {
-            data?: { id: string; status: string }[];
+            data?: { id: string; status: string; valid?: boolean; product?: string; plan?: string }[];
           };
 
-          const activeMembership = whopData.data?.find((m) => ALLOWED_STATUSES.has(m.status));
+          const activeMembership = whopData.data?.find((m) => {
+            const planId = String(m.plan ?? "");
+            const productMatch =
+              allowedIds.size === 0 ||
+              allowedIds.has(m.product ?? "") ||
+              allowedIds.has(planId);
+            const accessOk = m.valid === true || ALLOWED_STATUSES.has(m.status);
+            return productMatch && accessOk;
+          });
 
           if (!activeMembership) {
             await supabase.auth.signOut();
