@@ -122,7 +122,7 @@ export async function processNormalisedEmail(
 
   const axs = isAxsEmail(email.from, email.subject);
   const intl = !axs && isIntlTmEmail(email.from, email.subject);
-  const effectiveFrom = intl ? getEffectiveFrom(email.from, email.subject) : email.from;
+  const effectiveFrom = intl ? getEffectiveFrom(email.from, email.subject, combined) : email.from;
 
   const bookingRef = axs
     ? parseAxsBookingRef(combined)
@@ -1058,12 +1058,17 @@ function parseAxsTotal(text: string) {
 
 // For forwarded emails the From header is the forwarder, not the original sender.
 // Detect the effective TM domain from the subject so all parsing functions work correctly.
-function getEffectiveFrom(from: string, subject: string): string {
+function getEffectiveFrom(from: string, subject: string, text: string = ""): string {
   if (from.toLowerCase().includes("ticketmaster")) return from;
   const s = subject.toLowerCase();
+  const t = text.toLowerCase();
   if (s.includes("confirmacion de compra") || s.includes("confirmación de compra")) return "noreply@ticketmaster.es";
   if (/^(?:fwd:\s*)?order\s+confirm\s+\d/i.test(s)) return "noreply@ticketmaster.it";
-  if (s.includes("your ticketmaster order")) return "noreply@ticketmaster.de";
+  if (s.includes("your ticketmaster order")) {
+    // Body of a forwarded IE email will contain ticketmaster.ie links/text
+    if (t.includes("ticketmaster.ie")) return "noreply@ticketmaster.ie";
+    return "noreply@ticketmaster.de";
+  }
   return from;
 }
 
