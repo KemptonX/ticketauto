@@ -57,7 +57,7 @@ type SyncResult = {
 
 type SaleInsert = {
   external_sale_id: string;
-  gmail_account_id: string;
+  gmail_account_id: string | null;
   source: string;
   source_message_id: string;
   subject: string;
@@ -2778,6 +2778,118 @@ export async function syncViagogoSalesImapInbox({
   return { scanned, inserted, matched, email: imapAccount.username };
 }
 
+// ─── Single-email processing (inbound email forwarding) ───────────────────────
 
+export async function processSingleSaleEmail({
+  supabase,
+  userId,
+  subject,
+  textBody,
+  htmlBody,
+  receivedAt,
+  sourceMessageId,
+  accountEmail,
+}: {
+  supabase: SupabaseClient;
+  userId: string;
+  subject: string;
+  textBody: string;
+  htmlBody: string | null;
+  receivedAt: string;
+  sourceMessageId: string;
+  accountEmail: string;
+}): Promise<{ inserted: boolean; matched: boolean; source: string } | null> {
+  const lowerSubject = subject.toLowerCase();
+
+  const isViagogo = SALE_SUBJECT_KEYWORDS.some((kw) => lowerSubject.includes(kw));
+  const isStubHub = !isViagogo && STUBHUB_SUBJECT_KEYWORDS.some((kw) => lowerSubject.includes(kw));
+  const isTicombo = !isViagogo && !isStubHub && TICOMBO_SUBJECT_KEYWORDS.some((kw) => lowerSubject.includes(kw));
+
+  if (!isViagogo && !isStubHub && !isTicombo) return null;
+
+  const bodyText = textBody || (htmlBody ? outlookStripHtml(htmlBody) : "");
+  const combined = cleanText(`${subject}\n${bodyText}`);
+  const fakeHeaders: GmailHeader[] = [{ name: "Date", value: receivedAt }];
+
+  let parsed: ParsedSale;
+  let source: string;
+  let marketplace: string;
+  let existingSale: ExistingSale | null;
+
+  if (isViagogo) {
+    const isSoldConfirmation = lowerSubject.includes("you sold your ticket for");
+    parsed = isSoldConfirmation
+      ? parseSoldConfirmation({ headers: fakeHeaders, subject, text: combined })
+      : parseSale({ headers: fakeHeaders, subject, text: combined });
+    source = "viagogo";
+    marketplace = "Viagogo";
+    if (!parsed.externalSaleId) return null;
+    existingSale = await findExistingSale(supabase, { userId, externalSaleId: parsed.externalSaleId, sourceMessageId });
+  } else if (isStubHub) {
+    parsed = parseStubHubSale({ headers: fakeHeaders, subject, text: combined });
+    source = "stubhub";
+    marketplace = "StubHub";
+    if (!parsed.externalSaleId) return null;
+    existingSale = await findExistingStubHubSale(supabase, { userId, externalSaleId: parsed.externalSaleId, sourceMessageId });
+  } else {
+    parsed = parseTicomboSale({ headers: fakeHeaders, subject, text: combined });
+    source = "ticombo";
+    marketplace = "Ticombo";
+    if (!parsed.externalSaleId) return null;
+    existingSale = await findExistingTicomboSale(supabase, { userId, externalSaleId: parsed.externalSaleId, sourceMessageId });
+  }
+
+  const [candidateOrders, orderUsage] = await Promise.all([
+    loadCandidateOrders(supabase, userId),
+    loadOrderUsage(supabase, userId),
+  ]);
+
+  const match = existingSale?.inventory_order_id
+    ? null
+    : findBestInventoryMatch({ orders: candidateOrders, orderUsage, sale: parsed });
+
+  const saleData: SaleInsert = {
+    external_sale_id: parsed.externalSaleId,
+    gmail_account_id: null,
+    source,
+    source_message_id: sourceMessageId,
+    subject: parsed.subject,
+    event_name: parsed.eventName,
+    venue: parsed.venue,
+    event_date: parsed.eventDate,
+    sold_at: parsed.soldAt,
+    account_email: accountEmail,
+    buyer_email: parsed.buyerEmail,
+    qty_sold: parsed.qtySold,
+    price_per_ticket: parsed.pricePerTicket,
+    sale_total: parsed.saleTotal,
+    payout_total: parsed.payoutTotal,
+    currency: "GBP",
+    section: parsed.section,
+    row: parsed.row,
+    seat_from: parsed.seatFrom,
+    seat_to: parsed.seatTo,
+    sale_status: "Sold – Awaiting Transfer",
+    marketplace,
+    inventory_order_id: existingSale?.inventory_order_id ?? match?.order.id ?? null,
+    match_confidence: existingSale?.match_confidence ?? (match ? Number(match.score.toFixed(2)) : null),
+    user_id: userId,
+  };
+
+  const mutation = existingSale
+    ? supabase.from("sales").update({ ...saleData, source_message_id: existingSale.source_message_id || sourceMessageId }).eq("id", existingSale.id)
+    : supabase.from("sales").insert(saleData);
+
+  const { error } = await mutation;
+  if (error) throw new Error(error.message);
+
+  if (match) {
+    const currentUsed = orderUsage.get(match.order.id) ?? 0;
+    const newQtySold = currentUsed + (parsed.qtySold ?? 1);
+    await updateMatchedOrder(supabase, { userId, order: match.order, payoutTotal: parsed.payoutTotal, totalQtySold: newQtySold });
+  }
+
+  return { inserted: !existingSale, matched: !!match, source };
+}
 
 

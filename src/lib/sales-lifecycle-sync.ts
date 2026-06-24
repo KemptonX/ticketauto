@@ -42,7 +42,7 @@ type OutlookGraphMessage = {
 
 // ── Domain types ──────────────────────────────────────────────────────────────
 
-type TransferEmailData = {
+export type TransferEmailData = {
   orderId: string;
   eventName: string;
   eventDate: string;
@@ -55,7 +55,7 @@ type TransferEmailData = {
   subject: string;
 };
 
-type PayoutOrderLine = {
+export type PayoutOrderLine = {
   paymentReference: string;
   orderId: string;
   orderDate: string;
@@ -63,7 +63,7 @@ type PayoutOrderLine = {
   qty: number | null;
 };
 
-type PayoutEmailData = {
+export type PayoutEmailData = {
   paymentReference: string;
   paymentDate: string;
   orderLines: PayoutOrderLine[];
@@ -546,17 +546,17 @@ export async function scanViagogoLifecycleImap({
 
 // ── Email type detection ──────────────────────────────────────────────────────
 
-function isTransferEmail(subject: string): boolean {
+export function isTransferEmail(subject: string): boolean {
   return subject.toLowerCase().includes("confirmed transfer for order");
 }
 
-function isPayoutEmail(subject: string): boolean {
+export function isPayoutEmail(subject: string): boolean {
   return subject.toLowerCase().includes("just been paid");
 }
 
 // ── Transfer email parser ─────────────────────────────────────────────────────
 
-function parseTransferEmail(
+export function parseTransferEmail(
   subject: string,
   body: string,
   headers: GmailHeader[],
@@ -594,7 +594,7 @@ function parseTransferEmail(
 
 // ── Payout email parser ───────────────────────────────────────────────────────
 
-function parsePayoutEmail(
+export function parsePayoutEmail(
   subject: string,
   body: string,
   rawHtml: string,
@@ -785,11 +785,11 @@ async function insertScanResult(
   if (error) throw new Error(`insertScanResult: ${error.message}`);
 }
 
-async function processTransferEmail(
+export async function processTransferEmail(
   supabase: SupabaseClient,
   userId: string,
   data: TransferEmailData,
-  _scanLogId: number,
+  _scanLogId: number | null,
 ): Promise<ScanLineResult> {
   const base: Omit<ScanLineResult, "matchStatus" | "saleId" | "actionTaken" | "confidence" | "notes"> = {
     orderId: data.orderId,
@@ -844,12 +844,12 @@ async function processTransferEmail(
   return { ...base, saleId: s.id, matchStatus: "matched", actionTaken: "updated_transfer", confidence: "exact", notes: null };
 }
 
-async function processPayoutOrderLine(
+export async function processPayoutOrderLine(
   supabase: SupabaseClient,
   userId: string,
   line: PayoutOrderLine,
   paymentDate: string,
-  _scanLogId: number,
+  _scanLogId: number | null,
 ): Promise<ScanLineResult> {
   const base: Omit<ScanLineResult, "matchStatus" | "saleId" | "actionTaken" | "confidence" | "notes"> = {
     orderId: line.orderId,

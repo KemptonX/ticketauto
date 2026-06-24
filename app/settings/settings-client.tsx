@@ -695,6 +695,77 @@ export default function SettingsClient() {
     }
   }
 
+  // ── Email forwarding state ──
+  type ForwardingSettings = {
+    id: string;
+    forwarding_email: string;
+    forwarding_token: string;
+    status: string;
+    last_received_at: string | null;
+    last_successful_import_at: string | null;
+    latest_verification_code: string | null;
+    latest_verification_link: string | null;
+    latest_verification_received_at: string | null;
+    created_at: string;
+  };
+  const [forwardingSettings, setForwardingSettings] = useState<ForwardingSettings | null>(null);
+  const [forwardingLoading, setForwardingLoading] = useState(false);
+  const [forwardingCopied, setForwardingCopied] = useState(false);
+  const [forwardingRegenConfirm, setForwardingRegenConfirm] = useState(false);
+  const [forwardingRegenLoading, setForwardingRegenLoading] = useState(false);
+  const [forwardingMessage, setForwardingMessage] = useState<{ ok: boolean; text: string } | null>(null);
+
+  useEffect(() => {
+    if (activeTab !== "connections") return;
+    void (async () => {
+      setForwardingLoading(true);
+      try {
+        const res = await fetch("/api/forwarding/setup");
+        if (res.ok) {
+          const data = await res.json() as { setting: ForwardingSettings };
+          setForwardingSettings(data.setting);
+        }
+      } finally {
+        setForwardingLoading(false);
+      }
+    })();
+  }, [activeTab]);
+
+  async function copyForwardingEmail() {
+    if (!forwardingSettings) return;
+    await navigator.clipboard.writeText(forwardingSettings.forwarding_email);
+    setForwardingCopied(true);
+    setTimeout(() => setForwardingCopied(false), 2000);
+  }
+
+  async function regenerateForwardingEmail() {
+    if (!forwardingRegenConfirm) {
+      setForwardingRegenConfirm(true);
+      return;
+    }
+    setForwardingRegenLoading(true);
+    setForwardingMessage(null);
+    try {
+      const res = await fetch("/api/forwarding/setup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "regenerate" }),
+      });
+      if (res.ok) {
+        const data = await res.json() as { setting: ForwardingSettings };
+        setForwardingSettings(data.setting);
+        setForwardingRegenConfirm(false);
+        setForwardingMessage({ ok: true, text: "Forwarding address regenerated. Update your email forwarding rules with the new address." });
+      } else {
+        setForwardingMessage({ ok: false, text: "Failed to regenerate address. Try again." });
+      }
+    } catch {
+      setForwardingMessage({ ok: false, text: "Network error. Try again." });
+    } finally {
+      setForwardingRegenLoading(false);
+    }
+  }
+
   // ── Currency state ──
   const [selectedCurrency, setSelectedCurrency] = useState<string>(() => getCurrencyCode());
   const [currencySaved, setCurrencySaved] = useState(false);
@@ -1435,6 +1506,141 @@ export default function SettingsClient() {
         {/* ── Connections tab ── */}
         {activeTab === "connections" && (
           <>
+            {/* ── Email Forwarding — RECOMMENDED (top of page) ── */}
+            <section id="email-forwarding-section" className="hero-card connections-hero" style={{ border: "1px solid rgba(103,240,165,0.35)", background: "linear-gradient(135deg, rgba(103,240,165,0.06) 0%, rgba(0,0,0,0) 60%)" }}>
+              <div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                  <span style={{ fontSize: "0.7rem", fontWeight: 700, color: "#67F0A5", textTransform: "uppercase", letterSpacing: "0.08em", padding: "2px 8px", borderRadius: 99, background: "rgba(103,240,165,0.15)", border: "1px solid rgba(103,240,165,0.3)" }}>⭐ Recommended</span>
+                </div>
+                <p className="section-tag">Email Forwarding</p>
+                <h3>Forward emails to TixTracker</h3>
+              </div>
+              <div className="hero-meta">
+                <div>
+                  <span className="hero-meta-label">Status</span>
+                  <strong style={{ color: forwardingSettings ? "#67F0A5" : "var(--text-2)" }}>
+                    {forwardingLoading ? "Loading…" : forwardingSettings ? "Active" : "Not set up"}
+                  </strong>
+                </div>
+                {forwardingSettings?.last_successful_import_at && (
+                  <div>
+                    <span className="hero-meta-label">Last imported</span>
+                    <strong>{new Date(forwardingSettings.last_successful_import_at).toLocaleDateString()}</strong>
+                  </div>
+                )}
+              </div>
+            </section>
+
+            <section className="table-card" style={{ borderColor: "rgba(103,240,165,0.15)" }}>
+              <div className="table-card-header">
+                <div>
+                  <p className="section-tag">Your forwarding address</p>
+                  <h4>Forward from any email provider</h4>
+                </div>
+                <Link href="/how-to-forward" target="_blank" rel="noopener noreferrer" className="secondary-button" style={{ flexShrink: 0, fontSize: 13 }}>
+                  How to set up forwarding →
+                </Link>
+              </div>
+              <div style={{ padding: "0 1.5rem 1.5rem", display: "flex", flexDirection: "column", gap: "1.25rem" }}>
+                <p style={{ fontSize: 13, color: "rgba(255,255,255,0.5)", margin: 0, lineHeight: 1.6 }}>
+                  Works with Gmail, Outlook, Apple Mail, Yahoo, ProtonMail, and any other email client. Copy your unique address below, then forward ticket confirmation emails to it — they&apos;re scanned automatically. You can forward emails one at a time, or set up an automatic forwarding rule so new ticket emails arrive without any extra steps.
+                </p>
+
+                {forwardingLoading && (
+                  <div style={{ padding: "14px 16px", borderRadius: 8, background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)", fontSize: 13, color: "var(--text-muted)" }}>
+                    Loading your forwarding address…
+                  </div>
+                )}
+
+                {!forwardingLoading && !forwardingSettings && (
+                  <div style={{ padding: "14px 16px", borderRadius: 8, background: "rgba(255,80,80,0.07)", border: "1px solid rgba(255,80,80,0.2)", fontSize: 13, color: "#f87171" }}>
+                    Could not load forwarding address. Make sure the database migration has been applied, then refresh the page.
+                  </div>
+                )}
+
+                {!forwardingLoading && forwardingSettings && (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                    <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                      <code style={{
+                        flex: "1 1 320px",
+                        padding: "10px 14px",
+                        borderRadius: 8,
+                        background: "rgba(255,255,255,0.05)",
+                        border: "1px solid rgba(255,255,255,0.12)",
+                        fontSize: "0.82rem",
+                        fontFamily: "var(--font-geist-mono, monospace)",
+                        color: "#a5aaff",
+                        wordBreak: "break-all",
+                        userSelect: "all",
+                      }}>
+                        {forwardingSettings.forwarding_email}
+                      </code>
+                      <button
+                        type="button"
+                        className="secondary-button"
+                        style={{ flexShrink: 0 }}
+                        onClick={() => void copyForwardingEmail()}
+                      >
+                        {forwardingCopied ? "Copied!" : "Copy"}
+                      </button>
+                    </div>
+
+                    {forwardingSettings.latest_verification_code && (
+                      <div style={{ padding: "12px 14px", borderRadius: 8, background: "rgba(165,170,255,0.08)", border: "1px solid rgba(165,170,255,0.25)" }}>
+                        <p style={{ margin: "0 0 4px", fontSize: "0.78rem", fontWeight: 700, color: "#a5aaff", textTransform: "uppercase", letterSpacing: "0.07em" }}>
+                          Gmail Verification Code Received
+                        </p>
+                        <p style={{ margin: "0 0 6px", fontSize: "0.82rem", color: "rgba(255,255,255,0.6)" }}>
+                          TixTracker received a verification email from Gmail. Enter this code in Gmail to complete forwarding setup:
+                        </p>
+                        <code style={{ fontSize: "1.1rem", fontWeight: 700, color: "#67F0A5", fontFamily: "var(--font-geist-mono, monospace)" }}>
+                          {forwardingSettings.latest_verification_code}
+                        </code>
+                        {forwardingSettings.latest_verification_link && (
+                          <p style={{ margin: "8px 0 0", fontSize: "0.78rem" }}>
+                            Or{" "}
+                            <a href={forwardingSettings.latest_verification_link} target="_blank" rel="noopener noreferrer" style={{ color: "#a5aaff" }}>
+                              click here to confirm forwarding
+                            </a>
+                          </p>
+                        )}
+                      </div>
+                    )}
+
+                    <div style={{ padding: "12px 14px", borderRadius: 8, background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)" }}>
+                      <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--text-muted)", lineHeight: 1.5 }}>
+                        This address is permanent and unique to your account. Emails forwarded to it are processed using the same engine as the Gmail scanner.
+                        Only forward ticket confirmation emails from Ticketmaster, AXS, Viagogo, StubHub or Ticombo.
+                      </p>
+                    </div>
+
+                    <div style={{ paddingTop: 4 }}>
+                      <p style={{ margin: "0 0 8px", fontSize: "0.78rem", fontWeight: 700, color: "rgba(255,255,255,0.4)", textTransform: "uppercase", letterSpacing: "0.07em" }}>Danger zone</p>
+                      {!forwardingRegenConfirm ? (
+                        <button type="button" className="secondary-button" style={{ fontSize: 12, color: "rgba(248,113,113,0.8)", borderColor: "rgba(248,113,113,0.3)" }} onClick={() => setForwardingRegenConfirm(true)}>
+                          Regenerate forwarding address
+                        </button>
+                      ) : (
+                        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                          <p style={{ margin: 0, fontSize: 12, color: "#f87171" }}>This will break any existing forwarding rules. You will need to update your email client to use the new address.</p>
+                          <button type="button" className="secondary-button" style={{ fontSize: 12, color: "#f87171", borderColor: "rgba(248,113,113,0.5)" }} disabled={forwardingRegenLoading} onClick={() => void regenerateForwardingEmail()}>
+                            {forwardingRegenLoading ? "Regenerating…" : "Yes, regenerate"}
+                          </button>
+                          <button type="button" className="secondary-button" style={{ fontSize: 12 }} onClick={() => setForwardingRegenConfirm(false)}>Cancel</button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {forwardingMessage && (
+                  <div style={{ padding: "8px 14px", borderRadius: 8, fontSize: "0.82rem", background: forwardingMessage.ok ? "rgba(103,240,165,0.1)" : "rgba(255,80,80,0.1)", border: `1px solid ${forwardingMessage.ok ? "rgba(103,240,165,0.3)" : "rgba(255,80,80,0.3)"}`, color: forwardingMessage.ok ? "#67F0A5" : "#ff8080" }}>
+                    {forwardingMessage.ok ? "✓ " : "✗ "}{forwardingMessage.text}
+                  </div>
+                )}
+              </div>
+            </section>
+
             <section className="hero-card connections-hero">
               <div>
                 <p className="section-tag">Connections</p>
@@ -1457,7 +1663,7 @@ export default function SettingsClient() {
                 {connRefreshing ? "Refreshing..." : "Refresh"}
               </button>
               <Link href="/api/outlook/connect" className="secondary-button">Connect Outlook</Link>
-              <Link href="/api/gmail/connect" className="primary-button">Connect Gmail</Link>
+              <span className="primary-button" style={{ opacity: 0.4, cursor: "not-allowed", pointerEvents: "none" }}>Coming soon</span>
             </div>
 
             {connMessage ? <div className="feedback-banner" role="status"><span className="feedback-dot" /><span>{connMessage}</span></div> : null}
@@ -1489,7 +1695,7 @@ export default function SettingsClient() {
                     mark emails as read, or sell your Google data.
                   </span>
                 </div>
-                <Link href="/api/gmail/connect" className="primary-button">Connect Gmail</Link>
+                <span className="primary-button" style={{ opacity: 0.4, cursor: "not-allowed", pointerEvents: "none" }}>Coming soon</span>
               </div>
             </section>
 
@@ -1638,7 +1844,7 @@ export default function SettingsClient() {
                   <div className="empty-orb" />
                   <h5>No inboxes yet</h5>
                   <p>Connect Gmail to start syncing Viagogo sales emails.</p>
-                  <Link href="/api/gmail/connect" className="primary-button">Connect first inbox</Link>
+                  <span className="primary-button" style={{ opacity: 0.4, cursor: "not-allowed", pointerEvents: "none" }}>Coming soon</span>
                 </div>
               ) : (
                 <div className="connections-list">
@@ -1662,7 +1868,9 @@ export default function SettingsClient() {
                       </div>
                       <div className="connection-card-actions">
                         {account.status !== "Ready" && (
-                          <Link href={account.provider === "outlook" ? "/api/outlook/connect" : "/api/gmail/connect"} className="primary-button">Connect</Link>
+                          account.provider === "outlook"
+                            ? <Link href="/api/outlook/connect" className="primary-button">Connect</Link>
+                            : <span className="primary-button" style={{ opacity: 0.4, cursor: "not-allowed", pointerEvents: "none" }}>Coming soon</span>
                         )}
                         {!account.is_primary && (
                           <button type="button" className="secondary-button" onClick={() => void setPrimary(account)}>Set primary</button>
@@ -1763,6 +1971,7 @@ export default function SettingsClient() {
                 )}
               </div>
             </section>
+
           </>
         )}
 
@@ -2416,6 +2625,7 @@ export default function SettingsClient() {
                 </div>
               </div>
             </section>
+
           </>
         )}
 

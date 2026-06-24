@@ -670,6 +670,7 @@ function isAccountEmail(email: string) {
     "bounces+",
     "bounce+",
     "mailer-daemon",
+    "inbound.tixtracker.app", // forwarding scan addresses are never the buyer account
   ];
 
   return email !== FORWARD_TO_ACCOUNT && !ignoredFragments.some((fragment) => email.includes(fragment));

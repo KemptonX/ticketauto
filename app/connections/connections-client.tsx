@@ -298,9 +298,9 @@ export default function ConnectionsClient() {
             <Link href="/api/outlook/connect" className="secondary-button">
               Connect Outlook
             </Link>
-            <Link href="/api/gmail/connect" className="primary-button">
-              Connect Gmail
-            </Link>
+            <span className="primary-button" style={{ opacity: 0.4, cursor: "not-allowed", pointerEvents: "none" }}>
+              Coming soon
+            </span>
           </div>
         </header>
 
@@ -347,9 +347,9 @@ export default function ConnectionsClient() {
               <strong>Fastest setup</strong>
               <span>Use Google OAuth so the member can authorise Gmail directly from this page.</span>
             </div>
-            <Link href="/api/gmail/connect" className="primary-button">
-              Connect Gmail
-            </Link>
+            <span className="primary-button" style={{ opacity: 0.4, cursor: "not-allowed", pointerEvents: "none" }}>
+              Coming soon
+            </span>
           </div>
         </section>
 
@@ -418,9 +418,9 @@ export default function ConnectionsClient() {
               <div className="empty-orb" />
               <h5>No inboxes yet</h5>
               <p>Connect Gmail to let this member sync their own mailbox.</p>
-              <Link href="/api/gmail/connect" className="primary-button">
-                Connect first inbox
-              </Link>
+              <span className="primary-button" style={{ opacity: 0.4, cursor: "not-allowed", pointerEvents: "none" }}>
+                Coming soon
+              </span>
             </div>
           ) : (
             <div className="connections-list">
@@ -456,12 +456,9 @@ export default function ConnectionsClient() {
 
                   <div className="connection-card-actions">
                     {account.status !== "Ready" ? (
-                      <Link
-                        href={account.provider === "outlook" ? "/api/outlook/connect" : "/api/gmail/connect"}
-                        className="primary-button"
-                      >
-                        Connect
-                      </Link>
+                      account.provider === "outlook"
+                        ? <Link href="/api/outlook/connect" className="primary-button">Connect</Link>
+                        : <span className="primary-button" style={{ opacity: 0.4, cursor: "not-allowed", pointerEvents: "none" }}>Coming soon</span>
                     ) : null}
                     {!account.is_primary ? (
                       <button
