@@ -820,8 +820,19 @@ function parseVenue(text: string) {
   }
 
   for (let index = 0; index < lines.length; index += 1) {
-    if (/\b(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+\d{2}\s+[A-Z][a-z]{2}\s+\d{4}/i.test(lines[index])) {
-      return lines[index + 1] || "";
+    if (/\b(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+\d{1,2}\s+[A-Z][a-z]{2,8}\s+\d{4}/i.test(lines[index])) {
+      // UK format: venue typically lives on the line before the date
+      const before = lines[index - 1];
+      if (before && !/^(?:Subject:|From:|To:|Date:)/i.test(before) && before.length > 3) {
+        return before;
+      }
+      // Fallback: look ahead (skipping time/ticket lines)
+      for (let j = index + 1; j < Math.min(index + 4, lines.length); j++) {
+        const candidate = lines[j];
+        if (/^\d{1,2}:\d{2}/.test(candidate)) continue;
+        if (/^\d+\s*(x\s*)?(ticket)/i.test(candidate)) break;
+        if (candidate) return candidate;
+      }
     }
   }
 

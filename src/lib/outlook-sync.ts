@@ -490,8 +490,17 @@ function parseVenue(text: string) {
     }
   }
   for (let i = 0; i < lines.length; i++) {
-    if (/\b(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+\d{2}\s+[A-Z][a-z]{2}\s+\d{4}/i.test(lines[i])) {
-      return lines[i + 1] || "";
+    if (/\b(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+\d{1,2}\s+[A-Z][a-z]{2,8}\s+\d{4}/i.test(lines[i])) {
+      const before = lines[i - 1];
+      if (before && !/^(?:Subject:|From:|To:|Date:)/i.test(before) && before.length > 3) {
+        return before;
+      }
+      for (let j = i + 1; j < Math.min(i + 4, lines.length); j++) {
+        const candidate = lines[j];
+        if (/^\d{1,2}:\d{2}/.test(candidate)) continue;
+        if (/^\d+\s*(x\s*)?(ticket)/i.test(candidate)) break;
+        if (candidate) return candidate;
+      }
     }
   }
   return "";
