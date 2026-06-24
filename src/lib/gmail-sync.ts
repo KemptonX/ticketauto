@@ -175,7 +175,7 @@ export async function processNormalisedEmail(
     [seatFrom, seatTo] = parseSeats(combined);
     total = parseTotal(combined);
     qty = parseQty(email.body);
-    sourceType = bookingRef.includes("/UK") ? "ticketmaster_direct" : "ticketmaster_resale";
+    sourceType = bookingRef.includes("/UK") ? "ticketmaster_direct" : bookingRef.includes("/IE") ? "ticketmaster_ie" : "ticketmaster_resale";
   }
 
   const orderData: OrderInsert = {
@@ -1083,6 +1083,7 @@ const SOURCE_CURRENCY: Record<string, string> = {
   ticketmaster_dk:  "DKK",
   ticketmaster_pl:  "PLN",
   ticketmaster_ch:  "CHF",
+  ticketmaster_ie:  "EUR",
 };
 
 function isIntlTmEmail(from: string, subject: string) {
@@ -1092,6 +1093,7 @@ function isIntlTmEmail(from: string, subject: string) {
     f.includes("ticketmaster.de") ||
     f.includes("ticketmaster.es") ||
     f.includes("ticketmaster.it") ||
+    f.includes("ticketmaster.ie") ||
     s.includes("you got tickets to") ||
     s.includes("your ticketmaster order") ||
     s.startsWith("order confirm ") ||
@@ -1106,6 +1108,7 @@ function getIntlSourceType(from: string, subject: string): string {
   if (f.includes("ticketmaster.de")) return "ticketmaster_de";
   if (f.includes("ticketmaster.es")) return "ticketmaster_es";
   if (f.includes("ticketmaster.it")) return "ticketmaster_it";
+  if (f.includes("ticketmaster.ie")) return "ticketmaster_ie";
   if (s.includes("you got tickets") || f.includes("email.ticketmaster.com")) return "ticketmaster_us";
   return "ticketmaster_direct";
 }
@@ -1135,6 +1138,12 @@ function parseIntlBookingRef(from: string, subject: string, text: string): strin
   if (f.includes("ticketmaster.it")) {
     const ref = text.match(/Order\s+number[\s\n\r:]*(\d{5,})/i)?.[1];
     if (ref) return `IT-${ref}`;
+  }
+
+  // IE: same RE-style refs as UK — "RE12345678" in subject or body
+  if (f.includes("ticketmaster.ie")) {
+    const ref = subject.match(/\b(RE\d{5,})\b/i)?.[1] || text.match(/\b(RE\d{5,})\b/i)?.[1];
+    if (ref) return ref;
   }
 
   return "";
@@ -1180,6 +1189,14 @@ function parseIntlEvent(from: string, subject: string, text: string): string {
     }
   }
 
+  // IE: same format as UK — extract from subject ("- EVENT NAME - Saturday...")
+  if (f.includes("ticketmaster.ie")) {
+    const subjectMatch = subject.match(/-\s*(.+?)\s*-\s*(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)/i);
+    if (subjectMatch?.[1]) return subjectMatch[1].trim();
+    const dayMatch = subject.match(/-\s*(.+?)\s+(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)/i);
+    if (dayMatch?.[1]) return dayMatch[1].trim();
+  }
+
   return "";
 }
 
@@ -1215,6 +1232,23 @@ function parseIntlVenue(from: string, text: string): string {
     );
     const venue = lines[lines.length - 1];
     if (venue) return venue;
+  }
+
+  // IE: same format as UK — venue is the line after the date, skipping time lines
+  if (f.includes("ticketmaster.ie")) {
+    const ieLines = text.split(/\n/).map((l) => l.trim()).filter(Boolean);
+    for (let i = 0; i < ieLines.length; i++) {
+      if (/^(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)/i.test(ieLines[i]) ||
+          /\b(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+\d{1,2}\s+[A-Z][a-z]{2,8}\s+\d{4}/i.test(ieLines[i])) {
+        for (let j = i + 1; j < Math.min(i + 4, ieLines.length); j++) {
+          const candidate = ieLines[j];
+          if (/^\d{1,2}:\d{2}/.test(candidate)) continue;
+          if (/^\d+\s*(x\s*)?(ticket)/i.test(candidate)) break;
+          if (candidate) return candidate;
+        }
+      }
+    }
+    return "";
   }
 
   // US: venue is the line after the date line — anchor to "Order #" to skip email headers
@@ -1279,6 +1313,11 @@ function parseIntlDate(from: string, text: string): string {
       const time = m[5] ? ` · ${m[5]}` : "";
       return `${day} ${m[2]} ${month} ${m[4]}${time}`;
     }
+  }
+
+  // IE: same English day/month format as UK
+  if (f.includes("ticketmaster.ie")) {
+    return parseDate(text);
   }
 
   // US: anchor to "Order #" to skip email-header text in text/plain parts

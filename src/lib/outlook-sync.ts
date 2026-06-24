@@ -126,7 +126,7 @@ export async function syncOutlookInbox({
       [seatFrom, seatTo] = parseSeats(combined);
       total = parseTotal(combined);
       qty = parseQty(bodyText);
-      sourceType = bookingRef.includes("/UK") ? "ticketmaster_direct" : "ticketmaster_resale";
+      sourceType = bookingRef.includes("/UK") ? "ticketmaster_direct" : bookingRef.includes("/IE") ? "ticketmaster_ie" : "ticketmaster_resale";
     }
 
     const orderData: OrderInsert = {
