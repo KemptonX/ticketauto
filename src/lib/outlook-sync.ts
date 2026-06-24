@@ -481,8 +481,16 @@ function parseDateField(subject: string) {
   );
 }
 
+function stripForwardingPreamble(text: string): string {
+  const fwdMatch = text.match(/^-{5,}\s*Forwarded message\s*-{5,}/im);
+  if (!fwdMatch) return text;
+  const afterSep = text.slice(fwdMatch.index! + fwdMatch[0].length);
+  const blankMatch = afterSep.match(/\n[ \t]*\n/);
+  return blankMatch ? afterSep.slice(blankMatch.index! + blankMatch[0].length) : afterSep;
+}
+
 function parseVenue(text: string) {
-  const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  const lines = stripForwardingPreamble(text).split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   for (let i = 0; i < lines.length; i++) {
     if (/^(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)/i.test(lines[i])) {
       const venue = lines[i - 1];

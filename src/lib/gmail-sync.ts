@@ -801,8 +801,20 @@ function parseDate(text: string) {
   return "";
 }
 
+function stripForwardingPreamble(text: string): string {
+  // Gmail forwarded emails prepend "---------- Forwarded message ---------\nFrom:...\nDate:...\nSubject:...\nTo:...\n\n"
+  // The folded Subject header continuation (e.g. " Saturday 20 June 2026  16:00") gets
+  // trimmed to look like a bare date line, causing the line after it ("To: user@gmail.com")
+  // to be returned as venue. Strip the whole preamble before parsing.
+  const fwdMatch = text.match(/^-{5,}\s*Forwarded message\s*-{5,}/im);
+  if (!fwdMatch) return text;
+  const afterSep = text.slice(fwdMatch.index! + fwdMatch[0].length);
+  const blankMatch = afterSep.match(/\n[ \t]*\n/);
+  return blankMatch ? afterSep.slice(blankMatch.index! + blankMatch[0].length) : afterSep;
+}
+
 function parseVenue(text: string) {
-  const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const lines = stripForwardingPreamble(text).split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   for (let index = 0; index < lines.length; index += 1) {
     if (/^(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)/i.test(lines[index])) {
       const before = lines[index - 1];
