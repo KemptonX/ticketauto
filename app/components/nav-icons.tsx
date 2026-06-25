@@ -99,6 +99,15 @@ export function IconScans(p: IconProps) {
   );
 }
 
+export function IconMail(p: IconProps) {
+  return (
+    <Icon {...p}>
+      <rect x="2" y="4" width="20" height="16" rx="2" />
+      <polyline points="2,4 12,13 22,4" />
+    </Icon>
+  );
+}
+
 export function IconClients(p: IconProps) {
   return (
     <Icon {...p}>
@@ -181,6 +190,7 @@ const ICON_MAP: Record<string, (p: IconProps) => React.JSX.Element> = {
   "/costs": IconCosts,
   "/viagogo-calculator": IconCalculator,
   "/scans": IconScans,
+  "/forward-mail": IconMail,
   "/clients": IconClients,
   "/guides": IconGuides,
   "/faq": IconGuides,
