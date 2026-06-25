@@ -7,6 +7,7 @@ import { supabase } from "@/src/lib/supabase";
 import { CURRENCY_OPTIONS, getCurrencyCode, setCurrencyCode, formatCurrency } from "@/src/lib/currency";
 import { TEMPLATE_VARS, DEFAULT_SUBJECT, DEFAULT_BODY, EmailTemplate, loadTemplates, saveTemplates, loadActiveTemplateId, saveActiveTemplateId, interpolate } from "@/src/lib/email-template";
 import { SidebarLogo, NavIcon, SidebarFooter } from "@/app/components/nav-icons";
+import AccountsTab from "@/app/components/marketplace/AccountsTab";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -550,13 +551,14 @@ export default function SettingsClient() {
   const searchParams = useSearchParams();
 
   // Tab
-  const [activeTab, setActiveTab] = useState<"connections" | "import" | "currency" | "clients" | "notifications">(() => {
+  const [activeTab, setActiveTab] = useState<"connections" | "import" | "currency" | "clients" | "notifications" | "accounts">(() => {
     if (typeof window !== "undefined") {
       const t = new URLSearchParams(window.location.search).get("tab");
       if (t === "import") return "import";
       if (t === "currency") return "currency";
       if (t === "clients") return "clients";
       if (t === "notifications") return "notifications";
+      if (t === "accounts") return "accounts";
     }
     return "connections";
   });
@@ -1500,6 +1502,9 @@ export default function SettingsClient() {
             </button>
             <button type="button" className={`toggle-btn${activeTab === "notifications" ? " toggle-btn-active" : ""}`} onClick={() => setActiveTab("notifications")}>
               Notifications
+            </button>
+            <button type="button" className={`toggle-btn${activeTab === "accounts" ? " toggle-btn-active" : ""}`} onClick={() => setActiveTab("accounts")}>
+              Accounts
             </button>
           </div>
         </section>
@@ -2689,6 +2694,11 @@ export default function SettingsClient() {
               </div>
             </section>
           </>
+        )}
+
+        {/* ── Accounts tab ── */}
+        {activeTab === "accounts" && (
+          <AccountsTab />
         )}
       </main>
     </div>

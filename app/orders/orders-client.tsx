@@ -6,6 +6,7 @@ import { supabase } from "@/src/lib/supabase";
 import { formatCurrency } from "@/src/lib/currency";
 import { SidebarLogo, NavIcon, SidebarFooter } from "@/app/components/nav-icons";
 import { ShareMultiBannerModal, type MultiSaleStats } from "@/app/sales/ShareBannerModal";
+import ListingDraftModal from "@/app/components/marketplace/ListingDraftModal";
 
 type SyncLogEntry = {
   id: number;
@@ -199,6 +200,7 @@ export default function OrdersClient() {
   const [newOnly, setNewOnly] = useState(false);
   const [shareGroupKey, setShareGroupKey] = useState<string | null>(null);
   const [shareMultiOpen, setShareMultiOpen] = useState(false);
+  const [listingOrderId, setListingOrderId] = useState<number | null>(null);
 
   function resetFilters() {
     setSearch("");
@@ -2183,6 +2185,16 @@ export default function OrdersClient() {
                   </>
                 )}
               </div>
+              {viewMode === "active" && (
+                <button
+                  type="button"
+                  className="secondary-button"
+                  style={{ width: "100%", borderColor: "rgba(96,165,250,0.4)", color: "#60a5fa" }}
+                  onClick={() => setListingOrderId(selectedOrder.id)}
+                >
+                  List on Viagogo
+                </button>
+              )}
               <button
                 className="primary-button"
                 type="button"
@@ -2195,6 +2207,16 @@ export default function OrdersClient() {
           </div>
         </aside>
       ) : null}
+
+      {listingOrderId !== null && (() => {
+        const orderForListing = orders.find((o) => o.id === listingOrderId);
+        return orderForListing ? (
+          <ListingDraftModal
+            order={orderForListing}
+            onClose={() => setListingOrderId(null)}
+          />
+        ) : null;
+      })()}
 
       {shareMultiOpen && multiShareStats && (
         <ShareMultiBannerModal stats={multiShareStats} onClose={() => setShareMultiOpen(false)} />
