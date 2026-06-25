@@ -263,28 +263,35 @@ export async function POST(request: Request) {
   const normalizedHash = computeNormalizedHash(from, subject, payload.Date ?? "", textBody);
 
   // --- Internal log helper ---
-  // Never logs tokens, email bodies or PII in error messages.
   async function logEvent(
     status: string,
     userId: string | null,
     settingId: string | null,
     extra: Record<string, unknown> = {},
   ): Promise<void> {
+    const base = {
+      user_id: userId,
+      forwarding_setting_id: settingId,
+      postmark_message_id: postmarkMessageId,
+      original_message_id:
+        (payload.Headers ?? []).find((h) => h.Name === "Message-ID")?.Value ?? null,
+      recipient_email: recipientEmail,
+      sender_email: from || null,
+      subject: subject || null,
+      received_at: receivedAt,
+      normalized_hash: normalizedHash,
+      processing_status: status,
+      ...extra,
+    };
     try {
-      await supabase.from("inbound_email_events").insert({
-        user_id: userId,
-        forwarding_setting_id: settingId,
-        postmark_message_id: postmarkMessageId,
-        original_message_id:
-          (payload.Headers ?? []).find((h) => h.Name === "Message-ID")?.Value ?? null,
-        recipient_email: recipientEmail,
-        sender_email: from || null,
-        subject: subject || null,
-        received_at: receivedAt,
-        normalized_hash: normalizedHash,
-        processing_status: status,
-        ...extra,
+      // Store email body so Forward Mail page can render full content.
+      // Falls back to base insert if the columns don't exist yet.
+      const { error } = await supabase.from("inbound_email_events").insert({
+        ...base,
+        text_body: textBody ? textBody.slice(0, 50000) : null,
+        html_body: htmlBody ? htmlBody.slice(0, 500000) : null,
       });
+      if (error) await supabase.from("inbound_email_events").insert(base);
     } catch {
       // Log failures must never break the webhook response.
     }
