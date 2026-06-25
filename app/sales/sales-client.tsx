@@ -141,6 +141,7 @@ export default function SalesClient() {
   const [accountFilter, setAccountFilter] = useState("All");
   const [sortBy, setSortBy] = useState("event-soonest");
   const [statusFilter, setStatusFilter] = useState("All");
+  const [newOnly, setNewOnly] = useState(false);
   const [expandedGroups, setExpandedGroups] = useState<string[]>([]);
   const [selectedSaleId, setSelectedSaleId] = useState<number | null>(null);
   const [matchingOrderId, setMatchingOrderId] = useState<number | null>(null);
@@ -1087,9 +1088,13 @@ export default function SalesClient() {
         effectiveStatus === statusFilter ||
         (statusFilter === "Paid" && effectiveStatus === "Sold");
 
-      return matchesSearch && matchesMatch && matchesAccount && matchesStatus;
+      const matchesNew =
+        !newOnly ||
+        (sale.created_at != null && new Date(sale.created_at).getTime() > Date.now() - 86400000);
+
+      return matchesSearch && matchesMatch && matchesAccount && matchesStatus && matchesNew;
     });
-  }, [sales, search, matchFilter, accountFilter, statusFilter]);
+  }, [sales, search, matchFilter, accountFilter, statusFilter, newOnly]);
 
   const groupedSales = useMemo(() => {
     const map = new Map<string, SaleGroup>();
@@ -1486,6 +1491,19 @@ export default function SalesClient() {
                 <option value="highest-profit">Highest profit</option>
                 <option value="highest-revenue">Highest revenue</option>
               </select>
+            </label>
+
+            <label className="filter-field filter-field-checkbox" style={{ justifyContent: "center" }}>
+              <input
+                type="checkbox"
+                checked={newOnly}
+                onChange={(e) => setNewOnly(e.target.checked)}
+                style={{ width: "15px", height: "15px", accentColor: "#22c55e", cursor: "pointer", flexShrink: 0 }}
+              />
+              <span className="filter-label" style={{ display: "flex", alignItems: "center", gap: "0.35rem", cursor: "pointer", userSelect: "none" }}>
+                New only
+                <span className="new-badge" style={{ fontSize: "0.65rem", padding: "1px 5px" }}>New</span>
+              </span>
             </label>
           </div>
         </section>

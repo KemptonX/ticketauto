@@ -196,6 +196,7 @@ export default function OrdersClient() {
   const [sourceFilters, setSourceFilters] = useState<string[]>([]);
   const [soldFilters, setSoldFilters] = useState<string[]>([]);
   const [emailFilters, setEmailFilters] = useState<string[]>([]);
+  const [newOnly, setNewOnly] = useState(false);
   const [shareGroupKey, setShareGroupKey] = useState<string | null>(null);
   const [shareMultiOpen, setShareMultiOpen] = useState(false);
 
@@ -781,6 +782,10 @@ export default function OrdersClient() {
       const matchesEmail =
         emailFilters.length === 0 || emailFilters.includes(order.account_email ?? "");
 
+      const matchesNew =
+        !newOnly ||
+        (order.created_at != null && new Date(order.created_at).getTime() > Date.now() - 86400000);
+
       return (
         matchesViewMode &&
         matchesSearch &&
@@ -789,7 +794,8 @@ export default function OrdersClient() {
         matchesStatus &&
         matchesSource &&
         matchesSold &&
-        matchesEmail
+        matchesEmail &&
+        matchesNew
       );
     });
   }, [
@@ -802,6 +808,7 @@ export default function OrdersClient() {
     sourceFilters,
     soldFilters,
     emailFilters,
+    newOnly,
   ]);
 
   const [expandedGroups, setExpandedGroups] = useState<string[]>([]);
@@ -1300,6 +1307,19 @@ export default function OrdersClient() {
                 placeholder="All inboxes"
               />
             </div>
+
+            <label className="filter-field filter-field-checkbox" style={{ justifyContent: "center" }}>
+              <input
+                type="checkbox"
+                checked={newOnly}
+                onChange={(e) => setNewOnly(e.target.checked)}
+                style={{ width: "15px", height: "15px", accentColor: "#22c55e", cursor: "pointer", flexShrink: 0 }}
+              />
+              <span className="filter-label" style={{ display: "flex", alignItems: "center", gap: "0.35rem", cursor: "pointer", userSelect: "none" }}>
+                New only
+                <span className="new-badge" style={{ fontSize: "0.65rem", padding: "1px 5px" }}>New</span>
+              </span>
+            </label>
           </div>
         </section>
 
