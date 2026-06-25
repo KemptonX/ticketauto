@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import crypto from "node:crypto";
 import { processNormalisedEmail } from "@/src/lib/gmail-sync";
 import type { NormalisedEmail } from "@/src/lib/gmail-sync";
@@ -86,6 +86,120 @@ function computeNormalizedHash(
     .update(`${from}|${subject}|${date}|${bodySnippet.slice(0, 200)}`)
     .digest("hex")
     .slice(0, 32);
+}
+
+// ─── Discord notification helpers ─────────────────────────────────────────────
+
+async function getDiscordWebhook(supabase: SupabaseClient, userId: string): Promise<string | null> {
+  const { data } = await supabase
+    .from("user_settings")
+    .select("discord_webhook_url")
+    .eq("user_id", userId)
+    .maybeSingle();
+  const url = (data as { discord_webhook_url?: string } | null)?.discord_webhook_url ?? "";
+  return url.startsWith("https://discord.com/api/webhooks/") ? url : null;
+}
+
+async function postDiscord(webhookUrl: string, body: unknown): Promise<void> {
+  try {
+    const res = await fetch(webhookUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) console.error(`[inbound] Discord webhook ${res.status}`);
+  } catch (err) {
+    console.error("[inbound] Discord webhook error:", err instanceof Error ? err.message : err);
+  }
+}
+
+function fmtMoney(amount: number | null | undefined): string {
+  if (amount == null) return "—";
+  return new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP" }).format(amount);
+}
+
+function fmtSourceType(source: string | null | undefined): string {
+  const map: Record<string, string> = {
+    ticketmaster_direct: "Ticketmaster",
+    ticketmaster_resale: "Ticketmaster Resale",
+    ticketmaster_ie: "Ticketmaster IE",
+    ticketmaster_de: "Ticketmaster DE",
+    ticketmaster_es: "Ticketmaster ES",
+    ticketmaster_it: "Ticketmaster IT",
+    ticketmaster_us: "Ticketmaster US",
+    axs: "AXS",
+  };
+  return map[source ?? ""] ?? source ?? "Unknown";
+}
+
+type OrderRow = {
+  event_name: string | null;
+  venue: string | null;
+  event_date: string | null;
+  qty_bought: number | null;
+  total_cost: number | null;
+  source_type: string | null;
+  section: string | null;
+  row: string | null;
+  account_email: string | null;
+};
+
+type SaleRow = {
+  event_name: string | null;
+  event_date: string | null;
+  qty_sold: number | null;
+  sale_total: number | null;
+  payout_total: number | null;
+  marketplace: string | null;
+  section: string | null;
+  row: string | null;
+};
+
+function buildOrderEmbed(order: OrderRow, bookingRef: string, action: "inserted" | "updated") {
+  const isNew = action === "inserted";
+  const fields = [
+    order.venue    ? { name: "📍 Venue",   value: order.venue,                     inline: true  } : null,
+    order.event_date ? { name: "📅 Date",  value: order.event_date,                inline: true  } : null,
+    order.qty_bought != null ? { name: "🎫 Qty", value: String(order.qty_bought),  inline: true  } : null,
+    order.total_cost != null ? { name: "💰 Cost", value: fmtMoney(order.total_cost), inline: true } : null,
+    { name: "🏷️ Ref",    value: bookingRef,                                         inline: true  },
+    { name: "📦 Source", value: fmtSourceType(order.source_type),                   inline: true  },
+    order.section  ? { name: "💺 Section", value: order.section + (order.row ? ` / Row ${order.row}` : ""), inline: true } : null,
+    order.account_email ? { name: "📧 Account", value: order.account_email,         inline: false } : null,
+  ].filter((f): f is NonNullable<typeof f> => f !== null);
+
+  return {
+    embeds: [{
+      title: isNew ? "🎟️ New Ticket Order Imported" : "🔄 Ticket Order Updated",
+      description: `**${order.event_name ?? "Unknown Event"}**`,
+      color: isNew ? 0x2ECC71 : 0x3498DB,
+      fields,
+      footer: { text: "TixTracker · Scans" },
+      timestamp: new Date().toISOString(),
+    }],
+  };
+}
+
+function buildSaleEmbed(sale: SaleRow) {
+  const fields = [
+    sale.event_date ? { name: "📅 Date", value: sale.event_date, inline: true } : null,
+    sale.qty_sold != null ? { name: "🎫 Qty Sold", value: String(sale.qty_sold), inline: true } : null,
+    sale.sale_total != null ? { name: "💰 Sale Total", value: fmtMoney(sale.sale_total), inline: true } : null,
+    sale.payout_total != null ? { name: "💵 Payout", value: fmtMoney(sale.payout_total), inline: true } : null,
+    sale.marketplace ? { name: "🏪 Marketplace", value: sale.marketplace, inline: true } : null,
+    sale.section ? { name: "💺 Section", value: sale.section + (sale.row ? ` / Row ${sale.row}` : ""), inline: true } : null,
+  ].filter((f): f is NonNullable<typeof f> => f !== null);
+
+  return {
+    embeds: [{
+      title: "💸 New Sale Scanned",
+      description: `**${sale.event_name ?? "Unknown Event"}**`,
+      color: 0xE67E22,
+      fields,
+      footer: { text: "TixTracker · Scans" },
+      timestamp: new Date().toISOString(),
+    }],
+  };
 }
 
 // ─── Route handler ────────────────────────────────────────────────────────────
@@ -310,6 +424,21 @@ export async function POST(request: Request) {
       void supabase.from("email_forwarding_settings")
         .update({ last_successful_import_at: new Date().toISOString(), updated_at: new Date().toISOString() })
         .eq("id", settingId);
+
+      if (saleResult.inserted) {
+        void (async () => {
+          const webhookUrl = await getDiscordWebhook(supabase, userId);
+          if (!webhookUrl) return;
+          const { data: sale } = await supabase
+            .from("sales")
+            .select("event_name, event_date, qty_sold, sale_total, payout_total, marketplace, section, row")
+            .eq("user_id", userId)
+            .eq("source_message_id", postmarkMessageId ?? normalizedHash)
+            .maybeSingle();
+          if (sale) void postDiscord(webhookUrl, buildSaleEmbed(sale as SaleRow));
+        })();
+      }
+
       await logEvent(saleResult.inserted ? "imported" : "updated", userId, settingId, {
         error_message: `source=${saleResult.source} matched=${saleResult.matched}`,
       });
@@ -382,6 +511,20 @@ export async function POST(request: Request) {
         updated_at: new Date().toISOString(),
       })
       .eq("id", settingId);
+
+    if (processResult.bookingRef) {
+      void (async () => {
+        const webhookUrl = await getDiscordWebhook(supabase, userId);
+        if (!webhookUrl) return;
+        const { data: order } = await supabase
+          .from("orders")
+          .select("event_name, venue, event_date, qty_bought, total_cost, source_type, section, row, account_email")
+          .eq("user_id", userId)
+          .eq("booking_ref", processResult.bookingRef)
+          .maybeSingle();
+        if (order) void postDiscord(webhookUrl, buildOrderEmbed(order as OrderRow, processResult.bookingRef!, processResult.action as "inserted" | "updated"));
+      })();
+    }
   }
 
   await logEvent(eventStatus, userId, settingId, {
