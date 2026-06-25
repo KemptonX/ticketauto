@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { supabase } from "@/src/lib/supabase";
 import { SidebarLogo, NavIcon, SidebarFooter } from "@/app/components/nav-icons";
 
@@ -359,9 +359,8 @@ export default function ForwardMailClient() {
                   {filtered.map((ev) => {
                     const isExpanded = expanded.has(ev.id);
                     return (
-                      <>
+                      <Fragment key={ev.id}>
                         <tr
-                          key={ev.id}
                           className="table-row row-clickable"
                           onClick={() => toggleExpand(ev.id)}
                           style={{ cursor: "pointer" }}
@@ -400,13 +399,13 @@ export default function ForwardMailClient() {
                           </td>
                         </tr>
                         {isExpanded && (
-                          <tr key={`${ev.id}-body`}>
+                          <tr>
                             <td colSpan={5} style={{ padding: 0, background: "var(--surface-1, rgba(0,0,0,0.15))", borderTop: "1px solid var(--border)" }}>
                               <BodyPanel ev={ev} />
                             </td>
                           </tr>
                         )}
-                      </>
+                      </Fragment>
                     );
                   })}
                 </tbody>
