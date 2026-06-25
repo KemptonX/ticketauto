@@ -197,20 +197,24 @@ export default function ForwardMailClient() {
 
   async function load() {
     setLoading(true);
-    // Try with body columns first; fall back if they don't exist yet
-    let { data, error } = await supabase
-      .from("inbound_email_events")
-      .select("id, sender_email, subject, received_at, processing_status, booking_ref_detected, error_message, postmark_message_id, text_body, html_body")
-      .order("received_at", { ascending: false })
-      .limit(500);
-    if (error) {
-      ({ data } = await supabase
+    let rows: MailEvent[] = [];
+    try {
+      const { data, error } = await supabase
+        .from("inbound_email_events")
+        .select("id, sender_email, subject, received_at, processing_status, booking_ref_detected, error_message, postmark_message_id, text_body, html_body")
+        .order("received_at", { ascending: false })
+        .limit(500);
+      if (error) throw error;
+      rows = (data as MailEvent[]) ?? [];
+    } catch {
+      const { data } = await supabase
         .from("inbound_email_events")
         .select("id, sender_email, subject, received_at, processing_status, booking_ref_detected, error_message, postmark_message_id")
         .order("received_at", { ascending: false })
-        .limit(500));
+        .limit(500);
+      rows = (data as MailEvent[]) ?? [];
     }
-    setEvents((data as MailEvent[]) ?? []);
+    setEvents(rows);
     setLoading(false);
   }
 
