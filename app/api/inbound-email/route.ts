@@ -91,14 +91,36 @@ function computeNormalizedHash(
 
 // ─── Discord notification helpers ─────────────────────────────────────────────
 
-async function getDiscordWebhook(supabase: SupabaseClient, userId: string): Promise<string | null> {
+const DEFAULT_WEBHOOK_FIELDS = {
+  order:    ["venue", "date", "qty", "cost", "ref", "source", "section", "email"] as string[],
+  sale:     ["date", "qty", "sale_total", "payout", "marketplace", "section"] as string[],
+  transfer: ["date", "qty", "section", "venue", "order_id"] as string[],
+  payout:   ["payment_date", "total", "orders", "ref"] as string[],
+};
+
+type WebhookSettings = {
+  url: string | null;
+  fields: typeof DEFAULT_WEBHOOK_FIELDS;
+};
+
+async function getWebhookSettings(supabase: SupabaseClient, userId: string): Promise<WebhookSettings> {
   const { data } = await supabase
     .from("user_settings")
-    .select("discord_webhook_url")
+    .select("discord_webhook_url, webhook_fields")
     .eq("user_id", userId)
     .maybeSingle();
-  const url = (data as { discord_webhook_url?: string } | null)?.discord_webhook_url ?? "";
-  return url.startsWith("https://discord.com/api/webhooks/") ? url : null;
+  const raw = data as { discord_webhook_url?: string; webhook_fields?: Record<string, string[]> } | null;
+  const rawUrl = raw?.discord_webhook_url ?? "";
+  const wf = raw?.webhook_fields ?? {};
+  return {
+    url: rawUrl.startsWith("https://discord.com/api/webhooks/") ? rawUrl : null,
+    fields: {
+      order:    wf.order    ?? DEFAULT_WEBHOOK_FIELDS.order,
+      sale:     wf.sale     ?? DEFAULT_WEBHOOK_FIELDS.sale,
+      transfer: wf.transfer ?? DEFAULT_WEBHOOK_FIELDS.transfer,
+      payout:   wf.payout   ?? DEFAULT_WEBHOOK_FIELDS.payout,
+    },
+  };
 }
 
 async function postDiscord(webhookUrl: string, body: unknown): Promise<void> {
@@ -156,17 +178,18 @@ type SaleRow = {
   row: string | null;
 };
 
-function buildOrderEmbed(order: OrderRow, bookingRef: string, action: "inserted" | "updated") {
+function buildOrderEmbed(order: OrderRow, bookingRef: string, action: "inserted" | "updated", activeFields = DEFAULT_WEBHOOK_FIELDS.order) {
+  const has = (f: string) => activeFields.includes(f);
   const isNew = action === "inserted";
   const fields = [
-    order.venue    ? { name: "📍 Venue",   value: order.venue,                     inline: true  } : null,
-    order.event_date ? { name: "📅 Date",  value: order.event_date,                inline: true  } : null,
-    order.qty_bought != null ? { name: "🎫 Qty", value: String(order.qty_bought),  inline: true  } : null,
-    order.total_cost != null ? { name: "💰 Cost", value: fmtMoney(order.total_cost), inline: true } : null,
-    { name: "🏷️ Ref",    value: bookingRef,                                         inline: true  },
-    { name: "📦 Source", value: fmtSourceType(order.source_type),                   inline: true  },
-    order.section  ? { name: "💺 Section", value: order.section + (order.row ? ` / Row ${order.row}` : ""), inline: true } : null,
-    order.account_email ? { name: "📧 Account", value: order.account_email,         inline: false } : null,
+    has("venue")   && order.venue         ? { name: "\u{1F4CD} Venue",   value: order.venue,                                                       inline: true  } : null,
+    has("date")    && order.event_date    ? { name: "\u{1F4C5} Date",    value: order.event_date,                                                  inline: true  } : null,
+    has("qty")     && order.qty_bought != null ? { name: "\u{1F3AB} Qty", value: String(order.qty_bought),                                         inline: true  } : null,
+    has("cost")    && order.total_cost != null ? { name: "\u{1F4B0} Cost", value: fmtMoney(order.total_cost),                                      inline: true  } : null,
+    has("ref")                            ? { name: "\u{1F3F7}️ Ref",    value: bookingRef,                                                    inline: true  } : null,
+    has("source")                         ? { name: "\u{1F4E6} Source",  value: fmtSourceType(order.source_type),                                  inline: true  } : null,
+    has("section") && order.section       ? { name: "\u{1F6BA} Section", value: order.section + (order.row ? ` / Row ${order.row}` : ""),          inline: true  } : null,
+    has("email")   && order.account_email ? { name: "\u{1F4E7} Account", value: order.account_email,                                               inline: false } : null,
   ].filter((f): f is NonNullable<typeof f> => f !== null);
 
   return {
@@ -181,14 +204,15 @@ function buildOrderEmbed(order: OrderRow, bookingRef: string, action: "inserted"
   };
 }
 
-function buildSaleEmbed(sale: SaleRow) {
+function buildSaleEmbed(sale: SaleRow, activeFields = DEFAULT_WEBHOOK_FIELDS.sale) {
+  const has = (f: string) => activeFields.includes(f);
   const fields = [
-    sale.event_date ? { name: "📅 Date", value: sale.event_date, inline: true } : null,
-    sale.qty_sold != null ? { name: "🎫 Qty Sold", value: String(sale.qty_sold), inline: true } : null,
-    sale.sale_total != null ? { name: "💰 Sale Total", value: fmtMoney(sale.sale_total), inline: true } : null,
-    sale.payout_total != null ? { name: "💵 Payout", value: fmtMoney(sale.payout_total), inline: true } : null,
-    sale.marketplace ? { name: "🏪 Marketplace", value: sale.marketplace, inline: true } : null,
-    sale.section ? { name: "💺 Section", value: sale.section + (sale.row ? ` / Row ${sale.row}` : ""), inline: true } : null,
+    has("date")        && sale.event_date       ? { name: "\u{1F4C5} Date",       value: sale.event_date,              inline: true } : null,
+    has("qty")         && sale.qty_sold != null  ? { name: "\u{1F3AB} Qty Sold",  value: String(sale.qty_sold),        inline: true } : null,
+    has("sale_total")  && sale.sale_total != null? { name: "\u{1F4B0} Sale Total",value: fmtMoney(sale.sale_total),    inline: true } : null,
+    has("payout")      && sale.payout_total != null?{ name: "\u{1F4B5} Payout",  value: fmtMoney(sale.payout_total),  inline: true } : null,
+    has("marketplace") && sale.marketplace       ? { name: "\u{1F3EA} Marketplace",value: sale.marketplace,            inline: true } : null,
+    has("section")     && sale.section           ? { name: "\u{1F6BA} Section",   value: sale.section + (sale.row ? ` / Row ${sale.row}` : ""), inline: true } : null,
   ].filter((f): f is NonNullable<typeof f> => f !== null);
 
   return {
@@ -203,13 +227,14 @@ function buildSaleEmbed(sale: SaleRow) {
   };
 }
 
-function buildTransferEmbed(data: TransferEmailData) {
+function buildTransferEmbed(data: TransferEmailData, activeFields = DEFAULT_WEBHOOK_FIELDS.transfer) {
+  const has = (f: string) => activeFields.includes(f);
   const fields = [
-    data.eventDate ? { name: "📅 Date", value: data.eventDate, inline: true } : null,
-    data.qty != null ? { name: "🎫 Qty", value: String(data.qty), inline: true } : null,
-    data.section ? { name: "💺 Section", value: data.section, inline: true } : null,
-    data.venue ? { name: "📍 Venue", value: data.venue, inline: true } : null,
-    { name: "🔢 Order #", value: data.orderId, inline: true },
+    has("date")     && data.eventDate  ? { name: "\u{1F4C5} Date",    value: data.eventDate,   inline: true } : null,
+    has("qty")      && data.qty != null? { name: "\u{1F3AB} Qty",     value: String(data.qty), inline: true } : null,
+    has("section")  && data.section    ? { name: "\u{1F6BA} Section", value: data.section,     inline: true } : null,
+    has("venue")    && data.venue      ? { name: "\u{1F4CD} Venue",   value: data.venue,       inline: true } : null,
+    has("order_id")                    ? { name: "\u{1F522} Order #", value: data.orderId,     inline: true } : null,
   ].filter((f): f is NonNullable<typeof f> => f !== null);
 
   return {
@@ -224,13 +249,14 @@ function buildTransferEmbed(data: TransferEmailData) {
   };
 }
 
-function buildPayoutEmbed(data: PayoutEmailData) {
+function buildPayoutEmbed(data: PayoutEmailData, activeFields = DEFAULT_WEBHOOK_FIELDS.payout) {
+  const has = (f: string) => activeFields.includes(f);
   const total = data.orderLines.reduce((sum, l) => sum + l.amount, 0);
   const fields = [
-    data.paymentDate ? { name: "📅 Payment Date", value: data.paymentDate.slice(0, 10), inline: true } : null,
-    { name: "💵 Total Payout", value: fmtMoney(total), inline: true },
-    { name: "📦 Orders", value: String(data.orderLines.length), inline: true },
-    { name: "🔢 Payment Ref", value: data.paymentReference, inline: false },
+    has("payment_date") && data.paymentDate ? { name: "\u{1F4C5} Payment Date", value: data.paymentDate.slice(0, 10), inline: true  } : null,
+    has("total")                            ? { name: "\u{1F4B5} Total Payout", value: fmtMoney(total),               inline: true  } : null,
+    has("orders")                           ? { name: "\u{1F4E6} Orders",       value: String(data.orderLines.length), inline: true  } : null,
+    has("ref")                              ? { name: "\u{1F522} Payment Ref",  value: data.paymentReference,          inline: false } : null,
   ].filter((f): f is NonNullable<typeof f> => f !== null);
 
   return {
@@ -430,8 +456,8 @@ export async function POST(request: Request) {
           .eq("id", settingId);
         if (result.matchStatus === "matched") {
           void (async () => {
-            const webhookUrl = await getDiscordWebhook(supabase, userId);
-            if (webhookUrl) void postDiscord(webhookUrl, buildTransferEmbed(data));
+            const ws = await getWebhookSettings(supabase, userId);
+            if (ws.url) void postDiscord(ws.url, buildTransferEmbed(data, ws.fields.transfer));
           })();
         }
         await logEvent("imported", userId, settingId, { error_message: `matchStatus=${result.matchStatus} action=${result.actionTaken}` });
@@ -451,8 +477,8 @@ export async function POST(request: Request) {
           .update({ last_successful_import_at: new Date().toISOString(), updated_at: new Date().toISOString() })
           .eq("id", settingId);
         void (async () => {
-          const webhookUrl = await getDiscordWebhook(supabase, userId);
-          if (webhookUrl) void postDiscord(webhookUrl, buildPayoutEmbed(data));
+          const ws = await getWebhookSettings(supabase, userId);
+          if (ws.url) void postDiscord(ws.url, buildPayoutEmbed(data, ws.fields.payout));
         })();
         await logEvent("imported", userId, settingId);
         return NextResponse.json({ ok: true, status: "imported" });
@@ -487,8 +513,8 @@ export async function POST(request: Request) {
 
       if (saleResult.saleId) {
         void (async () => {
-          const webhookUrl = await getDiscordWebhook(supabase, userId);
-          if (!webhookUrl) return;
+          const ws = await getWebhookSettings(supabase, userId);
+          if (!ws.url) return;
           const { data: rows } = await supabase
             .from("sales")
             .select("event_name, event_date, qty_sold, sale_total, payout_total, marketplace, section, row")
@@ -496,7 +522,7 @@ export async function POST(request: Request) {
             .eq("user_id", userId)
             .limit(1);
           const sale = rows?.[0];
-          if (sale) void postDiscord(webhookUrl, buildSaleEmbed(sale as SaleRow));
+          if (sale) void postDiscord(ws.url, buildSaleEmbed(sale as SaleRow, ws.fields.sale));
         })();
       }
 
@@ -575,8 +601,8 @@ export async function POST(request: Request) {
 
     if (processResult.bookingRef) {
       void (async () => {
-        const webhookUrl = await getDiscordWebhook(supabase, userId);
-        if (!webhookUrl) return;
+        const ws = await getWebhookSettings(supabase, userId);
+        if (!ws.url) return;
         const { data: rows } = await supabase
           .from("orders")
           .select("event_name, venue, event_date, qty_bought, total_cost, source_type, section, row, account_email")
@@ -584,7 +610,7 @@ export async function POST(request: Request) {
           .eq("booking_ref", processResult.bookingRef)
           .limit(1);
         const order = rows?.[0];
-        if (order) void postDiscord(webhookUrl, buildOrderEmbed(order as OrderRow, processResult.bookingRef!, processResult.action as "inserted" | "updated"));
+        if (order) void postDiscord(ws.url, buildOrderEmbed(order as OrderRow, processResult.bookingRef!, processResult.action as "inserted" | "updated", ws.fields.order));
       })();
     }
   }

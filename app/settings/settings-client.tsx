@@ -641,16 +641,97 @@ export default function SettingsClient() {
   const [discordTesting, setDiscordTesting] = useState(false);
   const [discordMessage, setDiscordMessage] = useState<{ ok: boolean; text: string } | null>(null);
 
+  // ── Webhook field customisation ──
+  type WebhookFieldKey = "order" | "sale" | "transfer" | "payout";
+  type WebhookFields = Record<WebhookFieldKey, string[]>;
+  const DEFAULT_WEBHOOK_FIELDS: WebhookFields = {
+    order:    ["venue", "date", "qty", "cost", "ref", "source", "section", "email"],
+    sale:     ["date", "qty", "sale_total", "payout", "marketplace", "section"],
+    transfer: ["date", "qty", "section", "venue", "order_id"],
+    payout:   ["payment_date", "total", "orders", "ref"],
+  };
+  const WEBHOOK_FIELD_DEFS: Record<WebhookFieldKey, { id: string; label: string; emoji: string }[]> = {
+    order: [
+      { id: "venue",   label: "Venue",          emoji: "📍" },
+      { id: "date",    label: "Date",            emoji: "📅" },
+      { id: "qty",     label: "Quantity",        emoji: "🎫" },
+      { id: "cost",    label: "Cost",            emoji: "💰" },
+      { id: "ref",     label: "Reference",       emoji: "🏷️" },
+      { id: "source",  label: "Source",          emoji: "📦" },
+      { id: "section", label: "Section / Row",   emoji: "💺" },
+      { id: "email",   label: "Account Email",   emoji: "📧" },
+    ],
+    sale: [
+      { id: "date",        label: "Date",          emoji: "📅" },
+      { id: "qty",         label: "Qty Sold",      emoji: "🎫" },
+      { id: "sale_total",  label: "Sale Total",    emoji: "💰" },
+      { id: "payout",      label: "Payout",        emoji: "💵" },
+      { id: "marketplace", label: "Marketplace",   emoji: "🏪" },
+      { id: "section",     label: "Section / Row", emoji: "💺" },
+    ],
+    transfer: [
+      { id: "date",     label: "Event Date", emoji: "📅" },
+      { id: "qty",      label: "Qty",        emoji: "🎫" },
+      { id: "section",  label: "Section",    emoji: "💺" },
+      { id: "venue",    label: "Venue",      emoji: "📍" },
+      { id: "order_id", label: "Order #",    emoji: "🔢" },
+    ],
+    payout: [
+      { id: "payment_date", label: "Payment Date", emoji: "📅" },
+      { id: "total",        label: "Total Payout", emoji: "💵" },
+      { id: "orders",       label: "Order Count",  emoji: "📦" },
+      { id: "ref",          label: "Payment Ref",  emoji: "🔢" },
+    ],
+  };
+  const [webhookFields, setWebhookFields] = useState<WebhookFields>(DEFAULT_WEBHOOK_FIELDS);
+  const [webhookFieldsSaved, setWebhookFieldsSaved] = useState(false);
+  const [webhookFieldsSaving, setWebhookFieldsSaving] = useState(false);
+
+  function toggleWebhookField(type: WebhookFieldKey, fieldId: string) {
+    setWebhookFields(prev => ({
+      ...prev,
+      [type]: prev[type].includes(fieldId)
+        ? prev[type].filter(f => f !== fieldId)
+        : [...prev[type], fieldId],
+    }));
+  }
+
+  async function saveWebhookFields() {
+    setWebhookFieldsSaving(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      await supabase.from("user_settings").upsert(
+        { user_id: user.id, webhook_fields: webhookFields, updated_at: new Date().toISOString() },
+        { onConflict: "user_id" },
+      );
+      setWebhookFieldsSaved(true);
+      setTimeout(() => setWebhookFieldsSaved(false), 2500);
+    } finally {
+      setWebhookFieldsSaving(false);
+    }
+  }
+
   useEffect(() => {
     void (async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
       const { data } = await supabase
         .from("user_settings")
-        .select("discord_webhook_url")
+        .select("discord_webhook_url, webhook_fields")
         .eq("user_id", user.id)
         .maybeSingle();
-      if (data) setDiscordWebhookUrl((data as { discord_webhook_url?: string }).discord_webhook_url ?? "");
+      const row = data as { discord_webhook_url?: string; webhook_fields?: Partial<WebhookFields> } | null;
+      if (row?.discord_webhook_url) setDiscordWebhookUrl(row.discord_webhook_url);
+      if (row?.webhook_fields) {
+        const wf = row.webhook_fields;
+        setWebhookFields({
+          order:    wf.order    ?? DEFAULT_WEBHOOK_FIELDS.order,
+          sale:     wf.sale     ?? DEFAULT_WEBHOOK_FIELDS.sale,
+          transfer: wf.transfer ?? DEFAULT_WEBHOOK_FIELDS.transfer,
+          payout:   wf.payout   ?? DEFAULT_WEBHOOK_FIELDS.payout,
+        });
+      }
     })();
   }, []);
 
@@ -2629,6 +2710,66 @@ export default function SettingsClient() {
                     To disable alerts, clear the field and save.
                   </p>
                 </div>
+              </div>
+            </section>
+
+            <section className="table-card">
+              <div className="table-card-header">
+                <div>
+                  <p className="section-tag">Notification format</p>
+                  <h4>Customise embed fields</h4>
+                </div>
+                {webhookFieldsSaved && (
+                  <span className="status-badge status-static status-sold">Saved ✓</span>
+                )}
+              </div>
+              <div style={{ padding: "0 1.5rem 1.5rem", display: "flex", flexDirection: "column", gap: "1.75rem" }}>
+                <p style={{ color: "var(--text-2)", fontSize: "0.875rem", lineHeight: 1.6, margin: 0 }}>
+                  Choose which fields appear in each Discord notification. Untick any you don&apos;t need.
+                </p>
+
+                {(
+                  [
+                    { key: "order"    as WebhookFieldKey, label: "🎟️ Ticket Order",       desc: "Sent when a new ticket purchase is imported" },
+                    { key: "sale"     as WebhookFieldKey, label: "💸 Sale",                desc: "Sent when a new Viagogo / StubHub / Ticombo sale is scanned" },
+                    { key: "transfer" as WebhookFieldKey, label: "🚚 Tickets Delivered",   desc: "Sent when a Viagogo delivery confirmation is processed" },
+                    { key: "payout"   as WebhookFieldKey, label: "💰 Payout",              desc: "Sent when a Viagogo payout email is processed" },
+                  ] as const
+                ).map(({ key, label, desc }) => (
+                  <div key={key}>
+                    <div style={{ marginBottom: 10 }}>
+                      <strong style={{ fontSize: "0.9rem" }}>{label}</strong>
+                      <p style={{ margin: "3px 0 0", fontSize: "0.78rem", color: "var(--text-muted)" }}>{desc}</p>
+                    </div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                      {WEBHOOK_FIELD_DEFS[key].map(({ id, label: fieldLabel, emoji }) => (
+                        <label
+                          key={id}
+                          className="filter-field-checkbox"
+                          style={{ cursor: "pointer", userSelect: "none", display: "flex", alignItems: "center", gap: 6, padding: "6px 12px", borderRadius: 8, border: `1px solid ${webhookFields[key].includes(id) ? "rgba(96,165,250,0.5)" : "rgba(255,255,255,0.1)"}`, background: webhookFields[key].includes(id) ? "rgba(96,165,250,0.08)" : "rgba(255,255,255,0.03)", fontSize: "0.82rem", transition: "all 0.15s" }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={webhookFields[key].includes(id)}
+                            onChange={() => toggleWebhookField(key, id)}
+                            style={{ accentColor: "#60a5fa" }}
+                          />
+                          <span>{emoji} {fieldLabel}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+
+                <button
+                  type="button"
+                  className="primary-button"
+                  disabled={webhookFieldsSaving}
+                  onClick={() => void saveWebhookFields()}
+                  style={{ alignSelf: "flex-start" }}
+                >
+                  {webhookFieldsSaving ? "Saving…" : "Save format"}
+                </button>
               </div>
             </section>
 
