@@ -17,6 +17,8 @@ type Order = {
 type UserSetting = {
   user_id: string;
   discord_webhook_url: string;
+  alert_time: string | null;
+  alert_timezone: string | null;
 };
 
 type Threshold = {
@@ -28,10 +30,57 @@ type Threshold = {
 
 const THRESHOLDS: Threshold[] = [
   { days: 7, label: "7 Days Left to Sell", emoji: "⚠️",  color: 0xFFB84F },
-  { days: 3, label: "3 Days Left to Sell", emoji: "🔶", color: 0xFF7D2C },
-  { days: 2, label: "2 Days Left to Sell", emoji: "🚨", color: 0xFF4500 },
-  { days: 1, label: "1 Day Left to Sell",  emoji: "🔴", color: 0xFF2244 },
+  { days: 3, label: "3 Days Left to Sell", emoji: "🔶",  color: 0xFF7D2C },
+  { days: 2, label: "2 Days Left to Sell", emoji: "🚨",  color: 0xFF4500 },
+  { days: 1, label: "1 Day Left to Sell",  emoji: "🔴",  color: 0xFF2244 },
 ];
+
+const EXCLUDE_STATUSES = new Set(["Sold", "Archived", "Ignored", "Personal"]);
+
+// Returns true if the current time in `timezone` matches the user's `alertTime` hour.
+// The cron fires at minute 0 of every hour so we only compare hours.
+function shouldNotifyNow(alertTime: string | null, timezone: string | null): boolean {
+  const tz = timezone || "UTC";
+  const time = alertTime || "09:00";
+  const alertHour = parseInt(time.split(":")[0] ?? "9", 10);
+
+  try {
+    const now = new Date();
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: tz,
+      hour: "numeric",
+      hour12: false,
+    }).formatToParts(now);
+    const currentHour = parseInt(parts.find((p) => p.type === "hour")?.value ?? "0", 10);
+    // "24" is returned by some implementations at midnight — normalise to 0
+    return (currentHour % 24) === alertHour;
+  } catch {
+    return new Date().getUTCHours() === alertHour;
+  }
+}
+
+// Returns midnight of today in the user's timezone as a local Date object for comparison.
+function getTodayForTimezone(timezone: string | null): Date {
+  const tz = timezone || "UTC";
+  try {
+    const now = new Date();
+    // en-CA gives ISO-style YYYY-MM-DD format
+    const dateStr = new Intl.DateTimeFormat("en-CA", {
+      timeZone: tz,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(now);
+    const [y, m, d] = dateStr.split("-").map(Number);
+    const today = new Date(y, m - 1, d);
+    today.setHours(0, 0, 0, 0);
+    return today;
+  } catch {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return today;
+  }
+}
 
 function parseAnyDate(value: string | null): Date | null {
   if (!value) return null;
@@ -130,15 +179,13 @@ export async function GET(request: NextRequest) {
     process.env.SUPABASE_SERVICE_ROLE_KEY,
   );
 
-  // Fetch all users who have a Discord webhook configured
   const { data: userSettings, error: settingsError } = await supabase
     .from("user_settings")
-    .select("user_id, discord_webhook_url")
+    .select("user_id, discord_webhook_url, alert_time, alert_timezone")
     .not("discord_webhook_url", "is", null)
     .neq("discord_webhook_url", "");
 
   if (settingsError) {
-    // Table may not exist yet — exit cleanly
     return NextResponse.json({ ok: true, skipped: true, reason: settingsError.message });
   }
 
@@ -146,27 +193,39 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ ok: true, skipped: true, reason: "No users have Discord webhooks configured" });
   }
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
   let totalNotified = 0;
+  let usersChecked = 0;
+  let usersSkipped = 0;
   const errors: string[] = [];
 
   for (const setting of userSettings as UserSetting[]) {
+    // Skip users whose alert time doesn't match the current hour in their timezone
+    if (!shouldNotifyNow(setting.alert_time, setting.alert_timezone)) {
+      usersSkipped += 1;
+      continue;
+    }
+    usersChecked += 1;
+
+    const today = getTodayForTimezone(setting.alert_timezone);
+
     const { data: orders, error: ordersError } = await supabase
       .from("orders")
       .select("id, event_name, venue, event_date, qty_bought, total_cost, listing_status, account_email")
-      .eq("user_id", setting.user_id)
-      .not("listing_status", "in", '("Sold","Archived","Ignored","Personal")');
+      .eq("user_id", setting.user_id);
 
     if (ordersError || !orders) continue;
+
+    // Filter out sold/archived/ignored/personal — done in JS so null listing_status is included
+    const activeOrders = (orders as Order[]).filter(
+      (o) => !EXCLUDE_STATUSES.has(o.listing_status ?? ""),
+    );
 
     for (const threshold of THRESHOLDS) {
       const targetDate = new Date(today);
       targetDate.setDate(today.getDate() + threshold.days);
       targetDate.setHours(0, 0, 0, 0);
 
-      const matching = (orders as Order[]).filter((o) => {
+      const matching = activeOrders.filter((o) => {
         const d = parseAnyDate(o.event_date);
         return d !== null && d.getTime() === targetDate.getTime();
       });
@@ -184,5 +243,5 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  return NextResponse.json({ ok: true, usersNotified: userSettings.length, totalNotified, errors });
+  return NextResponse.json({ ok: true, usersChecked, usersSkipped, totalNotified, errors });
 }

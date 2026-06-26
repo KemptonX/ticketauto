@@ -640,6 +640,10 @@ export default function SettingsClient() {
   const [discordSaving, setDiscordSaving] = useState(false);
   const [discordTesting, setDiscordTesting] = useState(false);
   const [discordMessage, setDiscordMessage] = useState<{ ok: boolean; text: string } | null>(null);
+  const [alertTime, setAlertTime] = useState("09:00");
+  const [alertTimezone, setAlertTimezone] = useState("UTC");
+  const [alertScheduleSaved, setAlertScheduleSaved] = useState(false);
+  const [alertScheduleSaving, setAlertScheduleSaving] = useState(false);
 
   // ── Webhook field customisation ──
   type WebhookFieldKey = "order" | "sale" | "transfer" | "payout";
@@ -718,10 +722,10 @@ export default function SettingsClient() {
       if (!user) return;
       const { data } = await supabase
         .from("user_settings")
-        .select("discord_webhook_url, webhook_fields")
+        .select("discord_webhook_url, webhook_fields, alert_time, alert_timezone")
         .eq("user_id", user.id)
         .maybeSingle();
-      const row = data as { discord_webhook_url?: string; webhook_fields?: Partial<WebhookFields> } | null;
+      const row = data as { discord_webhook_url?: string; webhook_fields?: Partial<WebhookFields>; alert_time?: string; alert_timezone?: string } | null;
       if (row?.discord_webhook_url) setDiscordWebhookUrl(row.discord_webhook_url);
       if (row?.webhook_fields) {
         const wf = row.webhook_fields;
@@ -732,6 +736,8 @@ export default function SettingsClient() {
           payout:   wf.payout   ?? DEFAULT_WEBHOOK_FIELDS.payout,
         });
       }
+      if (row?.alert_time) setAlertTime(row.alert_time);
+      if (row?.alert_timezone) setAlertTimezone(row.alert_timezone);
     })();
   }, []);
 
@@ -754,6 +760,22 @@ export default function SettingsClient() {
       }
     } finally {
       setDiscordSaving(false);
+    }
+  }
+
+  async function saveAlertSchedule() {
+    setAlertScheduleSaving(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      await supabase.from("user_settings").upsert(
+        { user_id: user.id, alert_time: alertTime, alert_timezone: alertTimezone, updated_at: new Date().toISOString() },
+        { onConflict: "user_id" },
+      );
+      setAlertScheduleSaved(true);
+      setTimeout(() => setAlertScheduleSaved(false), 2500);
+    } finally {
+      setAlertScheduleSaving(false);
     }
   }
 
@@ -2613,8 +2635,8 @@ export default function SettingsClient() {
                   <strong>7 · 3 · 2 · 1 day</strong>
                 </div>
                 <div>
-                  <span className="hero-meta-label">Schedule</span>
-                  <strong>Daily 09:00</strong>
+                  <span className="hero-meta-label">Daily at</span>
+                  <strong>{alertTime} &nbsp;{alertTimezone.replace("_", " ")}</strong>
                 </div>
               </div>
             </section>
@@ -2628,8 +2650,8 @@ export default function SettingsClient() {
               </div>
               <div style={{ padding: "0 1.5rem 1.5rem", display: "flex", flexDirection: "column", gap: "1rem" }}>
                 <p style={{ color: "var(--text-2)", fontSize: "0.875rem", lineHeight: 1.6, margin: 0 }}>
-                  Every day at 09:00 UTC, TixTracker checks for unsold tickets and pings your Discord channel
-                  at four urgency levels. Only tickets still unsold (not Sold or Archived) trigger a notification.
+                  Once a day at your chosen time, TixTracker checks for unsold tickets and pings your Discord
+                  channel at four urgency levels. Only tickets still unsold (not Sold or Archived) trigger a notification.
                 </p>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10 }}>
                   {([
@@ -2643,6 +2665,121 @@ export default function SettingsClient() {
                       <strong style={{ fontSize: "0.8rem", color }}>{days}</strong>
                     </div>
                   ))}
+                </div>
+              </div>
+            </section>
+
+            <section className="table-card">
+              <div className="table-card-header">
+                <div>
+                  <p className="section-tag">Alert schedule</p>
+                  <h4>When to send daily alerts</h4>
+                </div>
+                {alertScheduleSaved && (
+                  <span className="status-badge status-static status-sold">Saved ✓</span>
+                )}
+              </div>
+              <div style={{ padding: "0 1.5rem 1.5rem", display: "flex", flexDirection: "column", gap: "1.25rem" }}>
+                <p style={{ color: "var(--text-2)", fontSize: "0.875rem", lineHeight: 1.6, margin: 0 }}>
+                  Choose the time and timezone for your daily unsold alert. TixTracker checks every hour and fires your notification when the clock matches your setting.
+                </p>
+                <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    <label style={{ fontSize: "0.78rem", color: "var(--text-muted)", fontWeight: 600 }}>Send time</label>
+                    <select
+                      className="field"
+                      value={alertTime}
+                      onChange={(e) => setAlertTime(e.target.value)}
+                      style={{ width: 130 }}
+                    >
+                      {Array.from({ length: 24 }, (_, h) => {
+                        const val = `${String(h).padStart(2, "0")}:00`;
+                        const label = `${String(h).padStart(2, "0")}:00${h < 12 ? " AM" : h === 12 ? " PM" : " PM"}`;
+                        return <option key={val} value={val}>{label}</option>;
+                      })}
+                    </select>
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    <label style={{ fontSize: "0.78rem", color: "var(--text-muted)", fontWeight: 600 }}>Timezone</label>
+                    <select
+                      className="field"
+                      value={alertTimezone}
+                      onChange={(e) => setAlertTimezone(e.target.value)}
+                      style={{ width: 260 }}
+                    >
+                      <optgroup label="UTC">
+                        <option value="UTC">UTC</option>
+                      </optgroup>
+                      <optgroup label="Europe">
+                        <option value="Europe/London">London (GMT / BST)</option>
+                        <option value="Europe/Dublin">Dublin (GMT / IST)</option>
+                        <option value="Europe/Lisbon">Lisbon (WET / WEST)</option>
+                        <option value="Europe/Paris">Paris (CET / CEST)</option>
+                        <option value="Europe/Berlin">Berlin (CET / CEST)</option>
+                        <option value="Europe/Amsterdam">Amsterdam (CET / CEST)</option>
+                        <option value="Europe/Madrid">Madrid (CET / CEST)</option>
+                        <option value="Europe/Rome">Rome (CET / CEST)</option>
+                        <option value="Europe/Warsaw">Warsaw (CET / CEST)</option>
+                        <option value="Europe/Athens">Athens (EET / EEST)</option>
+                        <option value="Europe/Bucharest">Bucharest (EET / EEST)</option>
+                        <option value="Europe/Helsinki">Helsinki (EET / EEST)</option>
+                        <option value="Europe/Moscow">Moscow (MSK)</option>
+                      </optgroup>
+                      <optgroup label="North America">
+                        <option value="America/New_York">New York (ET)</option>
+                        <option value="America/Toronto">Toronto (ET)</option>
+                        <option value="America/Chicago">Chicago (CT)</option>
+                        <option value="America/Denver">Denver (MT)</option>
+                        <option value="America/Phoenix">Phoenix (MST, no DST)</option>
+                        <option value="America/Los_Angeles">Los Angeles (PT)</option>
+                        <option value="America/Vancouver">Vancouver (PT)</option>
+                        <option value="America/Anchorage">Anchorage (AKT)</option>
+                        <option value="Pacific/Honolulu">Honolulu (HST)</option>
+                      </optgroup>
+                      <optgroup label="South America">
+                        <option value="America/Sao_Paulo">São Paulo (BRT)</option>
+                        <option value="America/Argentina/Buenos_Aires">Buenos Aires (ART)</option>
+                        <option value="America/Bogota">Bogotá (COT)</option>
+                        <option value="America/Mexico_City">Mexico City (CT)</option>
+                      </optgroup>
+                      <optgroup label="Middle East &amp; Africa">
+                        <option value="Africa/Johannesburg">Johannesburg (SAST)</option>
+                        <option value="Africa/Cairo">Cairo (EET)</option>
+                        <option value="Africa/Lagos">Lagos (WAT)</option>
+                        <option value="Asia/Dubai">Dubai (GST)</option>
+                        <option value="Asia/Riyadh">Riyadh (AST)</option>
+                      </optgroup>
+                      <optgroup label="Asia">
+                        <option value="Asia/Kolkata">Mumbai / New Delhi (IST)</option>
+                        <option value="Asia/Colombo">Colombo (IST)</option>
+                        <option value="Asia/Dhaka">Dhaka (BST)</option>
+                        <option value="Asia/Bangkok">Bangkok (ICT)</option>
+                        <option value="Asia/Singapore">Singapore (SGT)</option>
+                        <option value="Asia/Kuala_Lumpur">Kuala Lumpur (MYT)</option>
+                        <option value="Asia/Hong_Kong">Hong Kong (HKT)</option>
+                        <option value="Asia/Shanghai">Shanghai (CST)</option>
+                        <option value="Asia/Tokyo">Tokyo (JST)</option>
+                        <option value="Asia/Seoul">Seoul (KST)</option>
+                      </optgroup>
+                      <optgroup label="Oceania">
+                        <option value="Australia/Perth">Perth (AWST)</option>
+                        <option value="Australia/Darwin">Darwin (ACST)</option>
+                        <option value="Australia/Brisbane">Brisbane (AEST)</option>
+                        <option value="Australia/Sydney">Sydney (AEST / AEDT)</option>
+                        <option value="Australia/Melbourne">Melbourne (AEST / AEDT)</option>
+                        <option value="Pacific/Auckland">Auckland (NZST / NZDT)</option>
+                        <option value="Pacific/Fiji">Fiji (FJT)</option>
+                      </optgroup>
+                    </select>
+                  </div>
+                  <button
+                    type="button"
+                    className="primary-button"
+                    disabled={alertScheduleSaving}
+                    onClick={() => void saveAlertSchedule()}
+                  >
+                    {alertScheduleSaving ? "Saving…" : "Save schedule"}
+                  </button>
                 </div>
               </div>
             </section>
