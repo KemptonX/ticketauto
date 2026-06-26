@@ -815,6 +815,7 @@ export async function processTransferEmail(
     .select("id, transfer_status, payment_status, sale_status, notes")
     .eq("user_id", userId)
     .eq("external_sale_id", data.orderId)
+    .eq("marketplace", "Viagogo")
     .maybeSingle();
 
   if (error) throw new Error(error.message);
