@@ -12,6 +12,7 @@ import {
   processPayoutOrderLine,
 } from "@/src/lib/sales-lifecycle-sync";
 import { processSingleSaleEmail } from "@/src/lib/viagogo-sales-sync";
+import type { TransferEmailData, PayoutEmailData } from "@/src/lib/sales-lifecycle-sync";
 
 export const runtime = "nodejs";
 
@@ -202,6 +203,48 @@ function buildSaleEmbed(sale: SaleRow) {
   };
 }
 
+function buildTransferEmbed(data: TransferEmailData) {
+  const fields = [
+    data.eventDate ? { name: "📅 Date", value: data.eventDate, inline: true } : null,
+    data.qty != null ? { name: "🎫 Qty", value: String(data.qty), inline: true } : null,
+    data.section ? { name: "💺 Section", value: data.section, inline: true } : null,
+    data.venue ? { name: "📍 Venue", value: data.venue, inline: true } : null,
+    { name: "🔢 Order #", value: data.orderId, inline: true },
+  ].filter((f): f is NonNullable<typeof f> => f !== null);
+
+  return {
+    embeds: [{
+      title: "🚚 Tickets Delivered",
+      description: `**${data.eventName || "Unknown Event"}**`,
+      color: 0x2ECC71,
+      fields,
+      footer: { text: "TixTracker · Lifecycle" },
+      timestamp: new Date().toISOString(),
+    }],
+  };
+}
+
+function buildPayoutEmbed(data: PayoutEmailData) {
+  const total = data.orderLines.reduce((sum, l) => sum + l.amount, 0);
+  const fields = [
+    data.paymentDate ? { name: "📅 Payment Date", value: data.paymentDate.slice(0, 10), inline: true } : null,
+    { name: "💵 Total Payout", value: fmtMoney(total), inline: true },
+    { name: "📦 Orders", value: String(data.orderLines.length), inline: true },
+    { name: "🔢 Payment Ref", value: data.paymentReference, inline: false },
+  ].filter((f): f is NonNullable<typeof f> => f !== null);
+
+  return {
+    embeds: [{
+      title: "💰 Payout Received",
+      description: `Payment **${data.paymentReference}** processed`,
+      color: 0xF1C40F,
+      fields,
+      footer: { text: "TixTracker · Lifecycle" },
+      timestamp: new Date().toISOString(),
+    }],
+  };
+}
+
 // ─── Route handler ────────────────────────────────────────────────────────────
 
 export async function POST(request: Request) {
@@ -385,6 +428,12 @@ export async function POST(request: Request) {
         void supabase.from("email_forwarding_settings")
           .update({ last_successful_import_at: new Date().toISOString(), updated_at: new Date().toISOString() })
           .eq("id", settingId);
+        if (result.matchStatus === "matched") {
+          void (async () => {
+            const webhookUrl = await getDiscordWebhook(supabase, userId);
+            if (webhookUrl) void postDiscord(webhookUrl, buildTransferEmbed(data));
+          })();
+        }
         await logEvent("imported", userId, settingId, { error_message: `matchStatus=${result.matchStatus} action=${result.actionTaken}` });
         return NextResponse.json({ ok: true, status: "imported" });
       } else {
@@ -401,6 +450,10 @@ export async function POST(request: Request) {
         void supabase.from("email_forwarding_settings")
           .update({ last_successful_import_at: new Date().toISOString(), updated_at: new Date().toISOString() })
           .eq("id", settingId);
+        void (async () => {
+          const webhookUrl = await getDiscordWebhook(supabase, userId);
+          if (webhookUrl) void postDiscord(webhookUrl, buildPayoutEmbed(data));
+        })();
         await logEvent("imported", userId, settingId);
         return NextResponse.json({ ok: true, status: "imported" });
       }
