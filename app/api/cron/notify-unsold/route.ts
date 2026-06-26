@@ -195,15 +195,9 @@ export async function GET(request: NextRequest) {
 
   let totalNotified = 0;
   let usersChecked = 0;
-  let usersSkipped = 0;
   const errors: string[] = [];
 
   for (const setting of userSettings as UserSetting[]) {
-    // Skip users whose alert time doesn't match the current hour in their timezone
-    if (!shouldNotifyNow(setting.alert_time, setting.alert_timezone)) {
-      usersSkipped += 1;
-      continue;
-    }
     usersChecked += 1;
 
     const today = getTodayForTimezone(setting.alert_timezone);
@@ -243,5 +237,5 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  return NextResponse.json({ ok: true, usersChecked, usersSkipped, totalNotified, errors });
+  return NextResponse.json({ ok: true, usersChecked, totalNotified, errors });
 }

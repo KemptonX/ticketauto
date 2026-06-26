@@ -2681,7 +2681,7 @@ export default function SettingsClient() {
               </div>
               <div style={{ padding: "0 1.5rem 1.5rem", display: "flex", flexDirection: "column", gap: "1.25rem" }}>
                 <p style={{ color: "var(--text-2)", fontSize: "0.875rem", lineHeight: 1.6, margin: 0 }}>
-                  Choose the time and timezone for your daily unsold alert. TixTracker checks every hour and fires your notification when the clock matches your setting.
+                  Alerts run daily at 09:00 UTC. Save your preferred time and timezone here — custom scheduling will activate automatically when the plan supports it.
                 </p>
                 <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
                   <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
