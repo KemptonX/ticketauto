@@ -810,7 +810,11 @@ export async function processTransferEmail(
     qty: data.qty,
   };
 
-  const { data: sale, error } = await supabase
+  // Primary lookup: match by Viagogo order ID stored as external_sale_id.
+  // This works when the sale was imported from a "You sold your ticket - Order#..." email.
+  // It does NOT work when imported from a "Please transfer for sale #..." email, because
+  // that email stores a SALE ID (different number) rather than the ORDER ID.
+  let { data: sale, error } = await supabase
     .from("sales")
     .select("id, transfer_status, payment_status, sale_status, notes")
     .eq("user_id", userId)
@@ -819,6 +823,23 @@ export async function processTransferEmail(
     .maybeSingle();
 
   if (error) throw new Error(error.message);
+
+  // Fallback: match by event name when order ID doesn't match.
+  // Only applies when there is exactly one open Viagogo sale for that event —
+  // if multiple exist we cannot safely pick one without human confirmation.
+  if (!sale && data.eventName) {
+    const { data: candidates, error: candidateError } = await supabase
+      .from("sales")
+      .select("id, transfer_status, payment_status, sale_status, notes")
+      .eq("user_id", userId)
+      .eq("marketplace", "Viagogo")
+      .ilike("event_name", `%${data.eventName}%`)
+      .neq("transfer_status", "Transfer Completed");
+
+    if (!candidateError && candidates && candidates.length === 1) {
+      sale = candidates[0];
+    }
+  }
 
   if (!sale) {
     return { ...base, saleId: null, matchStatus: "unmatched", actionTaken: null, confidence: null, notes: "No sale found with this order ID" };
