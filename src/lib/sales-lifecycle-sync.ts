@@ -547,7 +547,16 @@ export async function scanViagogoLifecycleImap({
 // ── Email type detection ──────────────────────────────────────────────────────
 
 export function isTransferEmail(subject: string): boolean {
-  return subject.toLowerCase().includes("confirmed transfer for order");
+  const s = subject.toLowerCase();
+  // "tickets were delivered" is a Viagogo delivery confirmation (lifecycle event).
+  // Must be caught here before processSingleSaleEmail, which has a StubHub keyword
+  // with the same phrase — the Gmail/IMAP/Outlook scanners guard by sender domain
+  // but inbound forwarded mail has no sender filter.
+  return (
+    s.includes("confirmed transfer for order") ||
+    s.includes("tickets were delivered for order") ||
+    s.includes("your tickets were delivered")
+  );
 }
 
 export function isPayoutEmail(subject: string): boolean {

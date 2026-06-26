@@ -129,8 +129,7 @@ export default function PrivacyPage() {
         <p>
           Gmail connection is optional. You can connect your Gmail account at any time from the
           Settings page inside TixTracker. You can disconnect your Gmail account at any time by
-          visiting <strong>Settings → Connections</strong> and clicking <strong>Remove</strong> next
-          to your connected inbox. Disconnecting removes our access to your Gmail and stops all
+          visiting <strong>Settings → Connections</strong> and clicking <strong>Disconnect Gmail</strong>. Disconnecting removes our access to your Gmail and stops all
           future email scans.
         </p>
         <p>
