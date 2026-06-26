@@ -810,29 +810,33 @@ export async function processTransferEmail(
     qty: data.qty,
   };
 
-  // Primary lookup: match by Viagogo order ID stored as external_sale_id.
-  // This works when the sale was imported from a "You sold your ticket - Order#..." email.
-  // It does NOT work when imported from a "Please transfer for sale #..." email, because
-  // that email stores a SALE ID (different number) rather than the ORDER ID.
-  let { data: sale, error } = await supabase
+  // Primary lookup: match by external_sale_id (the Viagogo order/sale ID).
+  // Older sales imported via the Gmail scanner have marketplace = null;
+  // newer ones imported via the inbound email route have marketplace = "Viagogo".
+  // We accept both. Use limit(1) ordered by id to avoid maybeSingle() throwing
+  // when duplicate rows exist for the same external_sale_id.
+  const { data: primaryRows, error } = await supabase
     .from("sales")
     .select("id, transfer_status, payment_status, sale_status, notes")
     .eq("user_id", userId)
     .eq("external_sale_id", data.orderId)
-    .eq("marketplace", "Viagogo")
-    .maybeSingle();
+    .or("marketplace.eq.Viagogo,marketplace.is.null")
+    .order("id", { ascending: true })
+    .limit(1);
 
   if (error) throw new Error(error.message);
 
-  // Fallback: match by event name when order ID doesn't match.
-  // Only applies when there is exactly one open Viagogo sale for that event —
-  // if multiple exist we cannot safely pick one without human confirmation.
+  let sale = (primaryRows as typeof primaryRows)?.[0] ?? null;
+
+  // Fallback: match by event name when the order ID finds nothing.
+  // Only applies when there is exactly one open Viagogo/unknown sale for that
+  // event — if multiple exist we cannot safely pick one without human confirmation.
   if (!sale && data.eventName) {
     const { data: candidates, error: candidateError } = await supabase
       .from("sales")
       .select("id, transfer_status, payment_status, sale_status, notes")
       .eq("user_id", userId)
-      .eq("marketplace", "Viagogo")
+      .or("marketplace.eq.Viagogo,marketplace.is.null")
       .ilike("event_name", `%${data.eventName}%`)
       .neq("transfer_status", "Transfer Completed");
 
