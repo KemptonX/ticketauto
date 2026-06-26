@@ -2798,7 +2798,7 @@ export async function processSingleSaleEmail({
   receivedAt: string;
   sourceMessageId: string;
   accountEmail: string;
-}): Promise<{ inserted: boolean; matched: boolean; source: string } | null> {
+}): Promise<{ inserted: boolean; matched: boolean; source: string; saleId: number | null } | null> {
   const lowerSubject = subject.toLowerCase();
 
   const isViagogo = SALE_SUBJECT_KEYWORDS.some((kw) => lowerSubject.includes(kw));
