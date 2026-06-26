@@ -485,16 +485,17 @@ export async function POST(request: Request) {
         .update({ last_successful_import_at: new Date().toISOString(), updated_at: new Date().toISOString() })
         .eq("id", settingId);
 
-      if (saleResult.inserted) {
+      if (saleResult.saleId) {
         void (async () => {
           const webhookUrl = await getDiscordWebhook(supabase, userId);
           if (!webhookUrl) return;
-          const { data: sale } = await supabase
+          const { data: rows } = await supabase
             .from("sales")
             .select("event_name, event_date, qty_sold, sale_total, payout_total, marketplace, section, row")
+            .eq("id", saleResult.saleId)
             .eq("user_id", userId)
-            .eq("source_message_id", postmarkMessageId ?? normalizedHash)
-            .maybeSingle();
+            .limit(1);
+          const sale = rows?.[0];
           if (sale) void postDiscord(webhookUrl, buildSaleEmbed(sale as SaleRow));
         })();
       }
@@ -576,12 +577,13 @@ export async function POST(request: Request) {
       void (async () => {
         const webhookUrl = await getDiscordWebhook(supabase, userId);
         if (!webhookUrl) return;
-        const { data: order } = await supabase
+        const { data: rows } = await supabase
           .from("orders")
           .select("event_name, venue, event_date, qty_bought, total_cost, source_type, section, row, account_email")
           .eq("user_id", userId)
           .eq("booking_ref", processResult.bookingRef)
-          .maybeSingle();
+          .limit(1);
+        const order = rows?.[0];
         if (order) void postDiscord(webhookUrl, buildOrderEmbed(order as OrderRow, processResult.bookingRef!, processResult.action as "inserted" | "updated"));
       })();
     }

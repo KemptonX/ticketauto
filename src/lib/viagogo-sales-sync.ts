@@ -2876,12 +2876,24 @@ export async function processSingleSaleEmail({
     user_id: userId,
   };
 
-  const mutation = existingSale
-    ? supabase.from("sales").update({ ...saleData, source_message_id: existingSale.source_message_id || sourceMessageId }).eq("id", existingSale.id)
-    : supabase.from("sales").insert(saleData);
+  let saleId: number | null = null;
 
-  const { error } = await mutation;
-  if (error) throw new Error(error.message);
+  if (existingSale) {
+    saleId = existingSale.id;
+    const { error } = await supabase
+      .from("sales")
+      .update({ ...saleData, source_message_id: existingSale.source_message_id || sourceMessageId })
+      .eq("id", existingSale.id);
+    if (error) throw new Error(error.message);
+  } else {
+    const { data: inserted, error } = await supabase
+      .from("sales")
+      .insert(saleData)
+      .select("id")
+      .single();
+    if (error) throw new Error(error.message);
+    saleId = inserted?.id ?? null;
+  }
 
   if (match) {
     const currentUsed = orderUsage.get(match.order.id) ?? 0;
@@ -2889,7 +2901,7 @@ export async function processSingleSaleEmail({
     await updateMatchedOrder(supabase, { userId, order: match.order, payoutTotal: parsed.payoutTotal, totalQtySold: newQtySold });
   }
 
-  return { inserted: !existingSale, matched: !!match, source };
+  return { inserted: !existingSale, matched: !!match, source, saleId };
 }
 
 
