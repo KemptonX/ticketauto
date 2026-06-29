@@ -353,24 +353,32 @@ function ViagogoAccountDetails({
               lineHeight: 1.7,
             }}>
               <strong style={{ color: "var(--foreground)", display: "block", marginBottom: "0.4rem" }}>
-                How to get your Viagogo session cookies:
+                Option A — Cookie Editor extension (recommended):
+              </strong>
+              <ol style={{ margin: 0, paddingLeft: "1.25rem", display: "flex", flexDirection: "column", gap: "0.25rem", marginBottom: "0.75rem" }}>
+                <li>Log in to <strong style={{ color: "var(--foreground)" }}>www.viagogo.co.uk</strong> in your browser</li>
+                <li>Install the <strong style={{ color: "var(--foreground)" }}>Cookie Editor</strong> browser extension</li>
+                <li>Click the extension icon on the Viagogo tab</li>
+                <li>Click <strong style={{ color: "var(--foreground)" }}>Export → Export as JSON</strong></li>
+                <li>Paste the JSON array below</li>
+              </ol>
+              <strong style={{ color: "var(--foreground)", display: "block", marginBottom: "0.4rem" }}>
+                Option B — DevTools Network tab:
               </strong>
               <ol style={{ margin: 0, paddingLeft: "1.25rem", display: "flex", flexDirection: "column", gap: "0.25rem" }}>
-                <li>Log in to <strong style={{ color: "var(--foreground)" }}>www.viagogo.co.uk</strong> in your browser</li>
-                <li>Open <strong style={{ color: "var(--foreground)" }}>DevTools</strong> (F12 or right-click → Inspect)</li>
-                <li>Go to the <strong style={{ color: "var(--foreground)" }}>Network</strong> tab</li>
-                <li>Refresh the page — click any request to <code style={{ background: "rgba(255,255,255,0.08)", padding: "0 4px", borderRadius: 3 }}>viagogo.co.uk</code> in the list</li>
-                <li>In the right panel under <strong style={{ color: "var(--foreground)" }}>Request Headers</strong>, find <code style={{ background: "rgba(255,255,255,0.08)", padding: "0 4px", borderRadius: 3 }}>Cookie:</code></li>
-                <li>Copy everything after <strong style={{ color: "var(--foreground)" }}>Cookie:</strong> and paste below</li>
+                <li>Log in to <strong style={{ color: "var(--foreground)" }}>www.viagogo.co.uk</strong></li>
+                <li>Open DevTools (F12) → Network tab → refresh</li>
+                <li>Click any request to <code style={{ background: "rgba(255,255,255,0.08)", padding: "0 4px", borderRadius: 3 }}>viagogo.co.uk</code></li>
+                <li>Copy the <code style={{ background: "rgba(255,255,255,0.08)", padding: "0 4px", borderRadius: 3 }}>Cookie:</code> header value and paste below</li>
               </ol>
             </div>
 
             <label className="filter-field">
-              <span className="filter-label">Cookie header value</span>
+              <span className="filter-label">Cookies (JSON array or Cookie header string)</span>
               <textarea
                 className="field"
                 rows={4}
-                placeholder="__cf_bm=abc123; vgn_auth=xyz; session_id=def456; ..."
+                placeholder={'[{"name":"wsu.2","value":"eyJ...","domain":".viagogo.co.uk",...}]'}
                 value={cookieString}
                 onChange={(e) => setCookieString(e.target.value)}
                 style={{ fontFamily: "monospace", fontSize: "0.75rem", resize: "vertical" }}

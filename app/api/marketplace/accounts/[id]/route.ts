@@ -121,20 +121,50 @@ export async function PATCH(request: NextRequest, { params }: Params) {
         return NextResponse.json({ error: "Cookie string is required" }, { status: 400 });
       }
 
-      // Parse "name=value; name2=value2; ..." into Playwright cookie objects
-      const cookies = cookieString
-        .split(";")
-        .map((c) => c.trim())
-        .filter(Boolean)
-        .map((c) => {
-          const eqIdx = c.indexOf("=");
-          if (eqIdx === -1) return null;
-          const name = c.slice(0, eqIdx).trim();
-          const value = c.slice(eqIdx + 1).trim();
-          if (!name) return null;
-          return { name, value, domain: ".viagogo.co.uk", path: "/" };
-        })
-        .filter((c): c is NonNullable<typeof c> => c !== null);
+      // Accept either Cookie Editor JSON export or raw "name=value; ..." header string
+      type RawCookie = { name: string; value: string; domain?: string; path?: string; secure?: boolean; httpOnly?: boolean; sameSite?: string; expirationDate?: number };
+      type PlaywrightCookie = { name: string; value: string; domain: string; path: string; secure?: boolean; httpOnly?: boolean; sameSite?: "Strict" | "Lax" | "None"; expires?: number };
+
+      let cookies: PlaywrightCookie[] = [];
+      const trimmed = cookieString.trim();
+
+      if (trimmed.startsWith("[")) {
+        // Cookie Editor JSON format
+        const raw = JSON.parse(trimmed) as RawCookie[];
+        cookies = raw
+          .filter((c) => c.name && c.value !== undefined)
+          .map((c) => {
+            const domain = c.domain?.startsWith(".") ? c.domain : `.${c.domain ?? "viagogo.co.uk"}`;
+            const siteMap: Record<string, "Strict" | "Lax" | "None"> = { strict: "Strict", lax: "Lax", none: "None", no_restriction: "None" };
+            const sameSite = c.sameSite ? siteMap[c.sameSite.toLowerCase()] : undefined;
+            const cookie: PlaywrightCookie = {
+              name: c.name,
+              value: c.value,
+              domain,
+              path: c.path ?? "/",
+            };
+            if (c.secure !== undefined) cookie.secure = c.secure;
+            if (c.httpOnly !== undefined) cookie.httpOnly = c.httpOnly;
+            if (sameSite) cookie.sameSite = sameSite;
+            if (c.expirationDate) cookie.expires = Math.floor(c.expirationDate);
+            return cookie;
+          });
+      } else {
+        // Raw cookie header string: "name=value; name2=value2; ..."
+        cookies = trimmed
+          .split(";")
+          .map((c) => c.trim())
+          .filter(Boolean)
+          .map((c) => {
+            const eqIdx = c.indexOf("=");
+            if (eqIdx === -1) return null;
+            const name = c.slice(0, eqIdx).trim();
+            const value = c.slice(eqIdx + 1).trim();
+            if (!name) return null;
+            return { name, value, domain: ".viagogo.co.uk", path: "/" };
+          })
+          .filter((c): c is PlaywrightCookie => c !== null);
+      }
 
       if (cookies.length === 0) {
         return NextResponse.json({ error: "No valid cookies found — paste the full Cookie header value" }, { status: 400 });
