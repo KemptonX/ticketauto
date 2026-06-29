@@ -109,8 +109,8 @@ export async function runViagogoListing(browser: Browser, job: Job, report: Repo
         await emailInput.waitFor({ state: "visible", timeout: TIMEOUT });
         await emailInput.click();
         await emailInput.pressSequentially(job.account.credentials.email, { delay: 40 });
-        console.log(`[viagogo] Email typed — submitting`);
-        await emailInput.press("Enter");
+        console.log(`[viagogo] Email typed — clicking Sign In`);
+        await page.locator('button:has-text("Sign In"), button:has-text("Sign in")').first().click();
         await page.waitForLoadState("networkidle", { timeout: 10_000 }).catch(() => {});
         console.log(`[viagogo] After email submit — URL: ${page.url()}`);
 
