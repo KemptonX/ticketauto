@@ -53,15 +53,9 @@ export async function POST(_req: NextRequest, { params }: Params) {
           { status: 200 }
         );
       }
-      if (acct.status !== "connected") {
+      if (acct.status === "disconnected" || acct.status === "login_failed") {
         return NextResponse.json(
-          { valid: false, errors: [{ field: "marketplaceAccountId", message: `Viagogo account status is '${acct.status}'. Must be connected before listing.` }] },
-          { status: 200 }
-        );
-      }
-      if (!acct.can_list) {
-        return NextResponse.json(
-          { valid: false, errors: [{ field: "marketplaceAccountId", message: "Viagogo account cannot list tickets. Check account status." }] },
+          { valid: false, errors: [{ field: "marketplaceAccountId", message: `Viagogo account status is '${acct.status}'. Please reconnect before listing.` }] },
           { status: 200 }
         );
       }
@@ -82,8 +76,15 @@ export async function POST(_req: NextRequest, { params }: Params) {
           { status: 200 }
         );
       }
-      // Mandatory: exact date match
-      if (match.tixtracker_event_date !== match.viagogo_event_date) {
+      const toIso = (d: string) => {
+        if (/^\d{4}-\d{2}-\d{2}/.test(d)) return d.slice(0, 10);
+        const months: Record<string, string> = { january:"01",february:"02",march:"03",april:"04",may:"05",june:"06",july:"07",august:"08",september:"09",october:"10",november:"11",december:"12" };
+        const m = d.match(/(\d{1,2})\s+(\w+)\s+(\d{4})/);
+        if (m) { const mo = months[m[2].toLowerCase()]; if (mo) return `${m[3]}-${mo}-${m[1].padStart(2,"0")}`; }
+        const p = new Date(d); return isNaN(p.getTime()) ? d : p.toISOString().slice(0,10);
+      };
+      // Mandatory: exact date match (normalize both sides)
+      if (toIso(match.tixtracker_event_date) !== toIso(match.viagogo_event_date)) {
         return NextResponse.json(
           {
             valid: false,
