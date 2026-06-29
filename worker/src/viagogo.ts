@@ -59,20 +59,29 @@ export async function runViagogoListing(browser: Browser, job: Job, report: Repo
       await report("logging_in");
       console.log(`[viagogo] Session expired — logging in as ${job.account.displayEmail}`);
 
-      await page.goto(LOGIN_URL, { waitUntil: "networkidle", timeout: TIMEOUT });
+      await page.goto(LOGIN_URL, { waitUntil: "domcontentloaded", timeout: TIMEOUT });
 
       // Dismiss any cookie banner first
       await dismissCookieBanner(page);
 
-      await page.fill(
-        'input[type="email"], input[name="email"], input[name="Email"], #Email, #email',
-        job.account.credentials.email,
-      );
-      await page.fill(
-        'input[type="password"], input[name="password"], input[name="Password"], #Password, #password',
-        job.account.credentials.password,
-      );
-      await page.click('button[type="submit"], input[type="submit"], button:has-text("Sign in"), button:has-text("Log in")');
+      // Wait for page to settle after cookie banner dismissal
+      await page.waitForLoadState("networkidle", { timeout: 10_000 }).catch(() => {});
+
+      console.log(`[viagogo] Login page: ${page.url()} — "${await page.title()}"`);
+
+      const emailInput = page.locator(
+        'input[type="email"], input[name="email"], input[name="Email"], #Email, #email, input[autocomplete="email"], input[autocomplete="username"]'
+      ).first();
+      await emailInput.waitFor({ state: "visible", timeout: TIMEOUT });
+      await emailInput.fill(job.account.credentials.email);
+
+      const passwordInput = page.locator(
+        'input[type="password"], input[name="password"], input[name="Password"], #Password, #password, input[autocomplete="current-password"]'
+      ).first();
+      await passwordInput.waitFor({ state: "visible", timeout: TIMEOUT });
+      await passwordInput.fill(job.account.credentials.password);
+
+      await page.click('button[type="submit"], input[type="submit"], button:has-text("Sign in"), button:has-text("Log in"), button:has-text("Login")');
 
       try {
         await page.waitForURL((url) => !url.toString().includes("/login"), { timeout: 20_000 });
