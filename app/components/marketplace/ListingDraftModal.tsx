@@ -197,10 +197,23 @@ export default function ListingDraftModal({
         const { drafts } = await draftRes.json() as { drafts: Draft[] };
         const existing = drafts.find((d) => d.status !== "submitted" && d.status !== "cancelled") ?? null;
         if (existing) {
-          setDraft(existing);
-          if (existing.event_match_id) {
+          let loadedDraft = existing;
+          // Auto-patch account ID if the draft is missing it but we have an account
+          if (!existing.marketplace_account_id && vg) {
+            const patchRes = await fetch(`/api/marketplace/drafts/${existing.id}`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ marketplace_account_id: vg.id }),
+            });
+            if (patchRes.ok) {
+              const { draft: patched } = await patchRes.json() as { draft: Draft };
+              loadedDraft = patched;
+            }
+          }
+          setDraft(loadedDraft);
+          if (loadedDraft.event_match_id) {
             setEventConfirmed(true);
-            const matchRes = await fetch(`/api/marketplace/event-matches/${existing.event_match_id}`);
+            const matchRes = await fetch(`/api/marketplace/event-matches/${loadedDraft.event_match_id}`);
             if (matchRes.ok) {
               const { match } = await matchRes.json() as { match: EventMatch };
               setEventMatch(match);
@@ -214,9 +227,7 @@ export default function ListingDraftModal({
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               order_id: order.id,
-              marketplace_account_id: (acctRes.ok
-                ? ((await (await fetch("/api/marketplace/accounts")).json()) as { accounts: MarketplaceAccount[] }).accounts.find((a) => a.marketplace === "viagogo")?.id
-                : null),
+              marketplace_account_id: vg?.id ?? null,
             }),
           });
           if (createRes.ok) {

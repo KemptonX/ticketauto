@@ -86,15 +86,7 @@ export function validateListingDraft(
   if (!draft.section?.trim()) {
     errors.push({ field: "section", message: "Section is required" });
   }
-  if (!draft.row?.trim()) {
-    errors.push({ field: "row", message: "Row is required" });
-  }
-  if (!draft.seatFrom?.trim()) {
-    errors.push({ field: "seatFrom", message: "First seat is required" });
-  }
-  if (!draft.seatTo?.trim()) {
-    errors.push({ field: "seatTo", message: "Last seat is required" });
-  }
+  // Row and seat are optional — standing/GA tickets do not have assigned seats
 
   // ── Price ──────────────────────────────────────────────────────────────────
   if (!draft.pricePerTicket || draft.pricePerTicket <= 0) {
