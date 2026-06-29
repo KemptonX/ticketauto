@@ -179,10 +179,11 @@ export default function ListingDraftModal({
   useEffect(() => {
     void (async () => {
       // Load Viagogo account
+      let vg: MarketplaceAccount | null = null;
       const acctRes = await fetch("/api/marketplace/accounts");
       if (acctRes.ok) {
         const { accounts } = await acctRes.json() as { accounts: MarketplaceAccount[] };
-        const vg = accounts.find((a) => a.marketplace === "viagogo") ?? null;
+        vg = accounts.find((a) => a.marketplace === "viagogo") ?? null;
         setAccount(vg);
         if (!vg) {
           setAccountError("No Viagogo account connected. Go to Settings > Accounts to add one.");
