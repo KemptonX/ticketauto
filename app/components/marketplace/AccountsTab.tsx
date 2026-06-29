@@ -175,6 +175,22 @@ function ViagogoAccountDetails({
   onReconnect: () => void;
 }) {
   const color = statusColor(account.status);
+  const [otp, setOtp] = useState("");
+  const [otpSaving, setOtpSaving] = useState(false);
+  const [otpSent, setOtpSent] = useState(false);
+
+  async function submitOtp() {
+    if (!otp.trim()) return;
+    setOtpSaving(true);
+    await fetch(`/api/marketplace/accounts/${account.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "submit_otp", otp: otp.trim() }),
+    });
+    setOtpSaving(false);
+    setOtpSent(true);
+    setOtp("");
+  }
 
   return (
     <div style={{ padding: "1.25rem 1.5rem", display: "flex", flexDirection: "column", gap: "1rem" }}>
@@ -231,9 +247,38 @@ function ViagogoAccountDetails({
           fontSize: "0.8125rem",
           color: "#f59e0b",
           lineHeight: 1.6,
+          display: "flex",
+          flexDirection: "column",
+          gap: "0.75rem",
         }}>
-          <strong>Viagogo requires email/SMS verification.</strong> Check your inbox for a code from Viagogo,
-          then reconnect with the same email and password.
+          <div>
+            <strong>Viagogo requires email/SMS verification.</strong> Check your inbox for a code from Viagogo and enter it below.
+            The worker will pick it up automatically.
+          </div>
+          {otpSent ? (
+            <div style={{ color: "#22c55e", fontWeight: 600 }}>Code submitted — the worker will use it now.</div>
+          ) : (
+            <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+              <input
+                className="field"
+                type="text"
+                inputMode="numeric"
+                placeholder="123456"
+                maxLength={8}
+                value={otp}
+                onChange={(e) => setOtp(e.target.value)}
+                style={{ width: 120, letterSpacing: "0.15em", fontWeight: 600 }}
+              />
+              <button
+                type="button"
+                className="primary-button"
+                onClick={() => void submitOtp()}
+                disabled={otpSaving || !otp.trim()}
+              >
+                {otpSaving ? "Sending…" : "Submit code"}
+              </button>
+            </div>
+          )}
         </div>
       )}
 

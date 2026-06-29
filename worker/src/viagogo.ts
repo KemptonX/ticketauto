@@ -4,6 +4,26 @@ import { encrypt } from "./crypto.js";
 import * as fs from "fs";
 import * as path from "path";
 
+const API_URL = (process.env.TIXTRACKER_API_URL ?? "").trim().replace(/\/$/, "");
+const SECRET = process.env.LISTING_WORKER_SECRET ?? "";
+
+async function pollForOtp(accountId: string, timeoutMs = 300_000): Promise<string | null> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      const res = await fetch(`${API_URL}/api/worker/otp?accountId=${accountId}`, {
+        headers: { Authorization: `Bearer ${SECRET}` },
+      });
+      if (res.ok) {
+        const data = await res.json() as { otp: string | null };
+        if (data.otp) return data.otp;
+      }
+    } catch { /* ignore network errors, keep polling */ }
+    await new Promise((r) => setTimeout(r, 5_000));
+  }
+  return null;
+}
+
 const VIAGOGO_ORIGIN = "https://www.viagogo.co.uk";
 const LOGIN_URL = `${VIAGOGO_ORIGIN}/login`;
 const MY_ACCOUNT_URL = `${VIAGOGO_ORIGIN}/myaccount`;
@@ -60,14 +80,10 @@ export async function runViagogoListing(browser: Browser, job: Job, report: Repo
         // Check if 2FA is required
         const body = await page.textContent("body").catch(() => "");
         if (/verification|2fa|one.?time|otp|code sent/i.test(body ?? "")) {
-          const cookies = await context.cookies();
-          await report("verification_required", {
-            pendingVerification: true,
-            encryptedSession: encrypt(JSON.stringify({ cookies })),
-          });
-          return;
+          await handleTwoFactor(page, context, job.account.id, report);
+        } else {
+          throw new Error("Login failed — still on login page after submission");
         }
-        throw new Error("Login failed — still on login page after submission");
       }
 
       // Second 2FA check (redirect to verification page)
@@ -77,12 +93,7 @@ export async function runViagogoListing(browser: Browser, job: Job, report: Repo
         page.url().includes("/otp") ||
         page.url().includes("/confirm")
       ) {
-        const cookies = await context.cookies();
-        await report("verification_required", {
-          pendingVerification: true,
-          encryptedSession: encrypt(JSON.stringify({ cookies })),
-        });
-        return;
+        await handleTwoFactor(page, context, job.account.id, report);
       }
 
       if (page.url().includes("/login")) {
@@ -443,6 +454,24 @@ async function clickButton(page: Page, selectors: string[]): Promise<boolean> {
     }
   }
   return false;
+}
+
+async function handleTwoFactor(page: Page, context: BrowserContext, accountId: string, report: ReportFn): Promise<void> {
+  const cookies = await context.cookies();
+  await report("verification_required", {
+    pendingVerification: true,
+    encryptedSession: encrypt(JSON.stringify({ cookies })),
+  });
+  console.log(`[viagogo] 2FA required — waiting up to 5 min for OTP from user`);
+  const otp = await pollForOtp(accountId);
+  if (!otp) throw new Error("Timed out waiting for 2FA code — enter it in TixTracker and retry");
+  console.log(`[viagogo] OTP received, entering code`);
+  const otpInput = page.locator(
+    'input[type="text"], input[type="number"], input[autocomplete*="one-time"], input[name*="code" i], input[id*="code" i], input[placeholder*="code" i]'
+  ).first();
+  await otpInput.fill(otp);
+  await page.click('button[type="submit"], button:has-text("Verify"), button:has-text("Confirm"), button:has-text("Submit")');
+  await page.waitForLoadState("networkidle", { timeout: 15_000 });
 }
 
 async function dismissCookieBanner(page: Page): Promise<void> {

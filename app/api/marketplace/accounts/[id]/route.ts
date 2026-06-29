@@ -50,9 +50,10 @@ export async function PATCH(request: NextRequest, { params }: Params) {
     if (!existing) return NextResponse.json({ error: "Account not found" }, { status: 404 });
 
     const body = await request.json() as {
-      action?: "disconnect" | "reconnect";
+      action?: "disconnect" | "reconnect" | "submit_otp";
       email?: string;
       password?: string;
+      otp?: string;
     };
 
     if (body.action === "disconnect") {
@@ -111,6 +112,18 @@ export async function PATCH(request: NextRequest, { params }: Params) {
       });
 
       return NextResponse.json({ ok: true, status: "needs_reconnect" });
+    }
+
+    if (body.action === "submit_otp") {
+      const otp = body.otp?.trim();
+      if (!otp) return NextResponse.json({ error: "OTP code is required" }, { status: 400 });
+
+      await supabase.from("marketplace_accounts").update({
+        pending_otp_code: otp,
+        updated_at: new Date().toISOString(),
+      }).eq("id", id).eq("user_id", user.id);
+
+      return NextResponse.json({ ok: true });
     }
 
     return NextResponse.json({ error: "Unknown action" }, { status: 400 });
