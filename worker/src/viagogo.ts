@@ -86,30 +86,45 @@ export async function runViagogoListing(browser: Browser, job: Job, report: Repo
       await page.waitForLoadState("networkidle", { timeout: 10_000 }).catch(() => {});
       console.log(`[viagogo] After sell pipeline nav — URL: ${page.url()}`);
 
-      // Fill login form (may be on /login page or in a modal overlay)
-      await fillLoginForm(page, job.account.credentials.email, job.account.credentials.password);
+      // Step 1: Fill email and click Continue
+      const emailSel = 'input[type="email"], input[name="email"], input[name="Email"], #Email, #email, input[autocomplete="email"], input[autocomplete="username"]';
+      const submitSel = 'button[type="submit"], input[type="submit"], button:has-text("Sign in"), button:has-text("Log in"), button:has-text("Login"), button:has-text("Continue"), button:has-text("Next"), button:has-text("Submit")';
 
-      try {
-        await page.waitForURL((url) => !url.toString().includes("/login"), { timeout: 20_000 });
-      } catch {
-        const body = await page.textContent("body").catch(() => "");
-        if (/verification|2fa|one.?time|otp|code sent/i.test(body ?? "")) {
+      const emailInput = page.locator(emailSel).first();
+      await emailInput.waitFor({ state: "visible", timeout: TIMEOUT });
+      await emailInput.fill(job.account.credentials.email);
+      console.log(`[viagogo] Email filled — clicking Continue`);
+      await page.click(submitSel);
+      await page.waitForLoadState("networkidle", { timeout: 10_000 }).catch(() => {});
+      console.log(`[viagogo] After email submit — URL: ${page.url()}`);
+
+      // Step 2: Check what came next — password field or OTP field
+      const passInput = page.locator('input[type="password"], input[name="password"], input[name="Password"], #Password, #password, input[autocomplete="current-password"]').first();
+      const otpLike = /check your email|enter.*code|verification code|one.?time|otp|resend code/i;
+      const bodyText = await page.textContent("body").catch(() => "");
+
+      if (await passInput.isVisible().catch(() => false)) {
+        // Password step
+        await passInput.fill(job.account.credentials.password);
+        console.log(`[viagogo] Password filled — submitting`);
+        await page.click(submitSel);
+        await page.waitForLoadState("networkidle", { timeout: 10_000 }).catch(() => {});
+      } else if (otpLike.test(bodyText ?? "")) {
+        // Email OTP step — notify user and wait for them to enter code in TixTracker
+        console.log(`[viagogo] OTP required at login stage`);
+        await handleTwoFactor(page, context, job.account.id, report);
+      } else {
+        console.log(`[viagogo] Unknown step after email — body: ${(bodyText ?? "").slice(0, 300)}`);
+        throw new Error("Login failed — unknown state after email step");
+      }
+
+      if (page.url().includes("/login") || page.url().includes("/Authenticate")) {
+        const body2 = await page.textContent("body").catch(() => "");
+        if (otpLike.test(body2 ?? "")) {
           await handleTwoFactor(page, context, job.account.id, report);
         } else {
-          throw new Error("Login failed — still on login page after submission");
+          throw new Error("Login failed — still on auth page after submission");
         }
-      }
-
-      // Handle 2FA redirect
-      if (
-        page.url().includes("/verification") || page.url().includes("/2fa") ||
-        page.url().includes("/otp") || page.url().includes("/confirm")
-      ) {
-        await handleTwoFactor(page, context, job.account.id, report);
-      }
-
-      if (page.url().includes("/login")) {
-        throw new Error("Login failed — credentials may be incorrect");
       }
     }
 
@@ -474,33 +489,6 @@ async function handleTwoFactor(page: Page, context: BrowserContext, accountId: s
   await page.waitForLoadState("networkidle", { timeout: 15_000 });
 }
 
-async function fillLoginForm(page: Page, email: string, password: string): Promise<void> {
-  const emailSel  = 'input[type="email"], input[name="email"], input[name="Email"], #Email, #email, input[autocomplete="email"], input[autocomplete="username"]';
-  const passSel   = 'input[type="password"], input[name="password"], input[name="Password"], #Password, #password, input[autocomplete="current-password"]';
-  const submitSel = 'button[type="submit"], input[type="submit"], button:has-text("Sign in"), button:has-text("Log in"), button:has-text("Login"), button:has-text("Continue"), button:has-text("Next")';
-
-  console.log(`[viagogo] Waiting for login form — URL: ${page.url()}`);
-  const emailInput = page.locator(emailSel).first();
-  await emailInput.waitFor({ state: "visible", timeout: 30_000 });
-  await emailInput.fill(email);
-  console.log(`[viagogo] Email filled`);
-
-  // Check if password is already visible (single-step form) or need to click Continue first
-  const passInput = page.locator(passSel).first();
-  const passVisible = await passInput.isVisible().catch(() => false);
-  if (!passVisible) {
-    console.log(`[viagogo] Password not visible yet — clicking Continue`);
-    await page.click(submitSel);
-    await page.waitForLoadState("networkidle", { timeout: 10_000 }).catch(() => {});
-  }
-
-  await passInput.waitFor({ state: "visible", timeout: 15_000 });
-  await passInput.fill(password);
-  console.log(`[viagogo] Password filled — submitting`);
-
-  await page.click(submitSel);
-  console.log(`[viagogo] Login form submitted`);
-}
 
 async function dismissCookieBanner(page: Page): Promise<void> {
   try {
