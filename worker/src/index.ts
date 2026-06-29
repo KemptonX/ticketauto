@@ -2,7 +2,7 @@ import { chromium } from "playwright";
 import { runViagogoListing } from "./viagogo.js";
 import type { Job, JobUpdatePayload, ReportFn } from "./types.js";
 
-const API_URL = (process.env.TIXTRACKER_API_URL ?? "").replace(/\/$/, "");
+const API_URL = (process.env.TIXTRACKER_API_URL ?? "").trim().replace(/\/$/, "");
 const SECRET = process.env.LISTING_WORKER_SECRET ?? "";
 const WORKER_ID = `railway-${Math.random().toString(36).slice(2, 10)}`;
 const POLL_MS = 12_000;
