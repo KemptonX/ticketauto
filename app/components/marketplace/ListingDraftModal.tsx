@@ -170,10 +170,8 @@ export default function ListingDraftModal({
         setAccount(vg);
         if (!vg) {
           setAccountError("No Viagogo account connected. Go to Settings > Accounts to add one.");
-        } else if (vg.status !== "connected") {
+        } else if (vg.status === "disconnected" || vg.status === "login_failed") {
           setAccountError(`Viagogo account status is '${vg.status}'. Please reconnect in Settings > Accounts before listing.`);
-        } else if (!vg.can_list) {
-          setAccountError("Viagogo account cannot list tickets. Check Settings > Accounts.");
         }
       }
 
