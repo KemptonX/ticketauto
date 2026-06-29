@@ -141,6 +141,7 @@ export default function ListingDraftModal({
   const [eventMatch, setEventMatch] = useState<EventMatch | null>(null);
   const [manualEventId, setManualEventId] = useState("");
   const [manualEventUrl, setManualEventUrl] = useState("");
+  const [manualEventDate, setManualEventDate] = useState("");
   const [matchLoading, setMatchLoading] = useState(false);
   const [matchError, setMatchError] = useState("");
   const [eventConfirmed, setEventConfirmed] = useState(false);
@@ -247,10 +248,13 @@ export default function ListingDraftModal({
     setMatchLoading(true);
     setMatchError("");
 
-    // Parse event ID from URL if needed
+    // Parse event ID and URL from input
     let eventId = manualEventId.trim();
+    let eventUrl = "";
     if (eventId.includes("viagogo.co.uk") || eventId.includes("viagogo.com")) {
-      const urlMatch = eventId.match(/\/(\d+)\//);
+      eventUrl = eventId.split("?")[0]; // strip query params from URL
+      // Extract numeric ID from patterns like /E-160409382 or /E160409382
+      const urlMatch = eventId.match(/\/E-?(\d+)/i) ?? eventId.match(/\/(\d+)(?:[?#/]|$)/);
       if (urlMatch) eventId = urlMatch[1];
     }
 
@@ -262,7 +266,8 @@ export default function ListingDraftModal({
         order_id: order.id,
         draft_id: draft.id,
         viagogo_event_id: eventId,
-        viagogo_event_url: manualEventUrl.trim() || null,
+        viagogo_event_url: eventUrl || null,
+        viagogo_event_date: manualEventDate.trim() || null,
         tixtracker_event_name: order.event_name,
         tixtracker_event_date: order.event_date,
         tixtracker_venue: order.venue,
@@ -273,6 +278,7 @@ export default function ListingDraftModal({
     if (res.ok) {
       const { match } = await res.json() as { match: EventMatch };
       setEventMatch(match);
+      setEventConfirmed(true);
       setMatchLoading(false);
     } else {
       const { error } = await res.json() as { error: string };
@@ -435,8 +441,8 @@ export default function ListingDraftModal({
                     <label className="filter-field">
                       <span className="filter-label">Viagogo event date (as shown on Viagogo)</span>
                       <input className="field" type="date"
-                        value={manualEventUrl}
-                        onChange={(e) => setManualEventUrl(e.target.value)}
+                        value={manualEventDate}
+                        onChange={(e) => setManualEventDate(e.target.value)}
                         placeholder="YYYY-MM-DD" />
                     </label>
                   </div>
