@@ -475,18 +475,28 @@ async function handleTwoFactor(page: Page, context: BrowserContext, accountId: s
 }
 
 async function fillLoginForm(page: Page, email: string, password: string): Promise<void> {
-  const emailSel = 'input[type="email"], input[name="email"], input[name="Email"], #Email, #email, input[autocomplete="email"], input[autocomplete="username"]';
-  const passSel  = 'input[type="password"], input[name="password"], input[name="Password"], #Password, #password, input[autocomplete="current-password"]';
-  const submitSel = 'button[type="submit"], input[type="submit"], button:has-text("Sign in"), button:has-text("Log in"), button:has-text("Login")';
+  const emailSel  = 'input[type="email"], input[name="email"], input[name="Email"], #Email, #email, input[autocomplete="email"], input[autocomplete="username"]';
+  const passSel   = 'input[type="password"], input[name="password"], input[name="Password"], #Password, #password, input[autocomplete="current-password"]';
+  const submitSel = 'button[type="submit"], input[type="submit"], button:has-text("Sign in"), button:has-text("Log in"), button:has-text("Login"), button:has-text("Continue"), button:has-text("Next")';
 
   console.log(`[viagogo] Waiting for login form — URL: ${page.url()}`);
   const emailInput = page.locator(emailSel).first();
   await emailInput.waitFor({ state: "visible", timeout: 30_000 });
   await emailInput.fill(email);
+  console.log(`[viagogo] Email filled`);
 
+  // Check if password is already visible (single-step form) or need to click Continue first
   const passInput = page.locator(passSel).first();
-  await passInput.waitFor({ state: "visible", timeout: 10_000 });
+  const passVisible = await passInput.isVisible().catch(() => false);
+  if (!passVisible) {
+    console.log(`[viagogo] Password not visible yet — clicking Continue`);
+    await page.click(submitSel);
+    await page.waitForLoadState("networkidle", { timeout: 10_000 }).catch(() => {});
+  }
+
+  await passInput.waitFor({ state: "visible", timeout: 15_000 });
   await passInput.fill(password);
+  console.log(`[viagogo] Password filled — submitting`);
 
   await page.click(submitSel);
   console.log(`[viagogo] Login form submitted`);
