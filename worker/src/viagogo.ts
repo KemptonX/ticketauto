@@ -69,20 +69,25 @@ export async function runViagogoListing(browser: Browser, job: Job, report: Repo
       await report("logging_in");
       console.log(`[viagogo] Session expired — logging in as ${job.account.displayEmail}`);
 
-      await page.goto(LOGIN_URL, { waitUntil: "domcontentloaded", timeout: TIMEOUT });
-
-      // Dismiss any cookie banner first
+      // Navigate to the event URL so Viagogo redirects us to login in context.
+      // Going to /login directly causes the SPA to not render the form in headless.
+      const sellEntryUrl = job.eventMatch.viagogoEventUrl || LOGIN_URL;
+      console.log(`[viagogo] Navigating to event page to trigger auth redirect: ${sellEntryUrl}`);
+      await page.goto(sellEntryUrl, { waitUntil: "domcontentloaded", timeout: TIMEOUT });
       await dismissCookieBanner(page);
-
-      // Wait for page to settle after cookie banner dismissal
       await page.waitForLoadState("networkidle", { timeout: 10_000 }).catch(() => {});
 
-      console.log(`[viagogo] Login page: ${page.url()} — "${await page.title()}"`);
+      // If not redirected to login, go there explicitly
+      if (!page.url().includes("/login") && !page.url().includes("/signin")) {
+        console.log(`[viagogo] Not on login page yet (${page.url()}), navigating to login`);
+        await page.goto(LOGIN_URL, { waitUntil: "domcontentloaded", timeout: TIMEOUT });
+        await dismissCookieBanner(page);
+        await page.waitForLoadState("networkidle", { timeout: 10_000 }).catch(() => {});
+      }
 
-      // Log page HTML snippet to diagnose bot detection
-      const pageHtml = await page.content();
-      console.log(`[viagogo] Page HTML snippet: ${pageHtml.slice(0, 1500)}`);
+      console.log(`[viagogo] On login page: ${page.url()}`);
 
+      // Wait for the React app to render the email field
       const emailInput = page.locator(
         'input[type="email"], input[name="email"], input[name="Email"], #Email, #email, input[autocomplete="email"], input[autocomplete="username"]'
       ).first();
