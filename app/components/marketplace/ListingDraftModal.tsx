@@ -198,7 +198,15 @@ export default function ListingDraftModal({
         const existing = drafts.find((d) => d.status !== "submitted" && d.status !== "cancelled") ?? null;
         if (existing) {
           setDraft(existing);
-          if (existing.event_match_id) setEventConfirmed(true);
+          if (existing.event_match_id) {
+            setEventConfirmed(true);
+            const matchRes = await fetch(`/api/marketplace/event-matches/${existing.event_match_id}`);
+            if (matchRes.ok) {
+              const { match } = await matchRes.json() as { match: EventMatch };
+              setEventMatch(match);
+              if (match.confirmed_by_user) setStep("details");
+            }
+          }
         } else {
           // Create a fresh draft
           const createRes = await fetch("/api/marketplace/drafts", {
