@@ -58,7 +58,14 @@ async function main(): Promise<void> {
 
   console.log(`[worker] Connecting to ${API_URL}`);
   console.log(`[worker] Launching Chromium...`);
-  const browser = await chromium.launch({ headless: true, args: ["--no-sandbox", "--disable-dev-shm-usage"] });
+  const browser = await chromium.launch({
+    headless: true,
+    args: [
+      "--no-sandbox",
+      "--disable-dev-shm-usage",
+      "--disable-blink-features=AutomationControlled",
+    ],
+  });
   console.log(`[worker] Browser ready. Polling every ${POLL_MS / 1000}s`);
 
   const loop = async (): Promise<void> => {
