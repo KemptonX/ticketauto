@@ -69,43 +69,32 @@ export async function runViagogoListing(browser: Browser, job: Job, report: Repo
       await report("logging_in");
       console.log(`[viagogo] Session expired — logging in as ${job.account.displayEmail}`);
 
-      // Navigate to the event URL so Viagogo redirects us to login in context.
-      // Going to /login directly causes the SPA to not render the form in headless.
-      const sellEntryUrl = job.eventMatch.viagogoEventUrl || LOGIN_URL;
-      console.log(`[viagogo] Navigating to event page to trigger auth redirect: ${sellEntryUrl}`);
-      await page.goto(sellEntryUrl, { waitUntil: "domcontentloaded", timeout: TIMEOUT });
+      // Go to the event page and click Sell Tickets to trigger the auth flow naturally.
+      // Navigating to /login directly leaves the SPA form unrendered in headless Chrome.
+      const eventUrl = job.eventMatch.viagogoEventUrl;
+      console.log(`[viagogo] Loading event page to trigger sell-based auth: ${eventUrl}`);
+      await page.goto(eventUrl, { waitUntil: "domcontentloaded", timeout: TIMEOUT });
       await dismissCookieBanner(page);
       await page.waitForLoadState("networkidle", { timeout: 10_000 }).catch(() => {});
 
-      // If not redirected to login, go there explicitly
-      if (!page.url().includes("/login") && !page.url().includes("/signin")) {
-        console.log(`[viagogo] Not on login page yet (${page.url()}), navigating to login`);
-        await page.goto(LOGIN_URL, { waitUntil: "domcontentloaded", timeout: TIMEOUT });
-        await dismissCookieBanner(page);
-        await page.waitForLoadState("networkidle", { timeout: 10_000 }).catch(() => {});
-      }
+      // Click Sell Tickets — Viagogo will show a login form (modal or redirect)
+      const sellBtn = page.locator([
+        'a:has-text("Sell Tickets")', 'button:has-text("Sell Tickets")',
+        'a:has-text("Sell tickets")', 'a:has-text("List tickets")',
+      ].join(", ")).first();
+      await sellBtn.waitFor({ state: "visible", timeout: 15_000 });
+      console.log(`[viagogo] Clicking Sell Tickets to trigger login`);
+      await sellBtn.click();
+      await page.waitForLoadState("domcontentloaded", { timeout: TIMEOUT });
+      await page.waitForLoadState("networkidle", { timeout: 10_000 }).catch(() => {});
+      console.log(`[viagogo] After sell click — URL: ${page.url()}`);
 
-      console.log(`[viagogo] On login page: ${page.url()}`);
-
-      // Wait for the React app to render the email field
-      const emailInput = page.locator(
-        'input[type="email"], input[name="email"], input[name="Email"], #Email, #email, input[autocomplete="email"], input[autocomplete="username"]'
-      ).first();
-      await emailInput.waitFor({ state: "visible", timeout: TIMEOUT });
-      await emailInput.fill(job.account.credentials.email);
-
-      const passwordInput = page.locator(
-        'input[type="password"], input[name="password"], input[name="Password"], #Password, #password, input[autocomplete="current-password"]'
-      ).first();
-      await passwordInput.waitFor({ state: "visible", timeout: TIMEOUT });
-      await passwordInput.fill(job.account.credentials.password);
-
-      await page.click('button[type="submit"], input[type="submit"], button:has-text("Sign in"), button:has-text("Log in"), button:has-text("Login")');
+      // Fill login form (may be on /login page or in a modal overlay)
+      await fillLoginForm(page, job.account.credentials.email, job.account.credentials.password);
 
       try {
         await page.waitForURL((url) => !url.toString().includes("/login"), { timeout: 20_000 });
       } catch {
-        // Check if 2FA is required
         const body = await page.textContent("body").catch(() => "");
         if (/verification|2fa|one.?time|otp|code sent/i.test(body ?? "")) {
           await handleTwoFactor(page, context, job.account.id, report);
@@ -114,12 +103,10 @@ export async function runViagogoListing(browser: Browser, job: Job, report: Repo
         }
       }
 
-      // Second 2FA check (redirect to verification page)
+      // Handle 2FA redirect
       if (
-        page.url().includes("/verification") ||
-        page.url().includes("/2fa") ||
-        page.url().includes("/otp") ||
-        page.url().includes("/confirm")
+        page.url().includes("/verification") || page.url().includes("/2fa") ||
+        page.url().includes("/otp") || page.url().includes("/confirm")
       ) {
         await handleTwoFactor(page, context, job.account.id, report);
       }
@@ -500,6 +487,24 @@ async function handleTwoFactor(page: Page, context: BrowserContext, accountId: s
   await otpInput.fill(otp);
   await page.click('button[type="submit"], button:has-text("Verify"), button:has-text("Confirm"), button:has-text("Submit")');
   await page.waitForLoadState("networkidle", { timeout: 15_000 });
+}
+
+async function fillLoginForm(page: Page, email: string, password: string): Promise<void> {
+  const emailSel = 'input[type="email"], input[name="email"], input[name="Email"], #Email, #email, input[autocomplete="email"], input[autocomplete="username"]';
+  const passSel  = 'input[type="password"], input[name="password"], input[name="Password"], #Password, #password, input[autocomplete="current-password"]';
+  const submitSel = 'button[type="submit"], input[type="submit"], button:has-text("Sign in"), button:has-text("Log in"), button:has-text("Login")';
+
+  console.log(`[viagogo] Waiting for login form — URL: ${page.url()}`);
+  const emailInput = page.locator(emailSel).first();
+  await emailInput.waitFor({ state: "visible", timeout: 30_000 });
+  await emailInput.fill(email);
+
+  const passInput = page.locator(passSel).first();
+  await passInput.waitFor({ state: "visible", timeout: 10_000 });
+  await passInput.fill(password);
+
+  await page.click(submitSel);
+  console.log(`[viagogo] Login form submitted`);
 }
 
 async function dismissCookieBanner(page: Page): Promise<void> {
