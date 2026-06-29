@@ -69,6 +69,17 @@ export async function runViagogoListing(browser: Browser, job: Job, report: Repo
 
       console.log(`[viagogo] Login page: ${page.url()} — "${await page.title()}"`);
 
+      // Debug: log all input elements so we can identify the right selector
+      const inputDebug = await page.evaluate(() => {
+        return Array.from(document.querySelectorAll("input")).map(el => ({
+          type: el.type, name: el.name, id: el.id,
+          placeholder: el.placeholder, autocomplete: el.autocomplete,
+          visible: el.offsetParent !== null,
+          class: el.className.slice(0, 80),
+        }));
+      });
+      console.log(`[viagogo] Inputs on page: ${JSON.stringify(inputDebug)}`);
+
       const emailInput = page.locator(
         'input[type="email"], input[name="email"], input[name="Email"], #Email, #email, input[autocomplete="email"], input[autocomplete="username"]'
       ).first();
