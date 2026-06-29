@@ -25,11 +25,19 @@ export async function POST(_req: NextRequest, { params }: Params) {
 
     if (!match) return NextResponse.json({ error: "Event match not found" }, { status: 404 });
 
+    const toIso = (d: string) => {
+      if (/^\d{4}-\d{2}-\d{2}/.test(d)) return d.slice(0, 10);
+      const months: Record<string,string> = { january:"01",february:"02",march:"03",april:"04",may:"05",june:"06",july:"07",august:"08",september:"09",october:"10",november:"11",december:"12" };
+      const m = d.match(/(\d{1,2})\s+(\w+)\s+(\d{4})/);
+      if (m) { const mo = months[m[2].toLowerCase()]; if (mo) return `${m[3]}-${mo}-${m[1].padStart(2,"0")}`; }
+      const p = new Date(d); return isNaN(p.getTime()) ? d : p.toISOString().slice(0,10);
+    };
+
     // Mandatory: exact date match before confirmation is allowed
     if (
       match.tixtracker_event_date &&
       match.viagogo_event_date &&
-      match.tixtracker_event_date !== match.viagogo_event_date
+      toIso(match.tixtracker_event_date) !== toIso(match.viagogo_event_date)
     ) {
       return NextResponse.json(
         {
