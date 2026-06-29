@@ -1068,7 +1068,10 @@ function parseSale({
     venue: extractField(text, "Venue", ["Date", "Must Ship by Date", "Ticket Holder Details"]) || "",
     eventDate:
       // Look for "Date: Sunday, April 26..." — full day name only, skips email header dates like "Date: Tue, 7 Apr..."
-      text.match(/\bDate:\s*((?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)[^\n]+)/i)?.[1]?.trim() || "",
+      text.match(/\bDate:\s*((?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)[^\n]+)/i)?.[1]?.trim() ||
+      // Fallback for "upload e-tickets" format where date is standalone: "Thursday, July 17, 2026 | 19:30"
+      parseViagogoSaleDate(text) ||
+      "",
     soldAt: normalizeTimestamp(getHeader(headers, "Date")) || new Date().toISOString(),
     buyerEmail: text.match(/Email Address:\s*([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})/i)?.[1]?.toLowerCase() || "",
     qtySold,
@@ -1100,7 +1103,7 @@ function extractField(text: string, label: string, stopLabels: string[]) {
   const stopPattern = stopLabels.length ? `(?=\\s*(?:${stopLabels.join("|")})\\s*:)` : "$";
   const regex = new RegExp(`${label}\\s*:\\s*([\\s\\S]*?)${stopPattern}`, "i");
   const value = regex.exec(text)?.[1]?.trim() || "";
-  const cleaned = value.replace(/\s+/g, " ").replace(/:$/, "").trim();
+  const cleaned = value.replace(/\s+/g, " ").replace(/:$/, "").replace(/^:\s*/, "").trim();
   // Guard: if the extracted value is suspiciously long it captured too much — discard it
   return cleaned.length > 120 ? "" : cleaned;
 }

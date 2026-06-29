@@ -37,12 +37,16 @@ const SUBJECT_KEYWORDS = [
   "order confirm",
   "confirmacion de compra",
   "confirmación de compra",
+  "confirmation de votre commande",
   "axs mobile id",
   "thank you for purchasing tickets",
+  "ticket order confirmation",
+  "eventim-bestellung",
+  "eventim order",
 ];
 
 // From-domain keywords — always download these regardless of subject
-const FROM_KEYWORDS = ["ticketmaster", "axs.com", "axs.co.uk"];
+const FROM_KEYWORDS = ["ticketmaster", "axs.com", "axs.co.uk", "seetickets.com", "gigsandtours.com", "eventim.de", "eventim.co.uk", "royalalberthall.com"];
 
 const BATCH_SIZE = 10;
 
