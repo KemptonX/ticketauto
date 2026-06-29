@@ -88,8 +88,20 @@ export async function runViagogoListing(browser: Browser, job: Job, report: Repo
 
       const otpLike = /check your email|enter.*code|verification code|one.?time|otp|resend code/i;
 
+      // Debug: log all interactive elements on the login page
+      const pageElements = await page.evaluate(() =>
+        Array.from(document.querySelectorAll("input, button, a, [role='button']")).map(el => ({
+          tag: el.tagName, type: (el as HTMLInputElement).type ?? "",
+          id: el.id, name: (el as HTMLInputElement).name ?? "",
+          text: (el as HTMLElement).innerText?.slice(0, 60) ?? "",
+          visible: (el as HTMLElement).offsetParent !== null,
+          disabled: (el as HTMLButtonElement).disabled ?? false,
+        }))
+      );
+      console.log(`[viagogo] Page elements: ${JSON.stringify(pageElements)}`);
+
       // Step 1: If "Select Login Method" page — click the Email option first
-      const emailMethodBtn = page.locator('a:has-text("Email"), button:has-text("Email"), li:has-text("Email")').first();
+      const emailMethodBtn = page.locator('a:has-text("Email"), button:has-text("Email"), li:has-text("Email"), [role="button"]:has-text("Email")').first();
       if (await emailMethodBtn.isVisible({ timeout: 3_000 }).catch(() => false)) {
         console.log(`[viagogo] Clicking Email login method`);
         await emailMethodBtn.click();
@@ -103,13 +115,23 @@ export async function runViagogoListing(browser: Browser, job: Job, report: Repo
         console.log(`[viagogo] OTP page shown immediately after method select`);
         await handleTwoFactor(page, context, job.account.id, report);
       } else {
-        // Step 3: Fill email input using pressSequentially (React state-friendly)
+        // Step 3: Fill email using React-native value setter to properly trigger React state
         const emailSel = 'input[type="email"], input[name="email"], input[name="Email"], #Email, #email, input[autocomplete="email"], input[autocomplete="username"]';
         const emailInput = page.locator(emailSel).first();
         await emailInput.waitFor({ state: "visible", timeout: TIMEOUT });
-        await emailInput.click();
-        await emailInput.pressSequentially(job.account.credentials.email, { delay: 40 });
-        console.log(`[viagogo] Email typed — clicking Sign In`);
+
+        // Use native React setter so controlled input registers the change
+        await page.evaluate((emailVal) => {
+          const el = document.querySelector('input[type="email"], input[name="email"], input[name="Email"], #Email, #email') as HTMLInputElement | null;
+          if (!el) return;
+          const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
+          setter?.call(el, emailVal);
+          el.dispatchEvent(new Event("input", { bubbles: true }));
+          el.dispatchEvent(new Event("change", { bubbles: true }));
+        }, job.account.credentials.email);
+
+        const filledVal = await emailInput.inputValue();
+        console.log(`[viagogo] Email field value after fill: "${filledVal}" — clicking Sign In`);
         await page.locator('button:has-text("Sign In"), button:has-text("Sign in")').first().click();
         await page.waitForLoadState("networkidle", { timeout: 10_000 }).catch(() => {});
         console.log(`[viagogo] After email submit — URL: ${page.url()}`);
