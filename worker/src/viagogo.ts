@@ -88,18 +88,6 @@ export async function runViagogoListing(browser: Browser, job: Job, report: Repo
 
       const otpLike = /check your email|enter.*code|verification code|one.?time|otp|resend code/i;
 
-      // Debug: log all interactive elements on the login page
-      const pageElements = await page.evaluate(() =>
-        Array.from(document.querySelectorAll("input, button, a, [role='button']")).map(el => ({
-          tag: el.tagName, type: (el as HTMLInputElement).type ?? "",
-          id: el.id, name: (el as HTMLInputElement).name ?? "",
-          text: (el as HTMLElement).innerText?.slice(0, 60) ?? "",
-          visible: (el as HTMLElement).offsetParent !== null,
-          disabled: (el as HTMLButtonElement).disabled ?? false,
-        }))
-      );
-      console.log(`[viagogo] Page elements: ${JSON.stringify(pageElements)}`);
-
       // Step 1: If "Select Login Method" page — click the Email option first
       const emailMethodBtn = page.locator('a:has-text("Email"), button:has-text("Email"), li:has-text("Email"), [role="button"]:has-text("Email")').first();
       if (await emailMethodBtn.isVisible({ timeout: 3_000 }).catch(() => false)) {

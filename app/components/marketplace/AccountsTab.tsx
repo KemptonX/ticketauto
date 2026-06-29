@@ -128,6 +128,7 @@ export default function AccountsTab() {
             account={viagogoAccount}
             onDisconnect={() => void disconnect(viagogoAccount.id)}
             onReconnect={() => { setReconnectId(viagogoAccount.id); setShowAddModal(true); }}
+            onSessionImported={() => void load()}
           />
         ) : (
           <div style={{ padding: "1.5rem", display: "flex", flexDirection: "column", gap: "1rem" }}>
@@ -169,15 +170,42 @@ function ViagogoAccountDetails({
   account,
   onDisconnect,
   onReconnect,
+  onSessionImported,
 }: {
   account: MarketplaceAccount;
   onDisconnect: () => void;
   onReconnect: () => void;
+  onSessionImported: () => void;
 }) {
   const color = statusColor(account.status);
   const [otp, setOtp] = useState("");
   const [otpSaving, setOtpSaving] = useState(false);
   const [otpSent, setOtpSent] = useState(false);
+  const [showImport, setShowImport] = useState(false);
+  const [cookieString, setCookieString] = useState("");
+  const [importing, setImporting] = useState(false);
+  const [importError, setImportError] = useState("");
+  const [importDone, setImportDone] = useState(false);
+
+  async function importSession() {
+    if (!cookieString.trim()) return;
+    setImporting(true);
+    setImportError("");
+    const res = await fetch(`/api/marketplace/accounts/${account.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "import_session", cookieString: cookieString.trim() }),
+    });
+    const json = await res.json() as { ok?: boolean; cookieCount?: number; error?: string };
+    setImporting(false);
+    if (!res.ok) {
+      setImportError(json.error ?? "Failed to import session");
+    } else {
+      setImportDone(true);
+      setCookieString("");
+      onSessionImported();
+    }
+  }
 
   async function submitOtp() {
     if (!otp.trim()) return;
@@ -302,7 +330,76 @@ function ViagogoAccountDetails({
         </p>
       )}
 
-      <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", paddingTop: "0.25rem" }}>
+      {/* Import session cookies */}
+      <div style={{ borderTop: "1px solid var(--border)", paddingTop: "1rem" }}>
+        <button
+          type="button"
+          className="secondary-button"
+          style={{ fontSize: "0.8125rem" }}
+          onClick={() => { setShowImport((v) => !v); setImportDone(false); setImportError(""); }}
+        >
+          {showImport ? "Hide" : "Import session cookies"}
+        </button>
+
+        {showImport && (
+          <div style={{ marginTop: "1rem", display: "flex", flexDirection: "column", gap: "0.875rem" }}>
+            <div style={{
+              background: "rgba(255,255,255,0.03)",
+              border: "1px solid var(--border)",
+              borderRadius: 8,
+              padding: "0.875rem 1rem",
+              fontSize: "0.8125rem",
+              color: "var(--muted)",
+              lineHeight: 1.7,
+            }}>
+              <strong style={{ color: "var(--foreground)", display: "block", marginBottom: "0.4rem" }}>
+                How to get your Viagogo session cookies:
+              </strong>
+              <ol style={{ margin: 0, paddingLeft: "1.25rem", display: "flex", flexDirection: "column", gap: "0.25rem" }}>
+                <li>Log in to <strong style={{ color: "var(--foreground)" }}>www.viagogo.co.uk</strong> in your browser</li>
+                <li>Open <strong style={{ color: "var(--foreground)" }}>DevTools</strong> (F12 or right-click → Inspect)</li>
+                <li>Go to the <strong style={{ color: "var(--foreground)" }}>Network</strong> tab</li>
+                <li>Refresh the page — click any request to <code style={{ background: "rgba(255,255,255,0.08)", padding: "0 4px", borderRadius: 3 }}>viagogo.co.uk</code> in the list</li>
+                <li>In the right panel under <strong style={{ color: "var(--foreground)" }}>Request Headers</strong>, find <code style={{ background: "rgba(255,255,255,0.08)", padding: "0 4px", borderRadius: 3 }}>Cookie:</code></li>
+                <li>Copy everything after <strong style={{ color: "var(--foreground)" }}>Cookie:</strong> and paste below</li>
+              </ol>
+            </div>
+
+            <label className="filter-field">
+              <span className="filter-label">Cookie header value</span>
+              <textarea
+                className="field"
+                rows={4}
+                placeholder="__cf_bm=abc123; vgn_auth=xyz; session_id=def456; ..."
+                value={cookieString}
+                onChange={(e) => setCookieString(e.target.value)}
+                style={{ fontFamily: "monospace", fontSize: "0.75rem", resize: "vertical" }}
+              />
+            </label>
+
+            {importError && (
+              <p style={{ margin: 0, fontSize: "0.8125rem", color: "#ef4444" }}>{importError}</p>
+            )}
+            {importDone && (
+              <p style={{ margin: 0, fontSize: "0.8125rem", color: "#22c55e", fontWeight: 600 }}>
+                Session imported — account is now active. Submit a listing job to test it.
+              </p>
+            )}
+
+            <button
+              type="button"
+              className="primary-button"
+              style={{ alignSelf: "flex-start" }}
+              onClick={() => void importSession()}
+              disabled={importing || !cookieString.trim()}
+            >
+              {importing ? "Importing…" : "Save session"}
+            </button>
+          </div>
+        )}
+      </div>
+
+      <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
         <button type="button" className="secondary-button" onClick={onReconnect}>
           {account.status === "connected" ? "Update credentials" : "Reconnect"}
         </button>

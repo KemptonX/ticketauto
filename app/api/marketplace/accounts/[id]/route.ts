@@ -50,10 +50,11 @@ export async function PATCH(request: NextRequest, { params }: Params) {
     if (!existing) return NextResponse.json({ error: "Account not found" }, { status: 404 });
 
     const body = await request.json() as {
-      action?: "disconnect" | "reconnect" | "submit_otp";
+      action?: "disconnect" | "reconnect" | "submit_otp" | "import_session";
       email?: string;
       password?: string;
       otp?: string;
+      cookieString?: string;
     };
 
     if (body.action === "disconnect") {
@@ -112,6 +113,62 @@ export async function PATCH(request: NextRequest, { params }: Params) {
       });
 
       return NextResponse.json({ ok: true, status: "needs_reconnect" });
+    }
+
+    if (body.action === "import_session") {
+      const cookieString = body.cookieString?.trim();
+      if (!cookieString) {
+        return NextResponse.json({ error: "Cookie string is required" }, { status: 400 });
+      }
+
+      // Parse "name=value; name2=value2; ..." into Playwright cookie objects
+      const cookies = cookieString
+        .split(";")
+        .map((c) => c.trim())
+        .filter(Boolean)
+        .map((c) => {
+          const eqIdx = c.indexOf("=");
+          if (eqIdx === -1) return null;
+          return {
+            name: c.slice(0, eqIdx).trim(),
+            value: c.slice(eqIdx + 1).trim(),
+            domain: ".viagogo.co.uk",
+            path: "/",
+            secure: true,
+            httpOnly: false,
+            sameSite: "Lax" as const,
+          };
+        })
+        .filter((c): c is NonNullable<typeof c> => c !== null && c.name.length > 0);
+
+      if (cookies.length === 0) {
+        return NextResponse.json({ error: "No valid cookies found — paste the full Cookie header value" }, { status: 400 });
+      }
+
+      const now = new Date().toISOString();
+      const encrypted = encryptCredential(JSON.stringify({ cookies }));
+
+      await supabase.from("marketplace_accounts").update({
+        encrypted_session_data: encrypted,
+        status: "connected",
+        can_list: true,
+        last_login_at: now,
+        last_checked_at: now,
+        last_error_code: null,
+        last_error_message: null,
+        pending_2fa_since: null,
+        updated_at: now,
+      }).eq("id", id).eq("user_id", user.id);
+
+      await supabase.from("marketplace_account_logs").insert({
+        user_id: user.id,
+        marketplace_account_id: id,
+        action: "import_session",
+        status: "connected",
+        message: `Session imported — ${cookies.length} cookies loaded`,
+      });
+
+      return NextResponse.json({ ok: true, cookieCount: cookies.length });
     }
 
     if (body.action === "submit_otp") {
