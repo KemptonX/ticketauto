@@ -129,17 +129,12 @@ export async function PATCH(request: NextRequest, { params }: Params) {
         .map((c) => {
           const eqIdx = c.indexOf("=");
           if (eqIdx === -1) return null;
-          return {
-            name: c.slice(0, eqIdx).trim(),
-            value: c.slice(eqIdx + 1).trim(),
-            domain: ".viagogo.co.uk",
-            path: "/",
-            secure: true,
-            httpOnly: false,
-            sameSite: "Lax" as const,
-          };
+          const name = c.slice(0, eqIdx).trim();
+          const value = c.slice(eqIdx + 1).trim();
+          if (!name) return null;
+          return { name, value, domain: ".viagogo.co.uk", path: "/" };
         })
-        .filter((c): c is NonNullable<typeof c> => c !== null && c.name.length > 0);
+        .filter((c): c is NonNullable<typeof c> => c !== null);
 
       if (cookies.length === 0) {
         return NextResponse.json({ error: "No valid cookies found — paste the full Cookie header value" }, { status: 400 });
