@@ -1,6 +1,22 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+
+const MONTHS: Record<string, string> = {
+  january:"01",february:"02",march:"03",april:"04",may:"05",june:"06",
+  july:"07",august:"08",september:"09",october:"10",november:"11",december:"12",
+};
+function toIsoDate(d: string | null | undefined): string {
+  if (!d) return "";
+  if (/^\d{4}-\d{2}-\d{2}/.test(d)) return d.slice(0, 10);
+  const m = d.match(/(\d{1,2})\s+(\w+)\s+(\d{4})/);
+  if (m) {
+    const mo = MONTHS[m[2].toLowerCase()];
+    if (mo) return `${m[3]}-${mo}-${m[1].padStart(2, "0")}`;
+  }
+  const p = new Date(d);
+  return isNaN(p.getTime()) ? "" : p.toISOString().slice(0, 10);
+}
 import { SPLIT_RULE_LABELS, splitRulesForQty } from "@/src/lib/marketplace/types";
 import type { SplitRule, TicketStorageProvider, JobStatus, ValidationError } from "@/src/lib/marketplace/types";
 
@@ -289,7 +305,7 @@ export default function ListingDraftModal({
     if (!draft || !eventMatch) return;
     // Check dates match exactly
     if (eventMatch.tixtracker_event_date && eventMatch.viagogo_event_date) {
-      if (eventMatch.tixtracker_event_date !== eventMatch.viagogo_event_date) {
+      if (toIsoDate(eventMatch.tixtracker_event_date) !== toIsoDate(eventMatch.viagogo_event_date)) {
         setMatchError(
           `Date mismatch: TixTracker has ${eventMatch.tixtracker_event_date} but Viagogo event is ${eventMatch.viagogo_event_date}. Cannot list on this event.`
         );
@@ -467,7 +483,7 @@ export default function ListingDraftModal({
                   </MatchCard>
 
                   {/* Date check */}
-                  {eventMatch.tixtracker_event_date !== eventMatch.viagogo_event_date && (
+                  {toIsoDate(eventMatch.tixtracker_event_date) !== toIsoDate(eventMatch.viagogo_event_date) && (
                     <div style={{
                       background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.4)",
                       borderRadius: 8, padding: "0.75rem", fontSize: "0.8125rem", color: "#ef4444",
@@ -477,7 +493,7 @@ export default function ListingDraftModal({
                     </div>
                   )}
 
-                  {eventMatch.tixtracker_event_date === eventMatch.viagogo_event_date && !eventMatch.confirmed_by_user && (
+                  {toIsoDate(eventMatch.tixtracker_event_date) === toIsoDate(eventMatch.viagogo_event_date) && !eventMatch.confirmed_by_user && (
                     <>
                       {matchError && <p style={{ margin: 0, fontSize: "0.8125rem", color: "#ef4444" }}>{matchError}</p>}
                       <label style={{ display: "flex", gap: "0.6rem", alignItems: "flex-start", fontSize: "0.8125rem", cursor: "pointer", lineHeight: 1.5 }}>
