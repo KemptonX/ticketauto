@@ -40,15 +40,9 @@ export async function POST(_req: NextRequest, { params }: Params) {
       .eq("user_id", user.id)
       .single();
     if (!acct) return NextResponse.json({ error: "Viagogo account not found" }, { status: 404 });
-    if (acct.status !== "connected") {
+    if (acct.status === "disconnected" || acct.status === "login_failed") {
       return NextResponse.json(
-        { error: `Viagogo account is not connected (status: ${acct.status})` },
-        { status: 422 }
-      );
-    }
-    if (!acct.can_list) {
-      return NextResponse.json(
-        { error: "Viagogo account cannot list tickets" },
+        { error: `Viagogo account is not connected (status: ${acct.status}). Please reconnect before listing.` },
         { status: 422 }
       );
     }

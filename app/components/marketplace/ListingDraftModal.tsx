@@ -751,7 +751,7 @@ export default function ListingDraftModal({
                   <SummaryRow label="Split rule" value={draft.split_rule ? SPLIT_RULE_LABELS[draft.split_rule as SplitRule] : "—"} />
                   <SummaryRow label="Section" value={draft.section} />
                   <SummaryRow label="Row" value={draft.row} />
-                  <SummaryRow label="Seats" value={`${draft.seat_from} – ${draft.seat_to}`} />
+                  <SummaryRow label="Seats" value={draft.seat_from || draft.seat_to ? `${draft.seat_from ?? "—"} – ${draft.seat_to ?? "—"}` : null} />
                   <SummaryRow label="Price" value={`£${draft.price_per_ticket}`} />
                   <SummaryRow label="Face value" value={`£${draft.face_value_per_ticket}`} />
                   <SummaryRow label="Provider" value={draft.ticket_storage_provider} />
