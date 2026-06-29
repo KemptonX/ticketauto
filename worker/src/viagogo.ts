@@ -77,17 +77,14 @@ export async function runViagogoListing(browser: Browser, job: Job, report: Repo
       await dismissCookieBanner(page);
       await page.waitForLoadState("networkidle", { timeout: 10_000 }).catch(() => {});
 
-      // Click Sell Tickets — Viagogo will show a login form (modal or redirect)
-      const sellBtn = page.locator([
-        'a:has-text("Sell Tickets")', 'button:has-text("Sell Tickets")',
-        'a:has-text("Sell tickets")', 'a:has-text("List tickets")',
-      ].join(", ")).first();
-      await sellBtn.waitFor({ state: "visible", timeout: 15_000 });
-      console.log(`[viagogo] Clicking Sell Tickets to trigger login`);
-      await sellBtn.click();
-      await page.waitForLoadState("domcontentloaded", { timeout: TIMEOUT });
+      // Navigate directly to the sell pipeline URL — this triggers an auth redirect
+      // with the correct return URL context, causing the login form to render properly.
+      const sellPipelineUrl = `${VIAGOGO_ORIGIN}/Secure/Pipeline/Sell/Initialise?EventID=${job.eventMatch.viagogoEventId}`;
+      console.log(`[viagogo] Navigating to sell pipeline to trigger auth: ${sellPipelineUrl}`);
+      await page.goto(sellPipelineUrl, { waitUntil: "domcontentloaded", timeout: TIMEOUT });
+      await dismissCookieBanner(page);
       await page.waitForLoadState("networkidle", { timeout: 10_000 }).catch(() => {});
-      console.log(`[viagogo] After sell click — URL: ${page.url()}`);
+      console.log(`[viagogo] After sell pipeline nav — URL: ${page.url()}`);
 
       // Fill login form (may be on /login page or in a modal overlay)
       await fillLoginForm(page, job.account.credentials.email, job.account.credentials.password);
@@ -126,24 +123,12 @@ export async function runViagogoListing(browser: Browser, job: Job, report: Repo
     await page.goto(eventUrl, { waitUntil: "networkidle", timeout: TIMEOUT });
     await dismissCookieBanner(page);
 
-    // ── 3. Click "Sell Tickets" ───────────────────────────────────────────────
+    // ── 3. Navigate to sell pipeline ─────────────────────────────────────────
     await report("clicking_sell");
-    const sellBtn = page.locator(
-      [
-        'a:has-text("Sell Tickets")',
-        'button:has-text("Sell Tickets")',
-        'a:has-text("Sell tickets")',
-        'a:has-text("List tickets")',
-        '[data-testid="sell-button"]',
-        '[class*="sell-button"]',
-        '[class*="SellButton"]',
-      ].join(", "),
-    );
-
-    await sellBtn.first().waitFor({ timeout: 15_000 });
-    await sellBtn.first().click();
-    await page.waitForLoadState("networkidle", { timeout: TIMEOUT });
-    console.log(`[viagogo] Clicked sell, now at: ${page.url()}`);
+    const sellPipelineUrl = `${VIAGOGO_ORIGIN}/Secure/Pipeline/Sell/Initialise?EventID=${job.eventMatch.viagogoEventId}`;
+    console.log(`[viagogo] Navigating to sell pipeline: ${sellPipelineUrl}`);
+    await page.goto(sellPipelineUrl, { waitUntil: "networkidle", timeout: TIMEOUT });
+    console.log(`[viagogo] Sell pipeline loaded, now at: ${page.url()}`);
 
     // ── 4. Multi-step listing form ────────────────────────────────────────────
     // Viagogo's form varies but follows a consistent pattern of steps with Next buttons.
