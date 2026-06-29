@@ -3,7 +3,7 @@
 // Returns the pending OTP code and clears it atomically.
 
 import { NextRequest, NextResponse } from "next/server";
-import { createSupabaseServerClient } from "@/src/lib/supabase-server";
+import { createSupabaseServiceClient } from "@/src/lib/supabase-service";
 
 export const runtime = "nodejs";
 
@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
   if (!accountId) return NextResponse.json({ otp: null });
 
   try {
-    const supabase = await createSupabaseServerClient();
+    const supabase = createSupabaseServiceClient();
 
     const { data } = await supabase
       .from("marketplace_accounts")

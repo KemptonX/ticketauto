@@ -3,7 +3,7 @@
 // Secured by LISTING_WORKER_SECRET bearer token.
 
 import { NextRequest, NextResponse } from "next/server";
-import { createSupabaseServerClient } from "@/src/lib/supabase-server";
+import { createSupabaseServiceClient } from "@/src/lib/supabase-service";
 import { encryptCredential } from "@/src/lib/marketplace/encryption";
 import type { JobStatus, JobUpdatePayload } from "@/src/lib/marketplace/types";
 
@@ -28,7 +28,7 @@ export async function POST(request: NextRequest, { params }: Params) {
 
   try {
     const { id } = await params;
-    const supabase = await createSupabaseServerClient();
+    const supabase = createSupabaseServiceClient();
     const now = new Date().toISOString();
 
     const { data: job } = await supabase

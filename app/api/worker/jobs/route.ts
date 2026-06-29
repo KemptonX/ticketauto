@@ -4,7 +4,7 @@
 // Returns at most one job at a time (concurrency = 1).
 
 import { NextRequest, NextResponse } from "next/server";
-import { createSupabaseServerClient } from "@/src/lib/supabase-server";
+import { createSupabaseServiceClient } from "@/src/lib/supabase-service";
 import { decryptCredential } from "@/src/lib/marketplace/encryption";
 
 export const runtime = "nodejs";
@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const supabase = await createSupabaseServerClient();
+    const supabase = createSupabaseServiceClient();
     const workerId = request.headers.get("x-worker-id") ?? "worker";
 
     // Claim the oldest queued job atomically using a DB-level update
