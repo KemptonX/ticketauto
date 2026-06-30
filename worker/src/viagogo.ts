@@ -421,13 +421,59 @@ async function handleSeatDetailsStep(
 async function handlePriceStep(page: Page, pricePerTicket: number, faceValuePerTicket: number): Promise<void> {
   console.log(`[viagogo] Price/final step — URL: ${page.url()}`);
 
-  // Both inputs are always in the DOM pre-filled with Viagogo's suggested values.
-  // Target them by name — confirmed from DevTools inspection.
+  // ── 0. Diagnostics: snapshot what's on the page before we touch anything ────
+  await page.screenshot({ path: "/tmp/worker-screenshots/price-step-start.png" }).catch(() => {});
+  {
+    const allInputs = await page.locator("input").all();
+    const summary = await Promise.all(allInputs.map(async (el) => {
+      const name = await el.getAttribute("name").catch(() => "");
+      const type = await el.getAttribute("type").catch(() => "");
+      const value = await el.getAttribute("value").catch(() => "");
+      const visible = await el.isVisible().catch(() => false);
+      return `  name="${name}" type="${type}" value="${value}" visible=${visible}`;
+    }));
+    console.log(`[viagogo] All inputs on page (${allInputs.length}):\n${summary.join("\n")}`);
+  }
+
+  // Both inputs targeted by name (confirmed from DevTools).
   const priceInput = page.locator('input[name="ticketPrice_non_decimal"]');
   const faceInput  = page.locator('input[name="faceValue_non_decimal"]');
 
-  // ── 1. Set listing price ─────────────────────────────────────────────────────
-  await priceInput.waitFor({ state: "visible", timeout: 15_000 });
+  // ── 1. Unlock price input if hidden behind strategy cards ────────────────────
+  // In headless Chromium the page loads with no strategy pre-selected, so the
+  // price input section may be collapsed.  Click any strategy card to reveal it.
+  const priceVisible = await priceInput.isVisible().catch(() => false);
+  if (!priceVisible) {
+    console.log(`[viagogo] Price input not yet visible — clicking strategy card to unlock`);
+    // Try common strategy card text patterns (case-insensitive)
+    const cardSel = page.locator(
+      "button, [role='button'], div[tabindex], li[tabindex], [role='radio'], [role='option'], label"
+    );
+    const cardTexts = [/balanced/i, /quick sell/i, /max earning/i, /set your own/i, /custom/i];
+    let clicked = false;
+    for (const pattern of cardTexts) {
+      const card = cardSel.filter({ hasText: pattern }).first();
+      if (await card.count() > 0) {
+        await forceClick(card);
+        console.log(`[viagogo] Clicked strategy card matching: ${pattern}`);
+        clicked = true;
+        break;
+      }
+    }
+    if (!clicked) {
+      // Last resort: click the first non-hidden, non-checkbox element that looks like a card
+      const anyCard = page.locator("[role='radio'], [role='option']").first();
+      if (await anyCard.count() > 0) {
+        await forceClick(anyCard);
+        console.log(`[viagogo] Clicked first [role=radio/option] card`);
+      }
+    }
+    await priceInput.waitFor({ state: "visible", timeout: 8_000 });
+    console.log(`[viagogo] Price input now visible after strategy card click`);
+  }
+
+  // ── 2. Set listing price ─────────────────────────────────────────────────────
+  await priceInput.waitFor({ state: "visible", timeout: 5_000 });
   await priceInput.fill(String(pricePerTicket));
   await priceInput.press("Tab");
   const acceptedPrice = await priceInput.inputValue().catch(() => "");
