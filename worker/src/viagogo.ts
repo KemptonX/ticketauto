@@ -1,4 +1,4 @@
-import type { Browser, Page, BrowserContext } from "playwright";
+import type { Browser, Page, BrowserContext, Locator } from "playwright";
 import type { Job, ReportFn } from "./types.js";
 import { encrypt } from "./crypto.js";
 import * as fs from "fs";
@@ -253,7 +253,7 @@ async function handleSplitRuleStep(page: Page, splitRule: string): Promise<void>
   const pattern = textMap[splitRule] ?? /sell any/i;
   const el = page.locator("label, button, div[role='radio']").filter({ hasText: pattern });
   if (await el.count() > 0) {
-    await el.first().click();
+    await forceClick(el.first());
     console.log(`[viagogo] Selected split rule: ${splitRule}`);
   } else {
     console.warn(`[viagogo] Could not find split rule option for: ${splitRule}`);
@@ -298,7 +298,7 @@ async function handleTicketTypeStep(page: Page, storageProvider: string): Promis
       const el = page.locator("label, button, li, [role='radio'], [role='button'], div[class]")
         .filter({ hasText: pattern });
       if (await el.count() > 0) {
-        await el.first().click();
+        await forceClick(el.first());
         console.log(`[viagogo] Selected ticket type for ${storageProvider}`);
         clicked = true;
         break;
@@ -337,7 +337,7 @@ async function handleTicketTypeStep(page: Page, storageProvider: string): Promis
 
       for (const el of strategies) {
         if (await el.count() > 0) {
-          await el.first().click();
+          await forceClick(el.first());
           console.log(`[viagogo] Selected storage provider: ${label}`);
           clicked = true;
           break;
@@ -350,7 +350,7 @@ async function handleTicketTypeStep(page: Page, storageProvider: string): Promis
       // Fallback: click "Other" so Continue becomes enabled
       const other = page.locator(`:text-is("Other"), button:has-text("Other"), li:has-text("Other")`).first();
       if (await other.count() > 0) {
-        await other.click();
+        await forceClick(other);
         console.log(`[viagogo] Fell back to "Other" storage provider`);
       } else {
         console.warn(`[viagogo] Could not find any storage provider option`);
@@ -534,6 +534,17 @@ async function handleFeaturesStep(page: Page, _features: string, _restrictions: 
 }
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
+
+// Viagogo renders many controls as styled cards whose pointer events are intercepted
+// by React event capture layers.  Try a normal click first; if it times out (element
+// is visible/stable but something overlaps), fall back to a direct JS .click() call.
+async function forceClick(locator: Locator): Promise<void> {
+  try {
+    await locator.click({ timeout: 5_000, force: true });
+  } catch {
+    await locator.evaluate((el) => (el as HTMLElement).click());
+  }
+}
 
 async function clickNext(page: Page): Promise<void> {
   // Exclude button[type="submit"] — the ListingNotes page has a disabled one that
