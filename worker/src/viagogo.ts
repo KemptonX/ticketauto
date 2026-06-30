@@ -96,17 +96,28 @@ export async function runViagogoListing(browser: Browser, job: Job, report: Repo
     // Viagogo's form varies but follows a consistent pattern of steps with Next buttons.
     // We detect which step we're on by page content and handle each one.
 
+    // Viagogo can jump straight to ListingNotes after any step (e.g. for GA events
+    // with no seat selection).  Check URL before each intermediate step and skip it
+    // if the page has already advanced to the final combined page.
+    const onFinalPage = () => /listingnotes/i.test(page.url());
+
     await report("selecting_quantity");
     await handleQuantityStep(page, job.draft.quantity);
 
-    await report("selecting_split_rule");
-    await handleSplitRuleStep(page, job.draft.splitRule);
+    if (!onFinalPage()) {
+      await report("selecting_split_rule");
+      await handleSplitRuleStep(page, job.draft.splitRule);
+    }
 
-    await report("selecting_ticket_provider");
-    await handleTicketTypeStep(page, job.draft.ticketStorageProvider);
+    if (!onFinalPage()) {
+      await report("selecting_ticket_provider");
+      await handleTicketTypeStep(page, job.draft.ticketStorageProvider);
+    }
 
-    await report("filling_seat_details");
-    await handleSeatDetailsStep(page, job.draft.section, job.draft.row, job.draft.seatFrom, job.draft.seatTo);
+    if (!onFinalPage()) {
+      await report("filling_seat_details");
+      await handleSeatDetailsStep(page, job.draft.section, job.draft.row, job.draft.seatFrom, job.draft.seatTo);
+    }
 
     await report("filling_price");
     await handlePriceStep(page, job.draft.pricePerTicket, job.draft.faceValuePerTicket);
@@ -525,16 +536,17 @@ async function handleFeaturesStep(page: Page, _features: string, _restrictions: 
 // ── Utilities ─────────────────────────────────────────────────────────────────
 
 async function clickNext(page: Page): Promise<void> {
+  // Exclude button[type="submit"] — the ListingNotes page has a disabled one that
+  // would cause a 30s timeout if matched after a same-session page navigation.
   const candidates = [
     'button:has-text("Next")',
     'button:has-text("Continue")',
     'a:has-text("Next")',
-    'button[type="submit"]:not(:has-text("List")):not(:has-text("Submit listing")):not(:has-text("Confirm listing"))',
   ];
 
   const clicked = await clickButton(page, candidates);
   if (clicked) {
-    await page.waitForLoadState("load", { timeout: 20_000 }).catch(() => {});
+    await page.waitForLoadState("load", { timeout: 10_000 }).catch(() => {});
   } else {
     console.warn("[viagogo] Could not find Next/Continue button — page may have advanced automatically");
   }
@@ -548,7 +560,17 @@ async function clickButton(page: Page, selectors: string[]): Promise<boolean> {
       await el.isVisible() &&
       await el.isEnabled()
     ) {
-      await el.click();
+      const urlBefore = page.url();
+      try {
+        // Short timeout: if the page navigates mid-click (element detaches and the
+        // retry lands on a disabled button on the new page) we want to bail quickly.
+        await el.click({ timeout: 8_000 });
+      } catch {
+        // If the URL changed, the click triggered a navigation — treat as success.
+        if (page.url() !== urlBefore) return true;
+        // Otherwise the element genuinely could not be clicked — try next candidate.
+        continue;
+      }
       return true;
     }
   }
