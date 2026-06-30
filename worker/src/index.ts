@@ -89,10 +89,13 @@ async function main(): Promise<void> {
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         console.error(`[worker] Job ${job.id} failed:`, msg);
+        const isSessionExpired = msg.startsWith("SESSION_EXPIRED:");
         await reportProgress(job.id, {
           status: "failed",
-          errorCode: "automation_error",
-          errorMessage: msg.slice(0, 500),
+          errorCode: isSessionExpired ? "session_expired" : "automation_error",
+          errorMessage: isSessionExpired
+            ? "Session expired — re-import cookies in TixTracker → Accounts → Import session cookies"
+            : msg.slice(0, 500),
         });
       }
 

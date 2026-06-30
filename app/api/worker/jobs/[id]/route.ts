@@ -135,12 +135,13 @@ export async function POST(request: NextRequest, { params }: Params) {
     }
 
     // On account-level errors, update account status
-    if (body.status === "needs_reconnect" && job.marketplace_account_id) {
+    const isSessionExpired = body.errorCode === "session_expired";
+    if ((body.status === "needs_reconnect" || (body.status === "failed" && isSessionExpired)) && job.marketplace_account_id) {
       await supabase.from("marketplace_accounts").update({
         status: "needs_reconnect",
         can_list: false,
         last_error_code: body.errorCode ?? "session_expired",
-        last_error_message: body.errorMessage ?? "Session expired during listing",
+        last_error_message: body.errorMessage ?? "Session expired — re-import cookies in TixTracker",
         updated_at: now,
       }).eq("id", job.marketplace_account_id);
     }

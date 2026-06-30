@@ -56,106 +56,25 @@ export async function runViagogoListing(browser: Browser, job: Job, report: Repo
 
     const page = await context.newPage();
 
-    // ── 1. Check / establish login ────────────────────────────────────────────
+    // ── 1. Verify session is still valid ─────────────────────────────────────
+    // Session cookies are imported manually by the user (via the Accounts tab in
+    // TixTracker). Headless login is not attempted here because Viagogo uses invisible
+    // reCAPTCHA which blocks form submission in headless Chrome.
     await report("session_checking");
     await page.goto(MY_ACCOUNT_URL, { waitUntil: "networkidle", timeout: TIMEOUT });
 
     const isLoggedIn =
       !page.url().includes("/login") &&
       !page.url().includes("/signin") &&
-      !page.url().includes("/account/login");
+      !page.url().includes("/account/login") &&
+      !page.url().includes("/Authenticate");
 
     if (!isLoggedIn) {
-      await report("logging_in");
-      console.log(`[viagogo] Session expired — logging in as ${job.account.displayEmail}`);
-
-      // Go to the event page and click Sell Tickets to trigger the auth flow naturally.
-      // Navigating to /login directly leaves the SPA form unrendered in headless Chrome.
-      const eventUrl = job.eventMatch.viagogoEventUrl;
-      console.log(`[viagogo] Loading event page to trigger sell-based auth: ${eventUrl}`);
-      await page.goto(eventUrl, { waitUntil: "domcontentloaded", timeout: TIMEOUT });
-      await dismissCookieBanner(page);
-      await page.waitForLoadState("networkidle", { timeout: 10_000 }).catch(() => {});
-
-      // Navigate directly to the sell pipeline URL — this triggers an auth redirect
-      // with the correct return URL context, causing the login form to render properly.
-      const sellPipelineUrl = `${VIAGOGO_ORIGIN}/Secure/Pipeline/Sell/Initialise?EventID=${job.eventMatch.viagogoEventId}`;
-      console.log(`[viagogo] Navigating to sell pipeline to trigger auth: ${sellPipelineUrl}`);
-      await page.goto(sellPipelineUrl, { waitUntil: "domcontentloaded", timeout: TIMEOUT });
-      await dismissCookieBanner(page);
-      await page.waitForLoadState("networkidle", { timeout: 10_000 }).catch(() => {});
-      console.log(`[viagogo] After sell pipeline nav — URL: ${page.url()}`);
-
-      const otpLike = /check your email|enter.*code|verification code|one.?time|otp|resend code/i;
-
-      // Step 1: If "Select Login Method" page — click the Email option first
-      const emailMethodBtn = page.locator('a:has-text("Email"), button:has-text("Email"), li:has-text("Email"), [role="button"]:has-text("Email")').first();
-      if (await emailMethodBtn.isVisible({ timeout: 3_000 }).catch(() => false)) {
-        console.log(`[viagogo] Clicking Email login method`);
-        await emailMethodBtn.click();
-        await page.waitForLoadState("networkidle", { timeout: 10_000 }).catch(() => {});
-        console.log(`[viagogo] After email method click — URL: ${page.url()}`);
-      }
-
-      // Step 2: Check if we're already on OTP page (account is OTP-only, no email input needed)
-      const bodyAfterMethod = await page.textContent("body").catch(() => "");
-      if (otpLike.test(bodyAfterMethod ?? "")) {
-        console.log(`[viagogo] OTP page shown immediately after method select`);
-        await handleTwoFactor(page, context, job.account.id, report);
-      } else {
-        // Step 3: Fill email using React-native value setter to properly trigger React state
-        const emailSel = 'input[type="email"], input[name="email"], input[name="Email"], #Email, #email, input[autocomplete="email"], input[autocomplete="username"]';
-        const emailInput = page.locator(emailSel).first();
-        await emailInput.waitFor({ state: "visible", timeout: TIMEOUT });
-
-        // Use native React setter so controlled input registers the change
-        await page.evaluate((emailVal) => {
-          const el = document.querySelector('input[type="email"], input[name="email"], input[name="Email"], #Email, #email') as HTMLInputElement | null;
-          if (!el) return;
-          const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
-          setter?.call(el, emailVal);
-          el.dispatchEvent(new Event("input", { bubbles: true }));
-          el.dispatchEvent(new Event("change", { bubbles: true }));
-        }, job.account.credentials.email);
-
-        const filledVal = await emailInput.inputValue();
-        console.log(`[viagogo] Email field value after fill: "${filledVal}" — clicking Sign In`);
-        await page.locator('button:has-text("Sign In"), button:has-text("Sign in")').first().click();
-        await page.waitForLoadState("networkidle", { timeout: 10_000 }).catch(() => {});
-        console.log(`[viagogo] After email submit — URL: ${page.url()}`);
-
-        const bodyAfterEmail = await page.textContent("body").catch(() => "");
-
-        // Check what came next
-        const passInput = page.locator('input[type="password"], input[name="password"], input[name="Password"], #Password, #password, input[autocomplete="current-password"]').first();
-        if (await passInput.isVisible().catch(() => false)) {
-          await passInput.click();
-          await passInput.pressSequentially(job.account.credentials.password, { delay: 40 });
-          console.log(`[viagogo] Password typed — submitting`);
-          await passInput.press("Enter");
-          await page.waitForLoadState("networkidle", { timeout: 10_000 }).catch(() => {});
-        } else if (otpLike.test(bodyAfterEmail ?? "")) {
-          console.log(`[viagogo] OTP required after email step`);
-          await handleTwoFactor(page, context, job.account.id, report);
-        } else {
-          console.log(`[viagogo] Unknown step after email — body: ${(bodyAfterEmail ?? "").slice(0, 400)}`);
-          throw new Error("Login failed — unknown state after email step");
-        }
-      }
-
-      // Final check: still on auth page?
-      if (page.url().includes("/Authenticate") || page.url().includes("/login")) {
-        const bodyFinal = await page.textContent("body").catch(() => "");
-        if (otpLike.test(bodyFinal ?? "")) {
-          await handleTwoFactor(page, context, job.account.id, report);
-        } else {
-          throw new Error("Login failed — still on auth page after submission");
-        }
-      }
+      console.log(`[viagogo] Session expired or missing — URL: ${page.url()}`);
+      throw new Error("SESSION_EXPIRED: Re-import session cookies in TixTracker → Accounts → Import session cookies");
     }
 
-    console.log(`[viagogo] Logged in. Current URL: ${page.url()}`);
-    const postLoginCookies = await context.cookies();
+    console.log(`[viagogo] Session valid. Current URL: ${page.url()}`);
 
     // ── 2. Navigate to event page ─────────────────────────────────────────────
     await report("opening_event_page");
