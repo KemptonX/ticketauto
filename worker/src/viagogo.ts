@@ -109,7 +109,7 @@ export async function runViagogoListing(browser: Browser, job: Job, report: Repo
     await handleSeatDetailsStep(page, job.draft.section, job.draft.row, job.draft.seatFrom, job.draft.seatTo);
 
     await report("filling_price");
-    await handlePriceStep(page, job.draft.pricePerTicket);
+    await handlePriceStep(page, job.draft.pricePerTicket, job.draft.faceValuePerTicket);
 
     await report("filling_features_restrictions");
     await handleFeaturesStep(page, job.draft.listingFeatures, job.draft.restrictions);
@@ -121,11 +121,14 @@ export async function runViagogoListing(browser: Browser, job: Job, report: Repo
     await report("submitting_listing");
     const submitted = await clickButton(page, [
       'button:has-text("List my tickets")',
+      'button:has-text("List tickets")',
       'button:has-text("Submit listing")',
       'button:has-text("Confirm listing")',
+      'button:has-text("Create listing")',
       'button:has-text("Post listing")',
       'button:has-text("Complete listing")',
-      'button[type="submit"]:has-text("Confirm")',
+      'button:has-text("Confirm")',
+      'button[type="submit"]',
     ]);
     if (!submitted) throw new Error("Could not find listing submit button");
 
@@ -407,28 +410,91 @@ async function handleSeatDetailsStep(
   await clickNext(page);
 }
 
-async function handlePriceStep(page: Page, pricePerTicket: number): Promise<void> {
-  await waitForAnyVisible(page, [
+async function handlePriceStep(page: Page, pricePerTicket: number, faceValuePerTicket: number): Promise<void> {
+  console.log(`[viagogo] Price step — URL: ${page.url()}`);
+
+  // Viagogo's price input has no name/id/aria attributes — try a broad chain of selectors.
+  // The input containing the suggested price (e.g. 150) is the first visible non-special input.
+  const priceSelectors = [
     'input[type="number"]',
+    'input[inputmode="numeric"]',
+    'input[inputmode="decimal"]',
     'input[name*="price" i]',
     'input[id*="price" i]',
     'input[aria-label*="price" i]',
-  ]);
+    'input[placeholder*="price" i]',
+    // Broad fallback: first visible text-like input that isn't a checkbox/radio/hidden
+    'input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]):not([type="submit"]):not([type="button"]):not([type="search"])',
+  ];
 
-  const priceInput = page
-    .locator(
-      'input[name*="price" i], input[id*="price" i], input[aria-label*="price" i], input[placeholder*="price" i], input[type="number"]',
-    )
-    .first();
+  // Wait up to 15s for any matching input to appear
+  await waitForAnyVisible(page, priceSelectors.slice(0, 4));
 
-  if (await priceInput.count() > 0) {
-    await priceInput.fill(String(pricePerTicket));
-    console.log(`[viagogo] Set price: ${pricePerTicket}`);
-  } else {
-    throw new Error("Could not find price input field");
+  let priceInput = null;
+  for (const sel of priceSelectors) {
+    const el = page.locator(sel).first();
+    if (await el.count() > 0 && await el.isVisible().catch(() => false)) {
+      priceInput = el;
+      console.log(`[viagogo] Found price input via: ${sel}`);
+      break;
+    }
   }
 
-  await clickNext(page);
+  if (!priceInput) throw new Error("Could not find price input field");
+
+  // Clear pre-filled suggested price and enter the real price
+  await priceInput.click({ clickCount: 3 }); // select-all
+  await priceInput.fill(String(pricePerTicket));
+  await priceInput.press("Tab"); // blur to trigger React state update
+  console.log(`[viagogo] Set price: £${pricePerTicket}`);
+  await page.waitForTimeout(300);
+
+  // Face value (required by Viagogo — use the draft value, default to 0.01 if zero)
+  const faceValue = faceValuePerTicket > 0 ? faceValuePerTicket : 1;
+  const faceSelectors = [
+    'input[name*="face" i]',
+    'input[id*="face" i]',
+    'input[aria-label*="face" i]',
+    'input[placeholder*="face" i]',
+  ];
+  for (const sel of faceSelectors) {
+    const el = page.locator(sel).first();
+    if (await el.count() > 0 && await el.isVisible().catch(() => false)) {
+      await el.click({ clickCount: 3 });
+      await el.fill(String(faceValue));
+      await el.press("Tab");
+      console.log(`[viagogo] Set face value: £${faceValue}`);
+      break;
+    }
+  }
+
+  // Payout method — click "Direct deposit" if a payout method selection is present
+  const payoutBtn = page.locator('button, label, div[role="radio"], li')
+    .filter({ hasText: /direct deposit/i });
+  if (await payoutBtn.count() > 0) {
+    await payoutBtn.first().click();
+    console.log(`[viagogo] Selected payout method: Direct deposit`);
+    await page.waitForTimeout(300);
+  }
+
+  // Terms & conditions checkbox — check it if unchecked
+  const termsCheckbox = page.locator(
+    'input[type="checkbox"][name*="terms" i], input[type="checkbox"][id*="terms" i], input[type="checkbox"][aria-label*="terms" i]',
+  ).first();
+  if (await termsCheckbox.count() > 0) {
+    if (!await termsCheckbox.isChecked()) {
+      await termsCheckbox.check();
+      console.log(`[viagogo] Checked terms & conditions`);
+    }
+  } else {
+    // Viagogo may use a styled div/span as the checkbox — click label text instead
+    const termsLabel = page.locator('label, span, div').filter({ hasText: /i agree.*terms|terms.*conditions/i });
+    if (await termsLabel.count() > 0) {
+      await termsLabel.first().click();
+      console.log(`[viagogo] Clicked terms label`);
+    }
+  }
+  await page.waitForTimeout(300);
 }
 
 async function handleFeaturesStep(page: Page, features: string, restrictions: string): Promise<void> {
