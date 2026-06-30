@@ -61,7 +61,9 @@ export async function runViagogoListing(browser: Browser, job: Job, report: Repo
     // TixTracker). Headless login is not attempted here because Viagogo uses invisible
     // reCAPTCHA which blocks form submission in headless Chrome.
     await report("session_checking");
-    await page.goto(MY_ACCOUNT_URL, { waitUntil: "networkidle", timeout: TIMEOUT });
+    await page.goto(MY_ACCOUNT_URL, { waitUntil: "load", timeout: TIMEOUT });
+    // Allow up to 5s for any client-side redirect (auth guard) to fire after load
+    await page.waitForTimeout(2_000);
 
     const isLoggedIn =
       !page.url().includes("/login") &&
@@ -80,14 +82,14 @@ export async function runViagogoListing(browser: Browser, job: Job, report: Repo
     await report("opening_event_page");
     const eventUrl = job.eventMatch.viagogoEventUrl;
     console.log(`[viagogo] Navigating to event: ${eventUrl}`);
-    await page.goto(eventUrl, { waitUntil: "networkidle", timeout: TIMEOUT });
+    await page.goto(eventUrl, { waitUntil: "load", timeout: TIMEOUT });
     await dismissCookieBanner(page);
 
     // ── 3. Navigate to sell pipeline ─────────────────────────────────────────
     await report("clicking_sell");
     const sellPipelineUrl = `${VIAGOGO_ORIGIN}/Secure/Pipeline/Sell/Initialise?EventID=${job.eventMatch.viagogoEventId}`;
     console.log(`[viagogo] Navigating to sell pipeline: ${sellPipelineUrl}`);
-    await page.goto(sellPipelineUrl, { waitUntil: "networkidle", timeout: TIMEOUT });
+    await page.goto(sellPipelineUrl, { waitUntil: "load", timeout: TIMEOUT });
     console.log(`[viagogo] Sell pipeline loaded, now at: ${page.url()}`);
 
     // ── 4. Multi-step listing form ────────────────────────────────────────────
@@ -129,7 +131,7 @@ export async function runViagogoListing(browser: Browser, job: Job, report: Repo
 
     // ── 6. Wait for confirmation ──────────────────────────────────────────────
     await report("waiting_for_confirmation");
-    await page.waitForLoadState("networkidle", { timeout: TIMEOUT });
+    await page.waitForLoadState("load", { timeout: TIMEOUT });
     const confirmUrl = page.url();
     console.log(`[viagogo] Post-submit URL: ${confirmUrl}`);
 
@@ -399,7 +401,7 @@ async function clickNext(page: Page): Promise<void> {
 
   const clicked = await clickButton(page, candidates);
   if (clicked) {
-    await page.waitForLoadState("networkidle", { timeout: 20_000 }).catch(() => {});
+    await page.waitForLoadState("load", { timeout: 20_000 }).catch(() => {});
   } else {
     console.warn("[viagogo] Could not find Next/Continue button — page may have advanced automatically");
   }
@@ -431,7 +433,7 @@ async function handleTwoFactor(page: Page, context: BrowserContext, accountId: s
   ).first();
   await otpInput.fill(otp);
   await page.click('button[type="submit"], button:has-text("Verify"), button:has-text("Confirm"), button:has-text("Submit")');
-  await page.waitForLoadState("networkidle", { timeout: 15_000 });
+  await page.waitForLoadState("load", { timeout: 15_000 });
 }
 
 
