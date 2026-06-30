@@ -434,29 +434,51 @@ async function handlePriceStep(page: Page, pricePerTicket: number, faceValuePerT
 
   const priceInput = page.locator(inputSel).nth(0);
   if (await priceInput.count() === 0) throw new Error("Could not find price input field");
+
+  // Log total unfiltered input count for diagnostics
+  const totalInputs = await page.locator("input").count();
+  console.log(`[viagogo] Total <input> elements on page: ${totalInputs}`);
+
+  // Step A: select all + pressSequentially (real key events)
   await priceInput.click({ clickCount: 3 });
-  // Use pressSequentially (fires individual keydown/keypress/keyup events) rather than
-  // fill() — some React components only reveal downstream sections (face value, payout,
-  // T&C, create listing button) when they receive real keyboard events, not synthetic
-  // value-set events that fill() dispatches.
   await priceInput.pressSequentially(String(pricePerTicket), { delay: 50 });
   await priceInput.press("Tab");
+  await page.waitForTimeout(300);
+
+  // Verify value was accepted by the React input
+  const acceptedPrice = await priceInput.inputValue().catch(() => "");
+  console.log(`[viagogo] Price input value after entry: "${acceptedPrice}" (wanted: "${pricePerTicket}")`);
+
+  if (acceptedPrice !== String(pricePerTicket)) {
+    // Step B: native React value setter — bypasses React's synthetic event system
+    // and forces the DOM value, then fires the events React listens to.
+    console.log(`[viagogo] Value not accepted — trying native React setter`);
+    await priceInput.evaluate((el, val) => {
+      const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
+      nativeSetter?.call(el as HTMLInputElement, val);
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+      el.dispatchEvent(new Event("change", { bubbles: true }));
+    }, String(pricePerTicket));
+    await priceInput.press("Tab");
+    await page.waitForTimeout(300);
+    const acceptedPrice2 = await priceInput.inputValue().catch(() => "");
+    console.log(`[viagogo] Price after native setter: "${acceptedPrice2}"`);
+  }
+
   console.log(`[viagogo] Set price: £${pricePerTicket}`);
 
   // ── 2. Wait explicitly for face value input to appear ───────────────────────
-  // The face value, payout, T&C, and create-listing sections are conditionally
-  // rendered after a valid price is committed.  Poll until the second text-like
-  // input appears (up to 10s) rather than sleeping a fixed amount.
+  // Conditional sections (face value, payout, T&C, create listing) render only after
+  // a valid price is committed.  Wait up to 10s for the second text-like input.
   const faceInputLocator = page.locator(inputSel).nth(1);
   const faceAppeared = await faceInputLocator.waitFor({ state: "visible", timeout: 10_000 })
     .then(() => true).catch(() => false);
 
   const inputsAfterPrice = await page.locator(inputSel).count();
-  console.log(`[viagogo] Text-like inputs after price fill: ${inputsAfterPrice} (face appeared: ${faceAppeared})`);
+  const totalInputsAfter = await page.locator("input").count();
+  console.log(`[viagogo] After price: text-like inputs=${inputsAfterPrice}, total inputs=${totalInputsAfter} (face appeared: ${faceAppeared})`);
 
   // ── 3. Fill face value ───────────────────────────────────────────────────────
-  // The face value field is split: [£][pounds input].[pence "00"].
-  // nth(1) is the pounds part; the pence box (nth(2)) is left as its "00" default.
   if (faceAppeared) {
     const faceValue = faceValuePerTicket > 0 ? Math.floor(faceValuePerTicket) : 1;
     await faceInputLocator.click({ clickCount: 3 });
@@ -465,7 +487,16 @@ async function handlePriceStep(page: Page, pricePerTicket: number, faceValuePerT
     console.log(`[viagogo] Set face value: £${faceValue}`);
     await page.waitForTimeout(300);
   } else {
-    console.warn("[viagogo] Face value input did not appear after 10s — price may not have committed");
+    // Face value input didn't appear as a text-like input — check alternate element types
+    const altFace = page.locator('[role="spinbutton"], [contenteditable="true"], [role="textbox"]').nth(1);
+    if (await altFace.count() > 0) {
+      const faceValue = faceValuePerTicket > 0 ? Math.floor(faceValuePerTicket) : 1;
+      await forceClick(altFace);
+      await altFace.pressSequentially(String(faceValue), { delay: 50 });
+      console.log(`[viagogo] Set face value via alt element: £${faceValue}`);
+    } else {
+      console.warn("[viagogo] Face value input did not appear — price may not have committed or field is non-standard");
+    }
   }
 
   // ── 4. Payout method ────────────────────────────────────────────────────────
