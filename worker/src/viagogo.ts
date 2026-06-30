@@ -435,54 +435,67 @@ async function handlePriceStep(page: Page, pricePerTicket: number, faceValuePerT
   const priceInput = page.locator(inputSel).nth(0);
   if (await priceInput.count() === 0) throw new Error("Could not find price input field");
   await priceInput.click({ clickCount: 3 });
-  await priceInput.fill(String(pricePerTicket));
+  // Use pressSequentially (fires individual keydown/keypress/keyup events) rather than
+  // fill() — some React components only reveal downstream sections (face value, payout,
+  // T&C, create listing button) when they receive real keyboard events, not synthetic
+  // value-set events that fill() dispatches.
+  await priceInput.pressSequentially(String(pricePerTicket), { delay: 50 });
   await priceInput.press("Tab");
   console.log(`[viagogo] Set price: £${pricePerTicket}`);
 
-  // ── 2. Wait for conditional sections to render ───────────────────────────────
-  // "Enter face value" and payout sections appear AFTER price is entered (React conditional).
-  await page.waitForTimeout(1500);
+  // ── 2. Wait explicitly for face value input to appear ───────────────────────
+  // The face value, payout, T&C, and create-listing sections are conditionally
+  // rendered after a valid price is committed.  Poll until the second text-like
+  // input appears (up to 10s) rather than sleeping a fixed amount.
+  const faceInputLocator = page.locator(inputSel).nth(1);
+  const faceAppeared = await faceInputLocator.waitFor({ state: "visible", timeout: 10_000 })
+    .then(() => true).catch(() => false);
+
+  const inputsAfterPrice = await page.locator(inputSel).count();
+  console.log(`[viagogo] Text-like inputs after price fill: ${inputsAfterPrice} (face appeared: ${faceAppeared})`);
 
   // ── 3. Fill face value ───────────────────────────────────────────────────────
-  // The face value field is split: [£][pounds input].[pence input "00"].
-  // After the price input the next visible text-like input is the pounds part.
-  const inputsAfterPrice = await page.locator(inputSel).count();
-  console.log(`[viagogo] Text-like inputs after price fill: ${inputsAfterPrice}`);
-  if (inputsAfterPrice >= 2) {
+  // The face value field is split: [£][pounds input].[pence "00"].
+  // nth(1) is the pounds part; the pence box (nth(2)) is left as its "00" default.
+  if (faceAppeared) {
     const faceValue = faceValuePerTicket > 0 ? Math.floor(faceValuePerTicket) : 1;
-    const faceInput = page.locator(inputSel).nth(1);
-    await faceInput.click({ clickCount: 3 });
-    await faceInput.fill(String(faceValue));
-    await faceInput.press("Tab");
+    await faceInputLocator.click({ clickCount: 3 });
+    await faceInputLocator.pressSequentially(String(faceValue), { delay: 50 });
+    await faceInputLocator.press("Tab");
     console.log(`[viagogo] Set face value: £${faceValue}`);
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(300);
   } else {
-    console.warn("[viagogo] Face value input not yet visible — proceeding without it");
+    console.warn("[viagogo] Face value input did not appear after 10s — price may not have committed");
   }
 
   // ── 4. Payout method ────────────────────────────────────────────────────────
-  // "Select payout method" is a collapsed dropdown — expand it first, then pick Direct deposit.
-  const selectPayoutBtn = page.locator("button, div[role='button'], [role='combobox'], span, div")
+  // "Select payout method" may be a collapsed dropdown — try expanding it first.
+  const selectPayoutBtn = page.locator("*")
     .filter({ hasText: /^select payout method$/i })
     .first();
   if (await selectPayoutBtn.count() > 0) {
-    await selectPayoutBtn.click();
+    await forceClick(selectPayoutBtn);
     console.log(`[viagogo] Opened payout method dropdown`);
     await page.waitForTimeout(500);
   }
 
-  // Now click "Direct deposit" — try several element types
-  const ddExact = page.getByText("Direct deposit", { exact: true }).first();
-  const ddLoose = page.locator("button, label, li, div, span, h3, h4, h5, strong")
-    .filter({ hasText: /direct deposit/i })
-    .first();
-  const directDeposit = (await ddExact.count() > 0) ? ddExact : ddLoose;
-  if (await directDeposit.count() > 0) {
-    await directDeposit.click();
-    console.log(`[viagogo] Selected payout: Direct deposit`);
-    await page.waitForTimeout(300);
+  // Also try native <select> for payout method
+  const payoutSelect = page.locator("select").filter({ hasText: /direct deposit/i }).first();
+  if (await payoutSelect.count() > 0) {
+    await payoutSelect.selectOption({ label: "Direct deposit" });
+    console.log(`[viagogo] Selected payout via <select>: Direct deposit`);
   } else {
-    console.warn(`[viagogo] Could not find "Direct deposit" — it may already be selected`);
+    // Click the "Direct deposit" card/option — match any element type
+    const ddExact = page.getByText("Direct deposit", { exact: true }).first();
+    const ddAny = page.locator("*").filter({ hasText: /^direct deposit$/i }).first();
+    const directDeposit = (await ddExact.count() > 0) ? ddExact : ddAny;
+    if (await directDeposit.count() > 0) {
+      await forceClick(directDeposit);
+      console.log(`[viagogo] Selected payout: Direct deposit`);
+      await page.waitForTimeout(300);
+    } else {
+      console.warn(`[viagogo] Could not find "Direct deposit" — may already be selected or section not loaded`);
+    }
   }
 
   // ── 5. Terms & conditions ────────────────────────────────────────────────────
