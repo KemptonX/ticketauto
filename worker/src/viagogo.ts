@@ -119,31 +119,18 @@ export async function runViagogoListing(browser: Browser, job: Job, report: Repo
     console.log(`[viagogo] At review step, URL: ${page.url()}`);
 
     await report("submitting_listing");
-    // Use direct locator + click rather than clickButton so Playwright's own
-    // actionability wait handles the enabled state (fields may still be committing).
-    const submitCandidates = [
-      'button:has-text("create listing")',
-      'button:has-text("Create listing")',
-      'button:has-text("List my tickets")',
-      'button:has-text("List tickets")',
-      'button:has-text("Submit listing")',
-      'button:has-text("Confirm listing")',
-      'button:has-text("Post listing")',
-      'button:has-text("Complete listing")',
-      'button:has-text("Confirm")',
-      'button[type="submit"]',
-    ];
-    let submitClicked = false;
-    for (const sel of submitCandidates) {
-      const el = page.locator(sel).first();
-      if (await el.count() > 0 && await el.isVisible().catch(() => false)) {
-        console.log(`[viagogo] Clicking submit via: ${sel}`);
-        await el.click({ timeout: 15_000 }); // Playwright waits for enabled state
-        submitClicked = true;
-        break;
-      }
-    }
-    if (!submitClicked) throw new Error("Could not find listing submit button");
+    // The "create listing" button is conditionally rendered — only appears once price,
+    // face value, payout, and T&C are all complete.  Wait up to 15s for it to appear.
+    // Intentionally exclude button[type="submit"] — the page also has a disabled
+    // "Continue" button with that type which would time out.
+    const createListingBtn = page.locator("button, a[role='button']")
+      .filter({ hasText: /create listing|list my tickets|list tickets|submit listing|confirm listing/i })
+      .first();
+
+    console.log(`[viagogo] Waiting for submit button to become visible...`);
+    await createListingBtn.waitFor({ state: "visible", timeout: 15_000 });
+    console.log(`[viagogo] Clicking submit button`);
+    await createListingBtn.click({ timeout: 15_000 }); // Playwright waits for enabled state
 
     // ── 6. Wait for confirmation ──────────────────────────────────────────────
     await report("waiting_for_confirmation");
@@ -426,77 +413,94 @@ async function handleSeatDetailsStep(
 async function handlePriceStep(page: Page, pricePerTicket: number, faceValuePerTicket: number): Promise<void> {
   console.log(`[viagogo] Price/final step — URL: ${page.url()}`);
 
-  // All required fields live on one combined final page.
-  // Viagogo's inputs have no name/id/aria attributes so we use DOM order.
-  // The broad selector below matches text-like inputs only.
+  // Viagogo's inputs have no name/id/aria attributes — match all text-like inputs by exclusion.
   const inputSel = 'input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]):not([type="submit"]):not([type="button"]):not([type="search"])';
 
-  // Wait up to 15s for at least one such input to appear
+  // ── 1. Fill price ────────────────────────────────────────────────────────────
   await page.locator(inputSel).first().waitFor({ state: "visible", timeout: 15_000 }).catch(() => {
-    console.warn("[viagogo] Timeout waiting for text inputs on price page");
+    console.warn("[viagogo] Timeout waiting for price input");
   });
 
-  const allInputs = page.locator(inputSel);
-  const inputCount = await allInputs.count();
-  console.log(`[viagogo] Text-like inputs on price page: ${inputCount}`);
-
-  if (inputCount === 0) throw new Error("Could not find price input field");
-
-  // Input 0 = price per ticket
-  const priceInput = allInputs.nth(0);
+  const priceInput = page.locator(inputSel).nth(0);
+  if (await priceInput.count() === 0) throw new Error("Could not find price input field");
   await priceInput.click({ clickCount: 3 });
   await priceInput.fill(String(pricePerTicket));
   await priceInput.press("Tab");
   console.log(`[viagogo] Set price: £${pricePerTicket}`);
-  await page.waitForTimeout(300);
 
-  // Input 1 = face value (pounds). Page shows "£ . 00" suggesting a split £/p field;
-  // fill just the pounds part. Default to £1 if draft has no face value.
-  if (inputCount >= 2) {
+  // ── 2. Wait for conditional sections to render ───────────────────────────────
+  // "Enter face value" and payout sections appear AFTER price is entered (React conditional).
+  await page.waitForTimeout(1500);
+
+  // ── 3. Fill face value ───────────────────────────────────────────────────────
+  // The face value field is split: [£][pounds input].[pence input "00"].
+  // After the price input the next visible text-like input is the pounds part.
+  const inputsAfterPrice = await page.locator(inputSel).count();
+  console.log(`[viagogo] Text-like inputs after price fill: ${inputsAfterPrice}`);
+  if (inputsAfterPrice >= 2) {
     const faceValue = faceValuePerTicket > 0 ? Math.floor(faceValuePerTicket) : 1;
-    const faceInput = allInputs.nth(1);
+    const faceInput = page.locator(inputSel).nth(1);
     await faceInput.click({ clickCount: 3 });
     await faceInput.fill(String(faceValue));
     await faceInput.press("Tab");
     console.log(`[viagogo] Set face value: £${faceValue}`);
-    await page.waitForTimeout(300);
+    await page.waitForTimeout(500);
+  } else {
+    console.warn("[viagogo] Face value input not yet visible — proceeding without it");
   }
 
-  // Payout method: click "Direct deposit".
-  // Viagogo renders this as a styled card.  Try exact-text first (targets the innermost
-  // element whose full textContent is exactly that string), then fall back to a looser match.
-  const directDepositExact = page.getByText("Direct deposit", { exact: true }).first();
-  const directDepositLoose = page.locator("button, label, li, div[role], h3, h4, h5, strong, span")
+  // ── 4. Payout method ────────────────────────────────────────────────────────
+  // "Select payout method" is a collapsed dropdown — expand it first, then pick Direct deposit.
+  const selectPayoutBtn = page.locator("button, div[role='button'], [role='combobox'], span, div")
+    .filter({ hasText: /^select payout method$/i })
+    .first();
+  if (await selectPayoutBtn.count() > 0) {
+    await selectPayoutBtn.click();
+    console.log(`[viagogo] Opened payout method dropdown`);
+    await page.waitForTimeout(500);
+  }
+
+  // Now click "Direct deposit" — try several element types
+  const ddExact = page.getByText("Direct deposit", { exact: true }).first();
+  const ddLoose = page.locator("button, label, li, div, span, h3, h4, h5, strong")
     .filter({ hasText: /direct deposit/i })
     .first();
-  const directDeposit = (await directDepositExact.count() > 0) ? directDepositExact : directDepositLoose;
+  const directDeposit = (await ddExact.count() > 0) ? ddExact : ddLoose;
   if (await directDeposit.count() > 0) {
     await directDeposit.click();
     console.log(`[viagogo] Selected payout: Direct deposit`);
     await page.waitForTimeout(300);
   } else {
-    console.warn(`[viagogo] Could not find "Direct deposit" payout option`);
+    console.warn(`[viagogo] Could not find "Direct deposit" — it may already be selected`);
   }
 
-  // Terms & conditions: check all visible unchecked checkboxes on the page
-  // (covers both the main T&C checkbox and the optional data-sharing checkbox).
-  const checkboxes = page.locator('input[type="checkbox"]');
-  const cbCount = await checkboxes.count();
-  for (let i = 0; i < cbCount; i++) {
-    const cb = checkboxes.nth(i);
-    if (await cb.isVisible().catch(() => false) && !await cb.isChecked().catch(() => true)) {
-      await cb.check();
-      console.log(`[viagogo] Checked checkbox ${i + 1}/${cbCount}`);
+  // ── 5. Terms & conditions ────────────────────────────────────────────────────
+  // Only check the two specific T&C checkboxes — not pricing strategy radio/checkboxes.
+  const tcPatterns: RegExp[] = [
+    /i agree.*terms|terms.*conditions/i,
+    /allow viagogo.*provide|provide.*information.*buyer/i,
+  ];
+  for (const pattern of tcPatterns) {
+    // Look for a <label> whose text matches, click it (toggles associated checkbox)
+    const label = page.locator("label").filter({ hasText: pattern }).first();
+    if (await label.count() > 0) {
+      // Only click if associated checkbox isn't already checked
+      const cb = label.locator('input[type="checkbox"]').first();
+      const alreadyChecked = await cb.count() > 0 && await cb.isChecked().catch(() => false);
+      if (!alreadyChecked) {
+        await label.click();
+        console.log(`[viagogo] Checked: ${pattern}`);
+      }
+      continue;
+    }
+    // Fallback: find standalone checkbox near matching text
+    const nearby = page.locator("*").filter({ hasText: pattern }).locator('input[type="checkbox"]').first();
+    if (await nearby.count() > 0 && !await nearby.isChecked().catch(() => false)) {
+      await nearby.check();
+      console.log(`[viagogo] Checked (nearby): ${pattern}`);
     }
   }
-  if (cbCount === 0) {
-    // Styled checkbox — click the "I agree" text as a fallback
-    const termsText = page.locator("*").filter({ hasText: /i agree.*terms/i }).first();
-    if (await termsText.count() > 0) {
-      await termsText.click();
-      console.log(`[viagogo] Clicked terms text (no native checkbox found)`);
-    }
-  }
+
   await page.waitForTimeout(500);
 }
 
