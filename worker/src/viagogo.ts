@@ -130,18 +130,15 @@ export async function runViagogoListing(browser: Browser, job: Job, report: Repo
     console.log(`[viagogo] At review step, URL: ${page.url()}`);
 
     await report("submitting_listing");
-    // The "create listing" button is conditionally rendered — only appears once price,
-    // face value, payout, and T&C are all complete.  Wait up to 15s for it to appear.
-    // Intentionally exclude button[type="submit"] — the page also has a disabled
-    // "Continue" button with that type which would time out.
-    const createListingBtn = page.locator("button, a[role='button']")
-      .filter({ hasText: /create listing|list my tickets|list tickets|submit listing|confirm listing/i })
-      .first();
-
-    console.log(`[viagogo] Waiting for submit button to become visible...`);
-    await createListingBtn.waitFor({ state: "visible", timeout: 15_000 });
-    console.log(`[viagogo] Clicking submit button`);
-    await createListingBtn.click({ timeout: 15_000 }); // Playwright waits for enabled state
+    // The submit button on ListingNotes changes text from "Continue" (disabled) →
+    // "create listing" (enabled) as required fields are filled.  It's always
+    // button[type="submit"] — wait up to 20s for it to become enabled.
+    const submitBtn = page.locator('button[type="submit"]').first();
+    console.log(`[viagogo] Waiting for submit button to become enabled...`);
+    await submitBtn.waitFor({ state: "visible", timeout: 10_000 });
+    const submitText = await submitBtn.textContent().catch(() => "");
+    console.log(`[viagogo] Submit button text: "${submitText?.trim()}"`);
+    await submitBtn.click({ timeout: 20_000 }); // Playwright waits for enabled state
 
     // ── 6. Wait for confirmation ──────────────────────────────────────────────
     await report("waiting_for_confirmation");
@@ -435,7 +432,20 @@ async function handlePriceStep(page: Page, pricePerTicket: number, faceValuePerT
   const priceInput = page.locator(inputSel).nth(0);
   if (await priceInput.count() === 0) throw new Error("Could not find price input field");
 
-  // Log total unfiltered input count for diagnostics
+  // Dump all interactive form elements so we can see exactly what the page has
+  const formDump = await page.evaluate(() =>
+    Array.from(document.querySelectorAll(
+      'input, textarea, select, [contenteditable="true"], [role="textbox"], [role="spinbutton"], [role="combobox"]'
+    )).slice(0, 30).map(el => ({
+      tag: el.tagName,
+      type: (el as HTMLInputElement).type ?? "",
+      name: (el as HTMLInputElement).name ?? "",
+      id: el.id ?? "",
+      value: ((el as HTMLInputElement).value ?? (el as HTMLElement).innerText ?? "").slice(0, 30),
+      vis: (el as HTMLElement).offsetParent !== null,
+    }))
+  );
+  console.log(`[viagogo] Form elements: ${JSON.stringify(formDump)}`);
   const totalInputs = await page.locator("input").count();
   console.log(`[viagogo] Total <input> elements on page: ${totalInputs}`);
 
