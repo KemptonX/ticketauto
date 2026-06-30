@@ -421,64 +421,28 @@ async function handleSeatDetailsStep(
 async function handlePriceStep(page: Page, pricePerTicket: number, faceValuePerTicket: number): Promise<void> {
   console.log(`[viagogo] Price/final step — URL: ${page.url()}`);
 
-  // Viagogo's inputs have no name/id/aria attributes — match all text-like inputs by exclusion.
-  const inputSel = 'input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]):not([type="submit"]):not([type="button"]):not([type="search"])';
+  // Both inputs are always in the DOM pre-filled with Viagogo's suggested values.
+  // Target them by name — confirmed from DevTools inspection.
+  const priceInput = page.locator('input[name="ticketPrice_non_decimal"]');
+  const faceInput  = page.locator('input[name="faceValue_non_decimal"]');
 
-  // ── 1. Fill price ────────────────────────────────────────────────────────────
-  await page.locator(inputSel).first().waitFor({ state: "visible", timeout: 15_000 }).catch(() => {
-    console.warn("[viagogo] Timeout waiting for price input");
-  });
-
-  const priceInput = page.locator(inputSel).nth(0);
-  if (await priceInput.count() === 0) throw new Error("Could not find price input field");
-
-  const faceByName = page.locator('input[name="faceValue_non_decimal"]');
-
-  // ── 1. Unlock conditional sections by clicking a pricing strategy card ───────
-  // In a headless session the page loads with no strategy card selected and the
-  // price input blank.  The face value / payout / T&C / submit sections are
-  // conditionally rendered by React only AFTER a strategy card is clicked.
-  // In a real browser session the Balanced card is pre-selected (session memory),
-  // so these sections are already visible.  We replicate that by clicking Balanced.
-  const faceAlreadyVisible = await faceByName.isVisible().catch(() => false);
-  if (!faceAlreadyVisible) {
-    console.log(`[viagogo] Face value not yet visible — clicking strategy card to unlock`);
-    const strategyCard = page.locator("button, div, label, li, [role='radio']")
-      .filter({ hasText: /balanced strategy/i })
-      .first();
-    const fallbackCard = page.locator("button, div, label, li, [role='radio']")
-      .filter({ hasText: /quick sell|max earnings/i })
-      .first();
-    const cardToClick = (await strategyCard.count() > 0) ? strategyCard : fallbackCard;
-    if (await cardToClick.count() > 0) {
-      await forceClick(cardToClick);
-      console.log(`[viagogo] Clicked strategy card to mount conditional sections`);
-      // Wait for face value to appear (up to 5s)
-      await faceByName.waitFor({ state: "visible", timeout: 5_000 }).catch(() => {});
-    }
-  }
-
-  // ── 2. Set the actual listing price ─────────────────────────────────────────
-  // fill() reliably sets the value and dispatches the React input event.
+  // ── 1. Set listing price ─────────────────────────────────────────────────────
+  await priceInput.waitFor({ state: "visible", timeout: 15_000 });
   await priceInput.fill(String(pricePerTicket));
   await priceInput.press("Tab");
   const acceptedPrice = await priceInput.inputValue().catch(() => "");
   console.log(`[viagogo] Price set: "${acceptedPrice}" (wanted "${pricePerTicket}")`);
 
-  // ── 3. Wait for & fill face value ───────────────────────────────────────────
-  const faceAppeared = await faceByName.waitFor({ state: "visible", timeout: 8_000 })
-    .then(() => true).catch(() => false);
-  console.log(`[viagogo] Face value visible: ${faceAppeared} (total inputs: ${await page.locator("input").count()})`);
-
-  if (faceAppeared) {
-    const faceValue = faceValuePerTicket > 0 ? Math.floor(faceValuePerTicket) : 1;
-    await faceByName.fill(String(faceValue));
-    await faceByName.press("Tab");
-    console.log(`[viagogo] Set face value: £${faceValue}`);
-    await page.waitForTimeout(300);
-  } else {
-    console.warn("[viagogo] Face value input did not appear — submit button may stay disabled");
-  }
+  // ── 2. Set face value ────────────────────────────────────────────────────────
+  // Filling the price triggers React to reveal the face value field.
+  const faceCount = await faceInput.count();
+  console.log(`[viagogo] Face value input in DOM: ${faceCount > 0} (count=${faceCount})`);
+  await faceInput.waitFor({ state: "visible", timeout: 8_000 });
+  const faceValue = faceValuePerTicket > 0 ? Math.floor(faceValuePerTicket) : 1;
+  await faceInput.fill(String(faceValue));
+  await faceInput.press("Tab");
+  console.log(`[viagogo] Set face value: £${faceValue}`);
+  await page.waitForTimeout(300);
 
   // ── 4. Payout method ────────────────────────────────────────────────────────
   // "Select payout method" may be a collapsed dropdown — try expanding it first.
