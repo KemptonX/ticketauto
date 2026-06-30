@@ -755,7 +755,9 @@ function extractAccount(headers: GmailHeader[], text: string) {
 }
 
 function parseBookingRef(subject: string, text: string) {
-  const simple = subject.match(/\b(RE\d+)\b/i)?.[1] || text.match(/\b(RE\d+)\b/i)?.[1];
+  // Real TM refs are RE + 5 or more digits (e.g. RE12345678).
+  // RE26 / RE2026 are too short and appear in unrelated promotional emails.
+  const simple = subject.match(/\b(RE\d{5,})\b/i)?.[1] || text.match(/\b(RE\d{5,})\b/i)?.[1];
   if (simple) {
     return simple;
   }
@@ -764,9 +766,10 @@ function parseBookingRef(subject: string, text: string) {
     /order number is\s*([0-9]{1,3}-[0-9]+\/UK\d+)/i,
     /\bORDER\b\s*#\s*([0-9]{1,3}-[0-9]+\/UK\d+)/i,
     /\b([0-9]{1,3}-[0-9]+\/UK\d+)\b/i,
-    // Non-UK slash refs (US, AU, IE, etc.)
-    /\bORDER\b\s*#\s*([0-9]{1,3}-[0-9]+\/[A-Z]{2,}\d*)/i,
-    /\b([0-9]{1,3}-[0-9]+\/[A-Z]{2,}\d*)\b/i,
+    // Non-UK slash refs (US, AU, IE, etc.) — venue code is 2–3 letters max (e.g. /NV2, /DAL, /IE).
+    // Using {2,3} prevents matching URL path words like /event or /little.
+    /\bORDER\b\s*#\s*([0-9]{1,3}-[0-9]+\/[A-Z]{2,3}\d{0,2})\b/i,
+    /\b([0-9]{1,3}-[0-9]+\/[A-Z]{2,3}\d{0,2})\b/i,
   ];
 
   for (const pattern of patterns) {

@@ -26,21 +26,21 @@ type SyncResult = {
   email: string;
 };
 
-// Subject-line keywords used to filter at envelope stage (before downloading bodies)
+// Subject-line keywords used to filter at envelope stage (before downloading bodies).
+// ONLY include phrases that are specific enough to a known ticketing vendor.
+// Generic phrases like "order confirmation" and "order number" match hotel and museum
+// emails and must not appear here without a FROM domain guard.
 const SUBJECT_KEYWORDS = [
   "ticketmaster",
-  "order confirmation",
-  "ticket confirmation",
   "you're in",
   "you got tickets",
-  "order number",
-  "order confirm",
+  "order confirm",                    // matches "order confirmation" but via include() below
   "confirmacion de compra",
   "confirmación de compra",
   "confirmation de votre commande",
   "axs mobile id",
   "thank you for purchasing tickets",
-  "ticket order confirmation",
+  "ticket order confirmation",        // See Tickets / Gigs and Tours
   "eventim-bestellung",
   "eventim order",
 ];

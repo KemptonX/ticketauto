@@ -464,7 +464,8 @@ function cleanText(text: string) {
 // ── Email parsers (same logic as gmail-sync) ──────────────────────────────────
 
 function parseBookingRef(subject: string, text: string) {
-  const simple = subject.match(/\b(RE\d+)\b/i)?.[1] || text.match(/\b(RE\d+)\b/i)?.[1];
+  // Require 5+ digits — RE26/RE2026 appear in non-ticket promotional emails
+  const simple = subject.match(/\b(RE\d{5,})\b/i)?.[1] || text.match(/\b(RE\d{5,})\b/i)?.[1];
   if (simple) return simple;
 
   const patterns = [
