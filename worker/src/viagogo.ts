@@ -249,46 +249,101 @@ async function handleSplitRuleStep(page: Page, splitRule: string): Promise<void>
 }
 
 async function handleTicketTypeStep(page: Page, storageProvider: string): Promise<void> {
-  // Viagogo asks "how do you have your tickets?" — detect via body content
   const bodyText = (await page.textContent("body").catch(() => "")) ?? "";
-  const isTicketTypeStep =
-    /how (do you|are your tickets|will you)/i.test(bodyText) ||
-    /ticket type|delivery method|barcode|e.?ticket/i.test(bodyText);
 
-  if (!isTicketTypeStep) {
+  // This screen can contain two distinct sub-questions:
+  // 1. "What type of tickets are you listing?" (ticket delivery method)
+  // 2. "Where are your tickets stored?" (Ticketmaster / AXS / SeatGeek / Other / Unknown)
+  // Both or either may be visible.  The Continue button stays disabled until both
+  // required selections are made.
+
+  const hasTypeQuestion = /what type of tickets|how (do you|are your tickets|will you)|ticket type|delivery method/i.test(bodyText);
+  const hasStorageQuestion = /where are your tickets stored/i.test(bodyText);
+
+  if (!hasTypeQuestion && !hasStorageQuestion) {
     console.log("[viagogo] No ticket type step detected — skipping");
     return;
   }
 
-  const providerPatterns: Record<string, RegExp[]> = {
-    ticketmaster: [/ticketmaster/i, /mobile ticket/i],
-    axs:          [/axs/i],
-    seatgeek:     [/seatgeek/i],
-    other:        [/e.?ticket/i, /pdf/i, /print/i],
-  };
+  // ── Sub-step A: ticket delivery type ──────────────────────────────────────
+  // Only select if the question is present AND the type isn't already committed
+  // ("Edit this ticket type" link means it was set in a previous step — leave it alone).
+  const typeAlreadySet = /edit this ticket type/i.test(bodyText);
+  if (hasTypeQuestion && !typeAlreadySet) {
+    const typePatterns: Record<string, RegExp[]> = {
+      ticketmaster: [/mobile ticket transfer/i, /mobile ticket/i],
+      axs:          [/axs/i, /mobile ticket/i],
+      seatgeek:     [/seatgeek/i, /mobile ticket/i],
+      other:        [/e.?ticket/i, /pdf/i, /print/i],
+    };
+    const patterns = typePatterns[storageProvider] ?? typePatterns.other;
 
-  const patterns = providerPatterns[storageProvider] ?? providerPatterns.other;
-
-  let clicked = false;
-  for (const pattern of patterns) {
-    const el = page.locator("label, button, div[role='radio'], input[type='radio']").filter({ hasText: pattern });
-    if (await el.count() > 0) {
-      await el.first().click();
-      console.log(`[viagogo] Selected ticket type: ${storageProvider}`);
-      clicked = true;
-      break;
+    let clicked = false;
+    for (const pattern of patterns) {
+      // Use a broad selector — Viagogo renders these as styled cards, not always <button>
+      const el = page.locator("label, button, li, [role='radio'], [role='button'], div[class]")
+        .filter({ hasText: pattern });
+      if (await el.count() > 0) {
+        await el.first().click();
+        console.log(`[viagogo] Selected ticket type for ${storageProvider}`);
+        clicked = true;
+        break;
+      }
     }
+    if (!clicked) {
+      console.warn(`[viagogo] Could not select ticket type for: ${storageProvider}`);
+    }
+    await page.waitForTimeout(500);
   }
 
-  if (!clicked) {
-    // Fallback: select "E-ticket" or first option
-    const eticket = page.locator("label, button").filter({ hasText: /e.?ticket/i });
-    if (await eticket.count() > 0) {
-      await eticket.first().click();
-      console.log(`[viagogo] Fell back to e-ticket selection`);
-    } else {
-      console.warn(`[viagogo] Could not find ticket type option for: ${storageProvider}`);
+  // ── Sub-step B: storage provider ──────────────────────────────────────────
+  // "Where are your tickets stored?" — must click one for Continue to enable.
+  if (hasStorageQuestion) {
+    // Map our internal storageProvider value to the exact label Viagogo shows
+    const storageLabels: Record<string, string[]> = {
+      ticketmaster: ["Ticketmaster"],
+      axs:          ["AXS"],
+      seatgeek:     ["SeatGeek"],
+      other:        ["Other"],
+    };
+    const labels = storageLabels[storageProvider?.toLowerCase()] ?? ["Other"];
+
+    let clicked = false;
+    for (const label of labels) {
+      // Try several selector strategies — Viagogo's storage cards are not standard
+      // radio/label elements; the selector must cover <li>, <div>, and custom components.
+      const strategies = [
+        // Exact text via Playwright's :text pseudo-class (innermost match)
+        page.locator(`:text-is("${label}")`),
+        // Broader: any of these element types containing the label text
+        page.locator(`button, label, li, [role="radio"], [role="button"]`).filter({ hasText: new RegExp(`^${label}$`, "i") }),
+        // Last resort: any visible element containing the text
+        page.locator(`*:visible`).filter({ hasText: new RegExp(`^${label}$`, "i") }),
+      ];
+
+      for (const el of strategies) {
+        if (await el.count() > 0) {
+          await el.first().click();
+          console.log(`[viagogo] Selected storage provider: ${label}`);
+          clicked = true;
+          break;
+        }
+      }
+      if (clicked) break;
     }
+
+    if (!clicked) {
+      // Fallback: click "Other" so Continue becomes enabled
+      const other = page.locator(`:text-is("Other"), button:has-text("Other"), li:has-text("Other")`).first();
+      if (await other.count() > 0) {
+        await other.click();
+        console.log(`[viagogo] Fell back to "Other" storage provider`);
+      } else {
+        console.warn(`[viagogo] Could not find any storage provider option`);
+      }
+    }
+    // Wait for the Continue button to enable after selection
+    await page.waitForTimeout(500);
   }
 
   await clickNext(page);
@@ -410,7 +465,11 @@ async function clickNext(page: Page): Promise<void> {
 async function clickButton(page: Page, selectors: string[]): Promise<boolean> {
   for (const sel of selectors) {
     const el = page.locator(sel).first();
-    if (await el.count() > 0 && await el.isVisible()) {
+    if (
+      await el.count() > 0 &&
+      await el.isVisible() &&
+      await el.isEnabled()
+    ) {
       await el.click();
       return true;
     }
