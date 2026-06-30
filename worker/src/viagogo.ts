@@ -432,81 +432,45 @@ async function handlePriceStep(page: Page, pricePerTicket: number, faceValuePerT
   const priceInput = page.locator(inputSel).nth(0);
   if (await priceInput.count() === 0) throw new Error("Could not find price input field");
 
-  // Dump all interactive form elements so we can see exactly what the page has
-  const formDump = await page.evaluate(() =>
-    Array.from(document.querySelectorAll(
-      'input, textarea, select, [contenteditable="true"], [role="textbox"], [role="spinbutton"], [role="combobox"]'
-    )).slice(0, 30).map(el => ({
-      tag: el.tagName,
-      type: (el as HTMLInputElement).type ?? "",
-      name: (el as HTMLInputElement).name ?? "",
-      id: el.id ?? "",
-      value: ((el as HTMLInputElement).value ?? (el as HTMLElement).innerText ?? "").slice(0, 30),
-      vis: (el as HTMLElement).offsetParent !== null,
-    }))
-  );
-  console.log(`[viagogo] Form elements: ${JSON.stringify(formDump)}`);
-  const totalInputs = await page.locator("input").count();
-  console.log(`[viagogo] Total <input> elements on page: ${totalInputs}`);
+  // ── 1. Enter price ───────────────────────────────────────────────────────────
+  // Use a single click (not triple-click) + page.keyboard.type() to match real
+  // user behaviour as closely as possible.  Triple-click fires 3 click events
+  // which may interfere with React's focus/input handling.
+  await priceInput.click();
+  await page.waitForTimeout(200);
+  await page.keyboard.press("Control+A"); // select existing suggested price
+  await page.waitForTimeout(100);
+  await page.keyboard.type(String(pricePerTicket), { delay: 100 }); // type new price
 
-  // Step A: select all + pressSequentially (real key events)
-  await priceInput.click({ clickCount: 3 });
-  await priceInput.pressSequentially(String(pricePerTicket), { delay: 50 });
-  await priceInput.press("Tab");
+  // Check if face value appeared mid-typing (before blur)
+  const faceByName = page.locator('input[name="faceValue_non_decimal"]');
+  const faceBeforeBlur = await faceByName.count() > 0;
+  console.log(`[viagogo] Face value in DOM before Tab: ${faceBeforeBlur}`);
+
+  await page.keyboard.press("Tab"); // blur → fires React onBlur/onChange
   await page.waitForTimeout(300);
 
-  // Verify value was accepted by the React input
   const acceptedPrice = await priceInput.inputValue().catch(() => "");
-  console.log(`[viagogo] Price input value after entry: "${acceptedPrice}" (wanted: "${pricePerTicket}")`);
-
-  if (acceptedPrice !== String(pricePerTicket)) {
-    // Step B: native React value setter — bypasses React's synthetic event system
-    // and forces the DOM value, then fires the events React listens to.
-    console.log(`[viagogo] Value not accepted — trying native React setter`);
-    await priceInput.evaluate((el, val) => {
-      const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
-      nativeSetter?.call(el as HTMLInputElement, val);
-      el.dispatchEvent(new Event("input", { bubbles: true }));
-      el.dispatchEvent(new Event("change", { bubbles: true }));
-    }, String(pricePerTicket));
-    await priceInput.press("Tab");
-    await page.waitForTimeout(300);
-    const acceptedPrice2 = await priceInput.inputValue().catch(() => "");
-    console.log(`[viagogo] Price after native setter: "${acceptedPrice2}"`);
-  }
-
+  console.log(`[viagogo] Price input value after entry: "${acceptedPrice}"`);
   console.log(`[viagogo] Set price: £${pricePerTicket}`);
 
-  // ── 2. Wait explicitly for face value input to appear ───────────────────────
-  // Conditional sections (face value, payout, T&C, create listing) render only after
-  // a valid price is committed.  Wait up to 10s for the second text-like input.
-  const faceInputLocator = page.locator(inputSel).nth(1);
-  const faceAppeared = await faceInputLocator.waitFor({ state: "visible", timeout: 10_000 })
+  // ── 2. Wait for face value input (name="faceValue_non_decimal") ──────────────
+  // This input is conditionally rendered by React after a valid price is entered.
+  const faceAppeared = await faceByName.waitFor({ state: "visible", timeout: 12_000 })
     .then(() => true).catch(() => false);
-
-  const inputsAfterPrice = await page.locator(inputSel).count();
-  const totalInputsAfter = await page.locator("input").count();
-  console.log(`[viagogo] After price: text-like inputs=${inputsAfterPrice}, total inputs=${totalInputsAfter} (face appeared: ${faceAppeared})`);
+  console.log(`[viagogo] Face value appeared: ${faceAppeared} (total inputs: ${await page.locator("input").count()})`);
 
   // ── 3. Fill face value ───────────────────────────────────────────────────────
   if (faceAppeared) {
     const faceValue = faceValuePerTicket > 0 ? Math.floor(faceValuePerTicket) : 1;
-    await faceInputLocator.click({ clickCount: 3 });
-    await faceInputLocator.pressSequentially(String(faceValue), { delay: 50 });
-    await faceInputLocator.press("Tab");
+    await faceByName.click();
+    await page.keyboard.press("Control+A");
+    await page.keyboard.type(String(faceValue), { delay: 100 });
+    await page.keyboard.press("Tab");
     console.log(`[viagogo] Set face value: £${faceValue}`);
     await page.waitForTimeout(300);
   } else {
-    // Face value input didn't appear as a text-like input — check alternate element types
-    const altFace = page.locator('[role="spinbutton"], [contenteditable="true"], [role="textbox"]').nth(1);
-    if (await altFace.count() > 0) {
-      const faceValue = faceValuePerTicket > 0 ? Math.floor(faceValuePerTicket) : 1;
-      await forceClick(altFace);
-      await altFace.pressSequentially(String(faceValue), { delay: 50 });
-      console.log(`[viagogo] Set face value via alt element: £${faceValue}`);
-    } else {
-      console.warn("[viagogo] Face value input did not appear — price may not have committed or field is non-standard");
-    }
+    console.warn("[viagogo] Face value input (faceValue_non_decimal) did not appear after 12s");
   }
 
   // ── 4. Payout method ────────────────────────────────────────────────────────
