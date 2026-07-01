@@ -278,20 +278,20 @@ async function handleSplitRuleStep(page: Page, splitRule: string): Promise<void>
 
 async function handleTicketTypeStep(page: Page, storageProvider: string): Promise<void> {
   const bodyText = (await page.textContent("body").catch(() => "")) ?? "";
+  const url = page.url();
 
-  // This screen can contain two distinct sub-questions:
-  // 1. "What type of tickets are you listing?" (ticket delivery method)
-  // 2. "Where are your tickets stored?" (Ticketmaster / AXS / SeatGeek / Other / Unknown)
-  // Both or either may be visible.  The Continue button stays disabled until both
-  // required selections are made.
-
-  const hasTypeQuestion = /what type of tickets|how (do you|are your tickets|will you)|ticket type|delivery method/i.test(bodyText);
+  // Detect by URL (DeliveryDetails) or page content
+  const isDeliveryUrl = /delivery/i.test(url);
+  const hasTypeQuestion = isDeliveryUrl || /what type of tickets|how (do you|are your tickets|will you)|ticket type|delivery method/i.test(bodyText);
   const hasStorageQuestion = /where are your tickets stored/i.test(bodyText);
 
   if (!hasTypeQuestion && !hasStorageQuestion) {
     console.log("[viagogo] No ticket type step detected — skipping");
     return;
   }
+
+  console.log(`[viagogo] Ticket type step (url segment: ${url.split("/").pop()?.split("?")[0]})`);
+
 
   // ── Sub-step A: ticket delivery type ──────────────────────────────────────
   // Only select if the question is present AND the type isn't already committed
