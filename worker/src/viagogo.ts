@@ -90,6 +90,12 @@ export async function runViagogoListing(browser: Browser, job: Job, report: Repo
     const sellPipelineUrl = `${VIAGOGO_ORIGIN}/Secure/Pipeline/Sell/Initialise?EventID=${job.eventMatch.viagogoEventId}`;
     console.log(`[viagogo] Navigating to sell pipeline: ${sellPipelineUrl}`);
     await page.goto(sellPipelineUrl, { waitUntil: "load", timeout: TIMEOUT });
+    // The Initialise URL triggers a JS redirect to the first pipeline step.
+    // Wait up to 10s for that redirect to fire if we're still on Initialise.
+    if (/Initialise/i.test(page.url())) {
+      await page.waitForURL((url) => !/Initialise/i.test(url.toString()), { timeout: 10_000 })
+        .catch(() => {});
+    }
     console.log(`[viagogo] Sell pipeline loaded, now at: ${page.url()}`);
 
     // ── 4. Multi-step listing form ────────────────────────────────────────────
