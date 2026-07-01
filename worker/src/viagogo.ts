@@ -581,7 +581,7 @@ async function handleFeaturesStep(page: Page, _features: string, _restrictions: 
   try {
     await page.waitForURL((url) => url.toString() !== urlAfterLoad, { timeout: 3_000 });
   } catch { /* URL didn't change — already at the right page */ }
-  console.log(`[viagogo] Features step done, now at: ${page.url()}`);
+  console.log(`[viagogo] Features step complete — URL: ${page.url()}`);
 }
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
