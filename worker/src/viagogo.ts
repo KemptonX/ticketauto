@@ -119,11 +119,13 @@ export async function runViagogoListing(browser: Browser, job: Job, report: Repo
       await handleSeatDetailsStep(page, job.draft.section, job.draft.row, job.draft.seatFrom, job.draft.seatTo);
     }
 
-    await report("filling_price");
-    await handlePriceStep(page, job.draft.pricePerTicket, job.draft.faceValuePerTicket);
-
+    // Features/restrictions is the first visible section on the combined ListingNotes
+    // page in headless — it must be completed before the pricing section renders.
     await report("filling_features_restrictions");
     await handleFeaturesStep(page, job.draft.listingFeatures, job.draft.restrictions);
+
+    await report("filling_price");
+    await handlePriceStep(page, job.draft.pricePerTicket, job.draft.faceValuePerTicket);
 
     // ── 5. Review & submit ────────────────────────────────────────────────────
     await report("final_review");
@@ -421,44 +423,9 @@ async function handleSeatDetailsStep(
 async function handlePriceStep(page: Page, pricePerTicket: number, faceValuePerTicket: number): Promise<void> {
   console.log(`[viagogo] Price/final step — URL: ${page.url()}`);
 
-  // ── 0. Wait for page to fully hydrate, then diagnose ────────────────────────
-  // ListingNotes is a React SPA that fetches pricing strategy data after load.
-  // Scroll to top first in case the page renders the pricing section above fold.
-  await page.evaluate(() => window.scrollTo(0, 0));
-  await page.waitForTimeout(4_000);
-
-  const dumpInputs = async (label: string) => {
-    const allInputs = await page.locator("input").all();
-    const summary = await Promise.all(allInputs.map(async (el) => {
-      const name = await el.getAttribute("name").catch(() => "");
-      const type = await el.getAttribute("type").catch(() => "");
-      const value = await el.getAttribute("value").catch(() => "");
-      const visible = await el.isVisible().catch(() => false);
-      return `  name="${name}" type="${type}" value="${value}" visible=${visible}`;
-    }));
-    console.log(`[viagogo] ${label} — inputs (${allInputs.length}):\n${summary.join("\n")}`);
-    return allInputs.length;
-  };
-
-  await dumpInputs("After 4s wait");
-  await page.screenshot({ path: "/tmp/worker-screenshots/price-step-start.png" }).catch(() => {});
-
-  // Also log visible headings so we know which section is on screen
-  const headings = await page.locator("h1, h2, h3, h4").allInnerTexts().catch(() => [] as string[]);
-  console.log(`[viagogo] Page headings: ${headings.join(" | ")}`);
-
   // Both inputs targeted by name (confirmed from DevTools).
   const priceInput = page.locator('input[name="ticketPrice_non_decimal"]');
   const faceInput  = page.locator('input[name="faceValue_non_decimal"]');
-
-  // ── 1. Unlock price input — the pricing section loads after initial render ───
-  const priceVisible = await priceInput.isVisible().catch(() => false);
-  if (!priceVisible) {
-    console.log(`[viagogo] Price input still absent — dumping form HTML for analysis`);
-    const formHtml = await page.locator("body").innerHTML().catch(() => "");
-    console.log(`[viagogo] Body HTML (first 8000):\n${formHtml.slice(0, 8_000)}`);
-    throw new Error("[viagogo] Price input not in DOM after 4s — see HTML dump above");
-  }
 
   // ── 2. Set listing price ─────────────────────────────────────────────────────
   await priceInput.waitFor({ state: "visible", timeout: 5_000 });
@@ -539,21 +506,43 @@ async function handlePriceStep(page: Page, pricePerTicket: number, faceValuePerT
 }
 
 async function handleFeaturesStep(page: Page, _features: string, _restrictions: string): Promise<void> {
-  // The ListingNotes page is the combined final page (price + payout + terms + submit).
-  // It triggers the feature/restriction regex but has no separate "Next" button — skip it.
-  if (/listingnotes/i.test(page.url())) {
-    console.log("[viagogo] On ListingNotes final page — features step skipped");
-    return;
-  }
-
   const bodyText = (await page.textContent("body").catch(() => "")) ?? "";
-  if (!/feature|restriction|limit|about.*ticket/i.test(bodyText)) {
+  if (!/feature|restriction|limit|about.*ticket|fill us in/i.test(bodyText)) {
     console.log("[viagogo] No features/restrictions step detected — skipping");
     return;
   }
 
-  console.log("[viagogo] On features step, proceeding without selecting optional features");
-  await clickNext(page);
+  console.log("[viagogo] Handling features/restrictions step");
+
+  // On ListingNotes in headless, the "Do your seats have any features or restrictions?"
+  // section appears first. Feature checkboxes are pre-selected and disabled. We only
+  // need to declare no use-restrictions and advance past this section.
+  const noRestrictCb = page.locator('input[name="noRestrictions"]');
+  if (await noRestrictCb.count() > 0) {
+    const isChecked = await noRestrictCb.isChecked().catch(() => true);
+    if (!isChecked) {
+      await noRestrictCb.check({ force: true });
+      console.log("[viagogo] Checked noRestrictions");
+      await page.waitForTimeout(400);
+    }
+  }
+
+  // Continue button may be button[type="submit"] on the features sub-section.
+  // Include it here — on the features step it advances the form, not submits the listing.
+  const candidates = [
+    'button:has-text("Continue")',
+    'button:has-text("Next")',
+    'button:has-text("Save")',
+    'button[type="submit"]',
+    'a:has-text("Next")',
+  ];
+  const clicked = await clickButton(page, candidates);
+  if (clicked) {
+    await page.waitForLoadState("load", { timeout: 10_000 }).catch(() => {});
+    console.log("[viagogo] Features step advanced");
+  } else {
+    console.warn("[viagogo] Could not find Continue on features step — page may have auto-advanced");
+  }
 }
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
