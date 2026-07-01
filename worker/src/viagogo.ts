@@ -573,6 +573,15 @@ async function handleFeaturesStep(page: Page, _features: string, _restrictions: 
   }
 
   await page.waitForLoadState("load", { timeout: 10_000 }).catch(() => {});
+
+  // React may issue a client-side redirect (e.g. ListingNotes → DeliveryDetails) after
+  // the load event fires. Wait up to 3s for any such redirect to complete so the caller
+  // sees the true final URL rather than the transient intermediate one.
+  const urlAfterLoad = page.url();
+  try {
+    await page.waitForURL((url) => url.toString() !== urlAfterLoad, { timeout: 3_000 });
+  } catch { /* URL didn't change — already at the right page */ }
+  console.log(`[viagogo] Features step done, now at: ${page.url()}`);
 }
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
