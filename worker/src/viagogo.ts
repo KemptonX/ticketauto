@@ -426,34 +426,92 @@ async function handleSeatDetailsStep(
   );
 
   if (!sectionFilled && section) {
-    // Try clicking a section card — exact match first, then partial, then first card
-    const cardSel = "button, label, li, [role='radio'], [role='option'], [role='button'], div[tabindex='0']";
-    const exact   = page.locator(cardSel).filter({ hasText: new RegExp(`^${section}$`, "i") }).first();
-    const partial = page.locator(cardSel).filter({ hasText: new RegExp(section, "i") }).first();
     const gaFallbacks = ["general admission", "ga", "floor", "standing", "pit", "unreserved"];
+    const sectionLower = section.toLowerCase().trim();
+    const matchesSection = (text: string) => {
+      const t = text.toLowerCase().trim();
+      if (!t) return false;
+      if (t === sectionLower || t.includes(sectionLower) || sectionLower.includes(t)) return true;
+      // If section is "ga", also match floor/standing/general admission
+      if (sectionLower === "ga") return gaFallbacks.some(fb => t === fb || t.includes(fb));
+      return false;
+    };
 
-    if (await exact.count() > 0) {
-      await forceClick(exact);
-      console.log(`[viagogo] Clicked section card (exact): ${section}`);
-    } else if (await partial.count() > 0) {
-      await forceClick(partial);
-      console.log(`[viagogo] Clicked section card (partial): ${section}`);
-    } else {
-      // Try GA-style fallbacks in order
-      let picked = false;
-      for (const fb of gaFallbacks) {
-        const el = page.locator(cardSel).filter({ hasText: new RegExp(`^${fb}$`, "i") }).first();
-        if (await el.count() > 0) {
-          await forceClick(el);
-          console.log(`[viagogo] Clicked section card (fallback): ${fb}`);
-          picked = true;
-          break;
+    // ── Primary: check underlying radio input ────────────────────────────────────
+    // Radio inputs are more reliable than clicking cards because React hooks
+    // into `change` events; `.check()` dispatches change/input correctly.
+    let picked = false;
+    const allRadios = page.locator('input[type="radio"]');
+    const radioCount = await allRadios.count();
+    const radioLog: string[] = [];
+    for (let i = 0; i < radioCount; i++) {
+      const radio = allRadios.nth(i);
+      const val   = await radio.getAttribute("value").catch(() => "") ?? "";
+      const id    = await radio.getAttribute("id").catch(() => "") ?? "";
+      const name  = await radio.getAttribute("name").catch(() => "") ?? "";
+      const labelText = id
+        ? (await page.locator(`label[for="${id}"]`).textContent().catch(() => "")) ?? ""
+        : "";
+      radioLog.push(`[id=${id},name=${name},val=${val},label="${labelText.trim()}"]`);
+
+      if (matchesSection(labelText) || matchesSection(val)) {
+        await radio.check({ force: true });
+        console.log(`[viagogo] Checked section radio: label="${labelText.trim()}" value="${val}"`);
+        picked = true;
+        break;
+      }
+    }
+    console.log(`[viagogo] SeatDetails radios (${radioCount}): ${radioLog.join(" | ")}`);
+
+    // ── Fallback: click a card element ───────────────────────────────────────────
+    if (!picked) {
+      // Prefer label/[role] over generic li/button to avoid matching nav/headings
+      const cardSel = "label, [role='radio'], [role='option'], [role='button']";
+      const exact   = page.locator(cardSel).filter({ hasText: new RegExp(`^\\s*${section}\\s*$`, "i") }).first();
+      const partial = page.locator(cardSel).filter({ hasText: new RegExp(section, "i") }).first();
+
+      let clickTarget = null as null | ReturnType<typeof page.locator>;
+      let clickLabel = "";
+      if (await exact.count() > 0) {
+        clickTarget = exact; clickLabel = `exact "${section}"`;
+      } else if (await partial.count() > 0) {
+        clickTarget = partial; clickLabel = `partial "${section}"`;
+      } else {
+        for (const fb of gaFallbacks) {
+          const el = page.locator(cardSel).filter({ hasText: new RegExp(`^\\s*${fb}\\s*$`, "i") }).first();
+          if (await el.count() > 0) {
+            clickTarget = el; clickLabel = `fallback "${fb}"`;
+            break;
+          }
         }
       }
-      if (!picked) console.warn(`[viagogo] Could not find section card for: ${section}`);
+
+      if (clickTarget) {
+        const outerHtml = await clickTarget.evaluate(e => e.outerHTML).catch(() => "?");
+        console.log(`[viagogo] Clicking section card (${clickLabel}): ${outerHtml.slice(0, 300)}`);
+        await forceClick(clickTarget);
+        picked = true;
+      } else {
+        console.warn(`[viagogo] Could not find any section card for: ${section}`);
+      }
     }
-    // Give React time to enable the Continue button after card selection
-    await page.waitForTimeout(800);
+
+    // Give React time to update state / enable Continue button
+    await page.waitForTimeout(1200);
+
+    // Diagnostic: dump all buttons so we can see what's available
+    const allBtns = page.locator("button");
+    const btnCount = await allBtns.count();
+    const btnLog: string[] = [];
+    for (let i = 0; i < Math.min(btnCount, 20); i++) {
+      const txt = (await allBtns.nth(i).textContent().catch(() => ""))?.trim().slice(0, 40) ?? "";
+      const vis = await allBtns.nth(i).isVisible().catch(() => false);
+      const dis = await allBtns.nth(i).isDisabled().catch(() => false);
+      const typ = await allBtns.nth(i).getAttribute("type").catch(() => "?");
+      btnLog.push(`"${txt}"[v=${vis},d=${dis},t=${typ}]`);
+    }
+    console.log(`[viagogo] Buttons after selection (${btnCount}): ${btnLog.join(" | ")}`);
+    console.log(`[viagogo] URL after section selection: ${page.url()}`);
   }
 
   // ── Row & Seats (seated events only) ─────────────────────────────────────────
