@@ -280,6 +280,10 @@ async function handleSplitRuleStep(page: Page, splitRule: string): Promise<void>
   }
 
   await clickNext(page);
+  const urlAfterSplit = page.url();
+  try {
+    await page.waitForURL((url) => url.toString() !== urlAfterSplit, { timeout: 3_000 });
+  } catch { /* URL stable */ }
 }
 
 async function handleTicketTypeStep(page: Page, storageProvider: string): Promise<void> {
@@ -381,6 +385,13 @@ async function handleTicketTypeStep(page: Page, storageProvider: string): Promis
   }
 
   await clickNext(page);
+
+  // React may redirect to the next pipeline step asynchronously after load.
+  const urlAfterNext = page.url();
+  try {
+    await page.waitForURL((url) => url.toString() !== urlAfterNext, { timeout: 3_000 });
+  } catch { /* URL stable — no redirect */ }
+  console.log(`[viagogo] Ticket type step done, now at: ${page.url()}`);
 }
 
 async function handleSeatDetailsStep(
@@ -440,6 +451,11 @@ async function handleSeatDetailsStep(
   }
 
   await clickNext(page);
+  const urlAfterSeat = page.url();
+  try {
+    await page.waitForURL((url) => url.toString() !== urlAfterSeat, { timeout: 3_000 });
+  } catch { /* URL stable */ }
+  console.log(`[viagogo] Seat step done, now at: ${page.url()}`);
 }
 
 async function handlePriceStep(page: Page, pricePerTicket: number, faceValuePerTicket: number): Promise<void> {
