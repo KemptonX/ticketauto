@@ -427,8 +427,9 @@ async function handlePriceStep(page: Page, pricePerTicket: number, faceValuePerT
   const priceInput = page.locator('input[name="ticketPrice_non_decimal"]');
   const faceInput  = page.locator('input[name="faceValue_non_decimal"]');
 
-  // ── 2. Set listing price ─────────────────────────────────────────────────────
-  await priceInput.waitFor({ state: "visible", timeout: 5_000 });
+  // ── 1. Set listing price ─────────────────────────────────────────────────────
+  // Give the pricing section up to 15s to render after the features step completes.
+  await priceInput.waitFor({ state: "visible", timeout: 15_000 });
   await priceInput.fill(String(pricePerTicket));
   await priceInput.press("Tab");
   const acceptedPrice = await priceInput.inputValue().catch(() => "");
@@ -514,35 +515,49 @@ async function handleFeaturesStep(page: Page, _features: string, _restrictions: 
 
   console.log("[viagogo] Handling features/restrictions step");
 
-  // On ListingNotes in headless, the "Do your seats have any features or restrictions?"
-  // section appears first. Feature checkboxes are pre-selected and disabled. We only
-  // need to declare no use-restrictions and advance past this section.
+  // 1. Check noRestrictions if unchecked
   const noRestrictCb = page.locator('input[name="noRestrictions"]');
-  if (await noRestrictCb.count() > 0) {
-    const isChecked = await noRestrictCb.isChecked().catch(() => true);
-    if (!isChecked) {
-      await noRestrictCb.check({ force: true });
-      console.log("[viagogo] Checked noRestrictions");
-      await page.waitForTimeout(400);
+  if (await noRestrictCb.count() > 0 && !await noRestrictCb.isChecked().catch(() => true)) {
+    await noRestrictCb.check({ force: true });
+    console.log("[viagogo] Checked noRestrictions");
+  }
+
+  // 2. The page has visible radio buttons that are a required field.
+  //    Select the first one if none is already selected — this is necessary for
+  //    the Continue button to become enabled (or for the form to auto-advance).
+  const radios = page.locator('input[type="radio"]');
+  if (await radios.count() > 0) {
+    let anyChecked = false;
+    for (let i = 0; i < await radios.count(); i++) {
+      if (await radios.nth(i).isChecked().catch(() => false)) { anyChecked = true; break; }
+    }
+    if (!anyChecked) {
+      await radios.first().check({ force: true });
+      const val = await radios.first().getAttribute("value").catch(() => "?");
+      console.log(`[viagogo] Selected first radio (value="${val}")`);
     }
   }
 
-  // Continue button may be button[type="submit"] on the features sub-section.
-  // Include it here — on the features step it advances the form, not submits the listing.
-  const candidates = [
-    'button:has-text("Continue")',
-    'button:has-text("Next")',
-    'button:has-text("Save")',
-    'button[type="submit"]',
-    'a:has-text("Next")',
-  ];
-  const clicked = await clickButton(page, candidates);
-  if (clicked) {
-    await page.waitForLoadState("load", { timeout: 10_000 }).catch(() => {});
-    console.log("[viagogo] Features step advanced");
+  await page.waitForTimeout(600);
+
+  // 3. Click Continue — try named button first, then force-click submit via JS.
+  //    JS .click() bypasses React's disabled-state guard when all required fields
+  //    are satisfied but React hasn't re-enabled the button yet.
+  const namedBtn = page.locator("button").filter({ hasText: /^(continue|next|save)$/i }).first();
+  if (await namedBtn.count() > 0 && await namedBtn.isVisible()) {
+    await forceClick(namedBtn);
+    console.log("[viagogo] Clicked Continue on features step");
   } else {
-    console.warn("[viagogo] Could not find Continue on features step — page may have auto-advanced");
+    const submitBtn = page.locator('button[type="submit"]').first();
+    if (await submitBtn.count() > 0) {
+      await submitBtn.evaluate((el) => (el as HTMLElement).click());
+      console.log("[viagogo] JS-clicked submit on features step");
+    } else {
+      console.warn("[viagogo] No Continue/submit button found on features step");
+    }
   }
+
+  await page.waitForLoadState("load", { timeout: 10_000 }).catch(() => {});
 }
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
