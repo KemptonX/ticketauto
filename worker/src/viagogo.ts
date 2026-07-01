@@ -397,7 +397,8 @@ async function handleSeatDetailsStep(
   }
 
   const fillIfFound = async (selectors: string, value: string, label: string) => {
-    const el = page.locator(selectors).first();
+    // Exclude hidden inputs — visible inputs only
+    const el = page.locator(selectors).filter({ visible: true }).first();
     if (await el.count() > 0 && value) {
       await el.fill(value);
       console.log(`[viagogo] Filled ${label}: ${value}`);
