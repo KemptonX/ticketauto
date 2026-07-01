@@ -437,22 +437,34 @@ async function handleSeatDetailsStep(
       return false;
     };
 
-    // ── Primary: check underlying radio input ────────────────────────────────────
-    // Radio inputs are more reliable than clicking cards because React hooks
-    // into `change` events; `.check()` dispatches change/input correctly.
+    // ── Step 1: find and check the right radio input ────────────────────────────
+    // Radios may have no `id`, so we traverse the DOM to get label text.
     let picked = false;
     const allRadios = page.locator('input[type="radio"]');
     const radioCount = await allRadios.count();
     const radioLog: string[] = [];
+
     for (let i = 0; i < radioCount; i++) {
       const radio = allRadios.nth(i);
-      const val   = await radio.getAttribute("value").catch(() => "") ?? "";
-      const id    = await radio.getAttribute("id").catch(() => "") ?? "";
-      const name  = await radio.getAttribute("name").catch(() => "") ?? "";
-      const labelText = id
+      const val  = await radio.getAttribute("value").catch(() => "") ?? "";
+      const id   = await radio.getAttribute("id").catch(() => "") ?? "";
+      const name = await radio.getAttribute("name").catch(() => "") ?? "";
+
+      // Get label text: try id-based label, then closest label ancestor, then next sibling
+      let labelText = id
         ? (await page.locator(`label[for="${id}"]`).textContent().catch(() => "")) ?? ""
         : "";
-      radioLog.push(`[id=${id},name=${name},val=${val},label="${labelText.trim()}"]`);
+      if (!labelText) {
+        labelText = await radio.evaluate((el) => {
+          const label = el.closest("label");
+          if (label) return label.textContent?.trim() ?? "";
+          const next = el.nextElementSibling;
+          if (next) return next.textContent?.trim() ?? "";
+          return el.parentElement?.textContent?.trim() ?? "";
+        }).catch(() => "");
+      }
+
+      radioLog.push(`[name=${name},val=${val},label="${labelText.trim()}"]`);
 
       if (matchesSection(labelText) || matchesSection(val)) {
         await radio.check({ force: true });
@@ -463,15 +475,33 @@ async function handleSeatDetailsStep(
     }
     console.log(`[viagogo] SeatDetails radios (${radioCount}): ${radioLog.join(" | ")}`);
 
-    // ── Fallback: click a card element ───────────────────────────────────────────
+    // ── Step 2: missingSeatingOption fallback ────────────────────────────────────
+    // Viagogo shows this when there's no specific seating (GA events).
+    // val=1 = "I don't know my seating / GA", val=2 = "I have specific seat info".
+    // For GA tickets (section="GA"/no row/seat), select val=1.
     if (!picked) {
-      // Prefer label/[role] over generic li/button to avoid matching nav/headings
+      const missingRadio = page.locator('input[name="missingSeatingOption"]');
+      if (await missingRadio.count() > 0) {
+        const gaValues = ["1"]; // val=1 = GA / no seating info
+        for (const gv of gaValues) {
+          const r = page.locator(`input[name="missingSeatingOption"][value="${gv}"]`);
+          if (await r.count() > 0) {
+            await r.check({ force: true });
+            console.log(`[viagogo] Checked missingSeatingOption val=${gv} (GA fallback)`);
+            picked = true;
+            break;
+          }
+        }
+      }
+    }
+
+    // ── Step 3: click a card element as last resort ───────────────────────────────
+    if (!picked) {
       const cardSel = "label, [role='radio'], [role='option'], [role='button']";
       const exact   = page.locator(cardSel).filter({ hasText: new RegExp(`^\\s*${section}\\s*$`, "i") }).first();
       const partial = page.locator(cardSel).filter({ hasText: new RegExp(section, "i") }).first();
-
       let clickTarget = null as null | ReturnType<typeof page.locator>;
-      let clickLabel = "";
+      let clickLabel  = "";
       if (await exact.count() > 0) {
         clickTarget = exact; clickLabel = `exact "${section}"`;
       } else if (await partial.count() > 0) {
@@ -479,16 +509,12 @@ async function handleSeatDetailsStep(
       } else {
         for (const fb of gaFallbacks) {
           const el = page.locator(cardSel).filter({ hasText: new RegExp(`^\\s*${fb}\\s*$`, "i") }).first();
-          if (await el.count() > 0) {
-            clickTarget = el; clickLabel = `fallback "${fb}"`;
-            break;
-          }
+          if (await el.count() > 0) { clickTarget = el; clickLabel = `fallback "${fb}"`; break; }
         }
       }
-
       if (clickTarget) {
-        const outerHtml = await clickTarget.evaluate(e => e.outerHTML).catch(() => "?");
-        console.log(`[viagogo] Clicking section card (${clickLabel}): ${outerHtml.slice(0, 300)}`);
+        const html = await clickTarget.evaluate(e => e.outerHTML).catch(() => "?");
+        console.log(`[viagogo] Clicking section card (${clickLabel}): ${html.slice(0, 200)}`);
         await forceClick(clickTarget);
         picked = true;
       } else {
@@ -496,21 +522,8 @@ async function handleSeatDetailsStep(
       }
     }
 
-    // Give React time to update state / enable Continue button
-    await page.waitForTimeout(1200);
-
-    // Diagnostic: dump all buttons so we can see what's available
-    const allBtns = page.locator("button");
-    const btnCount = await allBtns.count();
-    const btnLog: string[] = [];
-    for (let i = 0; i < Math.min(btnCount, 20); i++) {
-      const txt = (await allBtns.nth(i).textContent().catch(() => ""))?.trim().slice(0, 40) ?? "";
-      const vis = await allBtns.nth(i).isVisible().catch(() => false);
-      const dis = await allBtns.nth(i).isDisabled().catch(() => false);
-      const typ = await allBtns.nth(i).getAttribute("type").catch(() => "?");
-      btnLog.push(`"${txt}"[v=${vis},d=${dis},t=${typ}]`);
-    }
-    console.log(`[viagogo] Buttons after selection (${btnCount}): ${btnLog.join(" | ")}`);
+    // Give React time to enable the Continue button
+    await page.waitForTimeout(800);
     console.log(`[viagogo] URL after section selection: ${page.url()}`);
   }
 
@@ -543,18 +556,36 @@ async function handleSeatDetailsStep(
   }
 
   // ── Continue / Submit ─────────────────────────────────────────────────────────
-  // SeatDetails Continue button may be type="submit" (excluded from clickNext) so
-  // we do our own search here with forceClick to bypass pointer-event overlays.
+  // The Continue button may be type="submit" and starts disabled until a radio
+  // is selected. forceClick bypasses pointer-event overlays.
   const seatBtnSels = [
-    'button:has-text("Next")',
     'button:has-text("Continue")',
+    'button:has-text("Next")',
     'button:has-text("Save")',
     'button[type="submit"]',
+    'input[type="submit"]',
   ];
   let seatBtnClicked = false;
   for (const sel of seatBtnSels) {
     const btn = page.locator(sel).filter({ visible: true }).first();
-    if (await btn.count() > 0 && await btn.isEnabled().catch(() => false)) {
+    if (await btn.count() > 0) {
+      const disabled = await btn.isDisabled().catch(() => true);
+      if (disabled) {
+        console.log(`[viagogo] Seat step button "${sel}" is disabled — waiting for React`);
+        // Wait up to 3s for it to become enabled after radio selection
+        try {
+          await btn.waitFor({ state: "visible" });
+          await page.waitForFunction(
+            (s) => {
+              const el = document.querySelector(s) as HTMLButtonElement | null;
+              return el && !el.disabled;
+            },
+            sel,
+            { timeout: 3_000 },
+          );
+        } catch { /* still disabled — try next */ }
+        if (await btn.isDisabled().catch(() => true)) continue;
+      }
       await forceClick(btn);
       console.log(`[viagogo] Clicked seat step button: ${sel}`);
       seatBtnClicked = true;
