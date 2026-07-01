@@ -402,25 +402,60 @@ async function handleSeatDetailsStep(
   seatTo: string,
 ): Promise<void> {
   const bodyText = (await page.textContent("body").catch(() => "")) ?? "";
-  if (!/section|row|seat/i.test(bodyText)) {
+  if (!/section|row|seat|floor|standing|general admission|ga\b/i.test(bodyText)) {
     console.log("[viagogo] No seat details step detected — skipping");
     return;
   }
 
   const fillIfFound = async (selectors: string, value: string, label: string) => {
-    // Exclude hidden inputs — visible inputs only
     const el = page.locator(selectors).filter({ visible: true }).first();
     if (await el.count() > 0 && value) {
       await el.fill(value);
       console.log(`[viagogo] Filled ${label}: ${value}`);
+      return true;
     }
+    return false;
   };
 
-  await fillIfFound(
-    'input[name*="section" i], input[placeholder*="section" i], input[id*="section" i], input[aria-label*="section" i]',
+  // ── Section ──────────────────────────────────────────────────────────────────
+  // GA/Floor events show section as clickable cards, not text inputs.
+  const sectionFilled = await fillIfFound(
+    'input[name*="section" i]:not([name*="sectionId"]), input[placeholder*="section" i], input[id*="section" i], input[aria-label*="section" i]',
     section,
     "section",
   );
+
+  if (!sectionFilled && section) {
+    // Try clicking a section card — exact match first, then partial, then first card
+    const cardSel = "button, label, li, [role='radio'], [role='option'], [role='button'], div[tabindex='0']";
+    const exact   = page.locator(cardSel).filter({ hasText: new RegExp(`^${section}$`, "i") }).first();
+    const partial = page.locator(cardSel).filter({ hasText: new RegExp(section, "i") }).first();
+    const gaFallbacks = ["general admission", "ga", "floor", "standing", "pit", "unreserved"];
+
+    if (await exact.count() > 0) {
+      await forceClick(exact);
+      console.log(`[viagogo] Clicked section card (exact): ${section}`);
+    } else if (await partial.count() > 0) {
+      await forceClick(partial);
+      console.log(`[viagogo] Clicked section card (partial): ${section}`);
+    } else {
+      // Try GA-style fallbacks in order
+      let picked = false;
+      for (const fb of gaFallbacks) {
+        const el = page.locator(cardSel).filter({ hasText: new RegExp(`^${fb}$`, "i") }).first();
+        if (await el.count() > 0) {
+          await forceClick(el);
+          console.log(`[viagogo] Clicked section card (fallback): ${fb}`);
+          picked = true;
+          break;
+        }
+      }
+      if (!picked) console.warn(`[viagogo] Could not find section card for: ${section}`);
+    }
+    await page.waitForTimeout(300);
+  }
+
+  // ── Row & Seats (seated events only) ─────────────────────────────────────────
   await fillIfFound(
     'input[name*="row" i], input[placeholder*="row" i], input[id*="row" i], input[aria-label*="row" i]',
     row,
@@ -428,7 +463,6 @@ async function handleSeatDetailsStep(
   );
 
   if (seatFrom && seatTo) {
-    // Try "from" and "to" seat inputs
     await fillIfFound(
       'input[name*="seat_from" i], input[name*="seatfrom" i], input[placeholder*="from" i], input[aria-label*="first seat" i]',
       seatFrom,
@@ -440,10 +474,9 @@ async function handleSeatDetailsStep(
       "seat to",
     );
 
-    // Viagogo sometimes uses a single "seats" input as a range (e.g., "5-7")
     const seatSingle = page.locator(
       'input[name*="seat" i]:not([name*="from" i]):not([name*="to" i]), input[placeholder*="seat number" i]',
-    ).first();
+    ).filter({ visible: true }).first();
     if (await seatSingle.count() > 0 && !(await page.locator('input[name*="seat_from" i]').count())) {
       await seatSingle.fill(seatFrom === seatTo ? seatFrom : `${seatFrom}-${seatTo}`);
       console.log(`[viagogo] Filled seat(s): ${seatFrom}-${seatTo}`);
