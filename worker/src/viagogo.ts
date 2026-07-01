@@ -119,10 +119,25 @@ export async function runViagogoListing(browser: Browser, job: Job, report: Repo
       await handleSeatDetailsStep(page, job.draft.section, job.draft.row, job.draft.seatFrom, job.draft.seatTo);
     }
 
-    // Features/restrictions is the first visible section on the combined ListingNotes
-    // page in headless — it must be completed before the pricing section renders.
+    // Features/restrictions appears as the first section on the combined ListingNotes
+    // page in headless. Completing it may navigate forward to additional pipeline steps
+    // (e.g. DeliveryDetails) before the pricing section becomes available.
     await report("filling_features_restrictions");
     await handleFeaturesStep(page, job.draft.listingFeatures, job.draft.restrictions);
+
+    // Second pass: handle any intermediate steps that appeared after features.
+    if (!onFinalPage()) {
+      await report("selecting_ticket_provider");
+      await handleTicketTypeStep(page, job.draft.ticketStorageProvider);
+    }
+    if (!onFinalPage()) {
+      await report("filling_seat_details");
+      await handleSeatDetailsStep(page, job.draft.section, job.draft.row, job.draft.seatFrom, job.draft.seatTo);
+    }
+    if (!onFinalPage()) {
+      await report("selecting_split_rule");
+      await handleSplitRuleStep(page, job.draft.splitRule);
+    }
 
     await report("filling_price");
     await handlePriceStep(page, job.draft.pricePerTicket, job.draft.faceValuePerTicket);
