@@ -421,9 +421,13 @@ async function handleSeatDetailsStep(
 async function handlePriceStep(page: Page, pricePerTicket: number, faceValuePerTicket: number): Promise<void> {
   console.log(`[viagogo] Price/final step — URL: ${page.url()}`);
 
-  // ── 0. Diagnostics: snapshot what's on the page before we touch anything ────
-  await page.screenshot({ path: "/tmp/worker-screenshots/price-step-start.png" }).catch(() => {});
-  {
+  // ── 0. Wait for page to fully hydrate, then diagnose ────────────────────────
+  // ListingNotes is a React SPA that fetches pricing strategy data after load.
+  // Scroll to top first in case the page renders the pricing section above fold.
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.waitForTimeout(4_000);
+
+  const dumpInputs = async (label: string) => {
     const allInputs = await page.locator("input").all();
     const summary = await Promise.all(allInputs.map(async (el) => {
       const name = await el.getAttribute("name").catch(() => "");
@@ -432,49 +436,28 @@ async function handlePriceStep(page: Page, pricePerTicket: number, faceValuePerT
       const visible = await el.isVisible().catch(() => false);
       return `  name="${name}" type="${type}" value="${value}" visible=${visible}`;
     }));
-    console.log(`[viagogo] All inputs on page (${allInputs.length}):\n${summary.join("\n")}`);
-  }
+    console.log(`[viagogo] ${label} — inputs (${allInputs.length}):\n${summary.join("\n")}`);
+    return allInputs.length;
+  };
+
+  await dumpInputs("After 4s wait");
+  await page.screenshot({ path: "/tmp/worker-screenshots/price-step-start.png" }).catch(() => {});
+
+  // Also log visible headings so we know which section is on screen
+  const headings = await page.locator("h1, h2, h3, h4").allInnerTexts().catch(() => [] as string[]);
+  console.log(`[viagogo] Page headings: ${headings.join(" | ")}`);
 
   // Both inputs targeted by name (confirmed from DevTools).
   const priceInput = page.locator('input[name="ticketPrice_non_decimal"]');
   const faceInput  = page.locator('input[name="faceValue_non_decimal"]');
 
-  // ── 1. Unlock price input — select a pricing strategy ───────────────────────
-  // In headless, the page loads with no strategy selected and the price input
-  // absent from the DOM entirely.  Selecting any strategy radio reveals it.
-  // Inputs observed in headless: 3 radio buttons (values 111/-2/-1) = strategies.
+  // ── 1. Unlock price input — the pricing section loads after initial render ───
   const priceVisible = await priceInput.isVisible().catch(() => false);
   if (!priceVisible) {
-    console.log(`[viagogo] Price input not in DOM — selecting a strategy to reveal it`);
-    let unlocked = false;
-
-    // 1a. Try labels with strategy text (works when labels wrap the radio)
-    for (const pattern of [/balanced/i, /quick sell/i, /max earning/i, /custom/i, /set your own/i]) {
-      const lbl = page.locator("label").filter({ hasText: pattern }).first();
-      if (await lbl.count() > 0) {
-        await forceClick(lbl);
-        console.log(`[viagogo] Clicked label matching: ${pattern}`);
-        unlocked = await priceInput.waitFor({ state: "visible", timeout: 3_000 }).then(() => true).catch(() => false);
-        if (unlocked) break;
-      }
-    }
-
-    // 1b. Click each radio input in turn until price appears
-    if (!unlocked) {
-      const radios = page.locator('input[type="radio"]');
-      const radioCount = await radios.count();
-      console.log(`[viagogo] Trying ${radioCount} radio inputs directly`);
-      for (let i = 0; i < radioCount; i++) {
-        const radio = radios.nth(i);
-        const val = await radio.getAttribute("value").catch(() => "?");
-        await radio.check({ force: true }).catch(() => radio.evaluate((el) => (el as HTMLInputElement).click()));
-        console.log(`[viagogo] Checked radio[${i}] value="${val}"`);
-        unlocked = await priceInput.waitFor({ state: "visible", timeout: 2_000 }).then(() => true).catch(() => false);
-        if (unlocked) { console.log(`[viagogo] Radio ${i} revealed price input`); break; }
-      }
-    }
-
-    if (!unlocked) throw new Error("[viagogo] Could not reveal price input after trying all strategy options");
+    console.log(`[viagogo] Price input still absent — dumping form HTML for analysis`);
+    const formHtml = await page.locator("body").innerHTML().catch(() => "");
+    console.log(`[viagogo] Body HTML (first 8000):\n${formHtml.slice(0, 8_000)}`);
+    throw new Error("[viagogo] Price input not in DOM after 4s — see HTML dump above");
   }
 
   // ── 2. Set listing price ─────────────────────────────────────────────────────
