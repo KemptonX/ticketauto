@@ -452,7 +452,8 @@ async function handleSeatDetailsStep(
       }
       if (!picked) console.warn(`[viagogo] Could not find section card for: ${section}`);
     }
-    await page.waitForTimeout(300);
+    // Give React time to enable the Continue button after card selection
+    await page.waitForTimeout(800);
   }
 
   // ── Row & Seats (seated events only) ─────────────────────────────────────────
@@ -483,10 +484,33 @@ async function handleSeatDetailsStep(
     }
   }
 
-  await clickNext(page);
+  // ── Continue / Submit ─────────────────────────────────────────────────────────
+  // SeatDetails Continue button may be type="submit" (excluded from clickNext) so
+  // we do our own search here with forceClick to bypass pointer-event overlays.
+  const seatBtnSels = [
+    'button:has-text("Next")',
+    'button:has-text("Continue")',
+    'button:has-text("Save")',
+    'button[type="submit"]',
+  ];
+  let seatBtnClicked = false;
+  for (const sel of seatBtnSels) {
+    const btn = page.locator(sel).filter({ visible: true }).first();
+    if (await btn.count() > 0 && await btn.isEnabled().catch(() => false)) {
+      await forceClick(btn);
+      console.log(`[viagogo] Clicked seat step button: ${sel}`);
+      seatBtnClicked = true;
+      break;
+    }
+  }
+  if (!seatBtnClicked) {
+    console.warn("[viagogo] Could not find seat step Continue button");
+  }
+
+  await page.waitForLoadState("load", { timeout: 10_000 }).catch(() => {});
   const urlAfterSeat = page.url();
   try {
-    await page.waitForURL((url) => url.toString() !== urlAfterSeat, { timeout: 3_000 });
+    await page.waitForURL((url) => url.toString() !== urlAfterSeat, { timeout: 4_000 });
   } catch { /* URL stable */ }
   console.log(`[viagogo] Seat step done, now at: ${page.url()}`);
 }
