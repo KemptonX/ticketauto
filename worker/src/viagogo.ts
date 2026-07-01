@@ -439,37 +439,42 @@ async function handlePriceStep(page: Page, pricePerTicket: number, faceValuePerT
   const priceInput = page.locator('input[name="ticketPrice_non_decimal"]');
   const faceInput  = page.locator('input[name="faceValue_non_decimal"]');
 
-  // ── 1. Unlock price input if hidden behind strategy cards ────────────────────
-  // In headless Chromium the page loads with no strategy pre-selected, so the
-  // price input section may be collapsed.  Click any strategy card to reveal it.
+  // ── 1. Unlock price input — select a pricing strategy ───────────────────────
+  // In headless, the page loads with no strategy selected and the price input
+  // absent from the DOM entirely.  Selecting any strategy radio reveals it.
+  // Inputs observed in headless: 3 radio buttons (values 111/-2/-1) = strategies.
   const priceVisible = await priceInput.isVisible().catch(() => false);
   if (!priceVisible) {
-    console.log(`[viagogo] Price input not yet visible — clicking strategy card to unlock`);
-    // Try common strategy card text patterns (case-insensitive)
-    const cardSel = page.locator(
-      "button, [role='button'], div[tabindex], li[tabindex], [role='radio'], [role='option'], label"
-    );
-    const cardTexts = [/balanced/i, /quick sell/i, /max earning/i, /set your own/i, /custom/i];
-    let clicked = false;
-    for (const pattern of cardTexts) {
-      const card = cardSel.filter({ hasText: pattern }).first();
-      if (await card.count() > 0) {
-        await forceClick(card);
-        console.log(`[viagogo] Clicked strategy card matching: ${pattern}`);
-        clicked = true;
-        break;
+    console.log(`[viagogo] Price input not in DOM — selecting a strategy to reveal it`);
+    let unlocked = false;
+
+    // 1a. Try labels with strategy text (works when labels wrap the radio)
+    for (const pattern of [/balanced/i, /quick sell/i, /max earning/i, /custom/i, /set your own/i]) {
+      const lbl = page.locator("label").filter({ hasText: pattern }).first();
+      if (await lbl.count() > 0) {
+        await forceClick(lbl);
+        console.log(`[viagogo] Clicked label matching: ${pattern}`);
+        unlocked = await priceInput.waitFor({ state: "visible", timeout: 3_000 }).then(() => true).catch(() => false);
+        if (unlocked) break;
       }
     }
-    if (!clicked) {
-      // Last resort: click the first non-hidden, non-checkbox element that looks like a card
-      const anyCard = page.locator("[role='radio'], [role='option']").first();
-      if (await anyCard.count() > 0) {
-        await forceClick(anyCard);
-        console.log(`[viagogo] Clicked first [role=radio/option] card`);
+
+    // 1b. Click each radio input in turn until price appears
+    if (!unlocked) {
+      const radios = page.locator('input[type="radio"]');
+      const radioCount = await radios.count();
+      console.log(`[viagogo] Trying ${radioCount} radio inputs directly`);
+      for (let i = 0; i < radioCount; i++) {
+        const radio = radios.nth(i);
+        const val = await radio.getAttribute("value").catch(() => "?");
+        await radio.check({ force: true }).catch(() => radio.evaluate((el) => (el as HTMLInputElement).click()));
+        console.log(`[viagogo] Checked radio[${i}] value="${val}"`);
+        unlocked = await priceInput.waitFor({ state: "visible", timeout: 2_000 }).then(() => true).catch(() => false);
+        if (unlocked) { console.log(`[viagogo] Radio ${i} revealed price input`); break; }
       }
     }
-    await priceInput.waitFor({ state: "visible", timeout: 8_000 });
-    console.log(`[viagogo] Price input now visible after strategy card click`);
+
+    if (!unlocked) throw new Error("[viagogo] Could not reveal price input after trying all strategy options");
   }
 
   // ── 2. Set listing price ─────────────────────────────────────────────────────
