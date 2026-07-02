@@ -27,10 +27,15 @@ export async function POST(_req: NextRequest, { params }: Params) {
 
     const toIso = (d: string) => {
       if (/^\d{4}-\d{2}-\d{2}/.test(d)) return d.slice(0, 10);
-      const months: Record<string,string> = { january:"01",february:"02",march:"03",april:"04",may:"05",june:"06",july:"07",august:"08",september:"09",october:"10",november:"11",december:"12" };
+      const months: Record<string,string> = {
+        jan:"01",feb:"02",mar:"03",apr:"04",may:"05",jun:"06",
+        jul:"07",aug:"08",sep:"09",oct:"10",nov:"11",dec:"12",
+        january:"01",february:"02",march:"03",april:"04",june:"06",
+        july:"07",august:"08",september:"09",october:"10",november:"11",december:"12",
+      };
       const m = d.match(/(\d{1,2})\s+(\w+)\s+(\d{4})/);
       if (m) { const mo = months[m[2].toLowerCase()]; if (mo) return `${m[3]}-${mo}-${m[1].padStart(2,"0")}`; }
-      const p = new Date(d); return isNaN(p.getTime()) ? d : p.toISOString().slice(0,10);
+      return "";
     };
 
     // Mandatory: exact date match before confirmation is allowed

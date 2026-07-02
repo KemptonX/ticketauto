@@ -3,7 +3,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 const MONTHS: Record<string, string> = {
-  january:"01",february:"02",march:"03",april:"04",may:"05",june:"06",
+  jan:"01",feb:"02",mar:"03",apr:"04",may:"05",jun:"06",
+  jul:"07",aug:"08",sep:"09",oct:"10",nov:"11",dec:"12",
+  january:"01",february:"02",march:"03",april:"04",june:"06",
   july:"07",august:"08",september:"09",october:"10",november:"11",december:"12",
 };
 function toIsoDate(d: string | null | undefined): string {
@@ -14,8 +16,8 @@ function toIsoDate(d: string | null | undefined): string {
     const mo = MONTHS[m[2].toLowerCase()];
     if (mo) return `${m[3]}-${mo}-${m[1].padStart(2, "0")}`;
   }
-  const p = new Date(d);
-  return isNaN(p.getTime()) ? "" : p.toISOString().slice(0, 10);
+  // Avoid new Date() — it parses as local midnight which shifts the date in UTC+1 (BST)
+  return "";
 }
 import { SPLIT_RULE_LABELS, splitRulesForQty } from "@/src/lib/marketplace/types";
 import type { SplitRule, TicketStorageProvider, JobStatus, ValidationError } from "@/src/lib/marketplace/types";
