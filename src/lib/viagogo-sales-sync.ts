@@ -188,6 +188,16 @@ export async function syncViagogoSalesInbox({
       continue;
     }
 
+    // Skip pre-sale "upload your listing now" reminders — they look like sale emails
+    // but are sent before any sale has occurred. They say "Thank you for listing" and
+    // "if they sell" rather than confirming a completed transaction.
+    if (
+      combined.toLowerCase().includes("thank you for listing") ||
+      combined.toLowerCase().includes("if they sell")
+    ) {
+      continue;
+    }
+
     const parsed = isSoldConfirmation
       ? parseSoldConfirmation({ headers, subject, text: combined })
       : parseSale({ headers, subject, text: combined });
@@ -525,6 +535,11 @@ export async function syncViagogoSalesOutlookInbox({
     }
 
     const rawBody = decodeQuotedPrintable(msg.body.content);
+    // Skip pre-sale "upload your listing now" reminders — same check as Gmail path
+    const previewText = (subject + " " + rawBody).toLowerCase();
+    if (previewText.includes("thank you for listing") || previewText.includes("if they sell")) {
+      continue;
+    }
     const bodyText =
       msg.body.contentType === "html" ? outlookStripHtml(rawBody) : rawBody;
     const combined = cleanText(`${subject}\n${bodyText}`);
@@ -1058,7 +1073,9 @@ function parseSale({
 
   return {
     externalSaleId:
-      subject.match(/sale\s+#(\d+)/i)?.[1] || subject.match(/tickets\s+(\d+)/i)?.[1] || text.match(/Order ID:\s*(\d+)/i)?.[1] || "",
+      subject.match(/sale\s+#?(\d+)/i)?.[1] ||
+      text.match(/Order ID:\s*(\d+)/i)?.[1] ||
+      "",
     subject,
     eventName:
       extractField(text, "Event", ["Listing Note\\(s\\)", "Venue", "Date", "Must Ship by Date"]) ||
@@ -2820,6 +2837,11 @@ export async function processSingleSaleEmail({
   let existingSale: ExistingSale | null;
 
   if (isViagogo) {
+    // Skip pre-sale upload reminders — they say "Thank you for listing" / "if they sell"
+    const lowerCombined = combined.toLowerCase();
+    if (lowerCombined.includes("thank you for listing") || lowerCombined.includes("if they sell")) {
+      return null;
+    }
     const isSoldConfirmation = lowerSubject.includes("you sold your ticket for");
     parsed = isSoldConfirmation
       ? parseSoldConfirmation({ headers: fakeHeaders, subject, text: combined })
