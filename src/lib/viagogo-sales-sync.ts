@@ -362,6 +362,8 @@ export async function syncViagogoSalesInbox({
           payoutTotal: parsed.payoutTotal,
           totalQtySold: newQtySold,
         });
+      } else if (existingSale?.inventory_order_id != null) {
+        await recomputeOrderStatus(supabase, { userId, orderId: existingSale.inventory_order_id });
       }
 
       // Repair: if a prior scan split this sale but the overflow insert failed
@@ -628,6 +630,8 @@ export async function syncViagogoSalesOutlookInbox({
         payoutTotal: parsed.payoutTotal,
         totalQtySold: newQtySold,
       });
+    } else if (existingSale?.inventory_order_id != null) {
+      await recomputeOrderStatus(supabase, { userId, orderId: existingSale.inventory_order_id });
     }
 
     await outlookMarkRead(accessToken, msg.id);
@@ -686,6 +690,42 @@ async function findExistingSale(
 
   return (data as ExistingSale | null) || null;
 }
+async function recomputeOrderStatus(
+  supabase: SupabaseClient,
+  { userId, orderId }: { userId: string; orderId: number },
+) {
+  const [{ data: salesData }, { data: orderData }] = await Promise.all([
+    supabase
+      .from("sales")
+      .select("sale_total, payout_total, qty_sold")
+      .eq("inventory_order_id", orderId)
+      .eq("user_id", userId)
+      .neq("sale_status", "Deleted"),
+    supabase
+      .from("orders")
+      .select("qty_bought")
+      .eq("id", orderId)
+      .eq("user_id", userId)
+      .single(),
+  ]);
+
+  const linked = (salesData || []) as { sale_total?: number | null; payout_total?: number | null; qty_sold?: number | null }[];
+  const soldTotal = linked.reduce((s, r) => s + (r.sale_total ?? r.payout_total ?? 0), 0);
+  const qtySold = linked.reduce((s, r) => s + (r.qty_sold ?? 0), 0);
+  const qtyBought = (orderData as { qty_bought?: number | null } | null)?.qty_bought ?? 0;
+
+  const newStatus =
+    linked.length === 0 ? "Unlisted"
+    : qtyBought > 0 && qtySold < qtyBought ? "Partially Sold"
+    : "Sold";
+
+  await supabase
+    .from("orders")
+    .update({ listing_status: newStatus, sold_total: soldTotal > 0 ? soldTotal : null })
+    .eq("id", orderId)
+    .eq("user_id", userId);
+}
+
 async function updateMatchedOrder(
   supabase: SupabaseClient,
   {
@@ -726,7 +766,8 @@ async function loadOrderUsage(supabase: SupabaseClient, userId: string) {
     .from("sales")
     .select("inventory_order_id, qty_sold")
     .eq("user_id", userId)
-    .not("inventory_order_id", "is", null);
+    .not("inventory_order_id", "is", null)
+    .neq("sale_status", "Deleted");
 
   if (error) {
     throw new Error(error.message);
@@ -1849,6 +1890,8 @@ export async function syncStubHubSalesInbox({
         payoutTotal: parsed.payoutTotal,
         totalQtySold: newQtySold,
       });
+    } else if (existingSale?.inventory_order_id != null) {
+      await recomputeOrderStatus(supabase, { userId, orderId: existingSale.inventory_order_id });
     }
 
     await markMessageProcessed(accessToken, message.id, labelId);
@@ -1957,6 +2000,8 @@ export async function syncStubHubSalesOutlookInbox({
         payoutTotal: parsed.payoutTotal,
         totalQtySold: newQtySold,
       });
+    } else if (existingSale?.inventory_order_id != null) {
+      await recomputeOrderStatus(supabase, { userId, orderId: existingSale.inventory_order_id });
     }
 
     await outlookMarkRead(accessToken, msg.id);
@@ -2134,6 +2179,8 @@ export async function syncStubHubSalesImapInbox({
                 payoutTotal: saleParsed.payoutTotal,
                 totalQtySold: newQtySold,
               });
+            } else if (existingSale?.inventory_order_id != null) {
+              await recomputeOrderStatus(supabase, { userId, orderId: existingSale.inventory_order_id });
             }
 
             try { await client.messageFlagsAdd(String(uid), ["\\Seen"], { uid: true }); } catch { /* best-effort */ }
@@ -2354,6 +2401,8 @@ export async function syncTicomboSalesInbox({
       orderUsage.set(match.order.id, newQtySold);
       matched += 1;
       await updateMatchedOrder(supabase, { userId, order: match.order, payoutTotal: parsed.payoutTotal, totalQtySold: newQtySold });
+    } else if (existingSale?.inventory_order_id != null) {
+      await recomputeOrderStatus(supabase, { userId, orderId: existingSale.inventory_order_id });
     }
 
     await markMessageProcessed(accessToken, message.id, labelId);
@@ -2459,6 +2508,8 @@ export async function syncTicomboSalesOutlookInbox({
       orderUsage.set(match.order.id, newQtySold);
       matched += 1;
       await updateMatchedOrder(supabase, { userId, order: match.order, payoutTotal: parsed.payoutTotal, totalQtySold: newQtySold });
+    } else if (existingSale?.inventory_order_id != null) {
+      await recomputeOrderStatus(supabase, { userId, orderId: existingSale.inventory_order_id });
     }
 
     await outlookMarkRead(accessToken, msg.id);
@@ -2614,6 +2665,8 @@ export async function syncTicomboSalesImapInbox({
               orderUsage.set(match.order.id, newQtySold);
               matched++;
               await updateMatchedOrder(supabase, { userId, order: match.order, payoutTotal: saleParsed.payoutTotal, totalQtySold: newQtySold });
+            } else if (existingSale?.inventory_order_id != null) {
+              await recomputeOrderStatus(supabase, { userId, orderId: existingSale.inventory_order_id });
             }
 
             try { await client.messageFlagsAdd(String(uid), ["\\Seen"], { uid: true }); } catch { /* best-effort */ }
@@ -2822,6 +2875,8 @@ export async function syncViagogoSalesImapInbox({
                 payoutTotal: saleParsed.payoutTotal,
                 totalQtySold: newQtySold,
               });
+            } else if (existingSale?.inventory_order_id != null) {
+              await recomputeOrderStatus(supabase, { userId, orderId: existingSale.inventory_order_id });
             }
 
             // Mark read + file into "My Sales" (mirrors Gmail's markMessageProcessed)
@@ -2979,6 +3034,8 @@ export async function processSingleSaleEmail({
     const currentUsed = orderUsage.get(match.order.id) ?? 0;
     const newQtySold = currentUsed + (parsed.qtySold ?? 1);
     await updateMatchedOrder(supabase, { userId, order: match.order, payoutTotal: parsed.payoutTotal, totalQtySold: newQtySold });
+  } else if (existingSale?.inventory_order_id != null) {
+    await recomputeOrderStatus(supabase, { userId, orderId: existingSale.inventory_order_id });
   }
 
   return { inserted: !existingSale, matched: !!match, source, saleId };

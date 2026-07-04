@@ -1592,10 +1592,10 @@ export default function SalesClient() {
                             {group.inventoryLinked && (() => {
                               const mo = group.matchedOrderId != null ? matchedOrders[group.matchedOrderId] : null;
                               const label = mo
-                                ? mo.section && mo.row
+                                ? mo.booking_ref
+                                  ? `Matched: ${mo.booking_ref}`
+                                  : mo.section && mo.row
                                   ? `Matched: Sec ${mo.section} Row ${mo.row}`
-                                  : mo.booking_ref
-                                  ? `Matched: #${mo.booking_ref}`
                                   : "Inventory matched"
                                 : "Inventory matched";
                               return (

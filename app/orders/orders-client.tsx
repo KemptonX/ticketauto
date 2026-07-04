@@ -228,7 +228,8 @@ export default function OrdersClient() {
     const { data: salesData } = await supabase
       .from("sales")
       .select("inventory_order_id, qty_sold, sale_total")
-      .not("inventory_order_id", "is", null);
+      .not("inventory_order_id", "is", null)
+      .neq("sale_status", "Deleted");
     const qtyMap = new Map<number, number>();
     const saleMap = new Map<number, number>();
     for (const s of (salesData ?? []) as { inventory_order_id: number; qty_sold: number | null; sale_total: number | null }[]) {
