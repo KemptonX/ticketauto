@@ -77,6 +77,7 @@ type SaleInsert = {
   seat_from: string;
   seat_to: string;
   sale_status: string;
+  transfer_status?: string | null;
   marketplace?: string | null;
   inventory_order_id: number | null;
   match_confidence: number | null;
@@ -219,6 +220,7 @@ export async function syncViagogoSalesInbox({
           sale: parsed,
         });
 
+    const isPreUpload = isSoldConfirmation && combined.toLowerCase().includes("ticketpreupload");
     const baseSaleData = {
       external_sale_id: parsed.externalSaleId,
       gmail_account_id: gmailAccount.id,
@@ -237,9 +239,8 @@ export async function syncViagogoSalesInbox({
       row: parsed.row,
       seat_from: parsed.seatFrom,
       seat_to: parsed.seatTo,
-      sale_status: isSoldConfirmation && combined.includes("ticketpreupload.com")
-        ? "Transferred"
-        : "Sold – Awaiting Transfer",
+      sale_status: isPreUpload ? "Transferred" : "Sold – Awaiting Transfer",
+      transfer_status: isPreUpload ? "Transfer Completed" : "Awaiting Transfer",
       marketplace: "Viagogo",
       user_id: userId,
     };
@@ -588,9 +589,12 @@ export async function syncViagogoSalesOutlookInbox({
       row: parsed.row,
       seat_from: parsed.seatFrom,
       seat_to: parsed.seatTo,
-      sale_status: isSoldConfirmation && combined.includes("ticketpreupload.com")
+      sale_status: isSoldConfirmation && combined.toLowerCase().includes("ticketpreupload")
         ? "Transferred"
         : "Sold – Awaiting Transfer",
+      transfer_status: isSoldConfirmation && combined.toLowerCase().includes("ticketpreupload")
+        ? "Transfer Completed"
+        : "Awaiting Transfer",
       marketplace: "Viagogo",
       inventory_order_id: existingSale?.inventory_order_id ?? match?.order.id ?? null,
       match_confidence:
@@ -2779,9 +2783,12 @@ export async function syncViagogoSalesImapInbox({
               row: saleParsed.row,
               seat_from: saleParsed.seatFrom,
               seat_to: saleParsed.seatTo,
-              sale_status: isSoldConfirmation && combined.includes("ticketpreupload.com")
+              sale_status: isSoldConfirmation && combined.toLowerCase().includes("ticketpreupload")
                 ? "Transferred"
                 : "Sold – Awaiting Transfer",
+              transfer_status: isSoldConfirmation && combined.toLowerCase().includes("ticketpreupload")
+                ? "Transfer Completed"
+                : "Awaiting Transfer",
               marketplace: "Viagogo",
               inventory_order_id: existingSale?.inventory_order_id ?? match?.order.id ?? null,
               match_confidence:
@@ -2937,9 +2944,12 @@ export async function processSingleSaleEmail({
     row: parsed.row,
     seat_from: parsed.seatFrom,
     seat_to: parsed.seatTo,
-    sale_status: isSoldConf && combined.includes("ticketpreupload.com")
+    sale_status: isSoldConf && combined.toLowerCase().includes("ticketpreupload")
       ? "Transferred"
       : "Sold – Awaiting Transfer",
+    transfer_status: isSoldConf && combined.toLowerCase().includes("ticketpreupload")
+      ? "Transfer Completed"
+      : "Awaiting Transfer",
     marketplace,
     inventory_order_id: existingSale?.inventory_order_id ?? match?.order.id ?? null,
     match_confidence: existingSale?.match_confidence ?? (match ? Number(match.score.toFixed(2)) : null),

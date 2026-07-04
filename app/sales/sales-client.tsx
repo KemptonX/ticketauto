@@ -100,6 +100,7 @@ type SaleGroup = {
   paidAmount: number;
   buyerDisplay: string;
   inventoryLinked: boolean;
+  matchedOrderId: number | null;
 };
 
 const navItems = [
@@ -1134,6 +1135,7 @@ export default function SalesClient() {
           paidAmount: 0,
           buyerDisplay: "",
           inventoryLinked: false,
+          matchedOrderId: null,
         });
       }
 
@@ -1147,8 +1149,11 @@ export default function SalesClient() {
       if (sale.split_of_sale_id == null) {
         group.salesCount += 1;
         if (sale.created_at && new Date(sale.created_at).getTime() > Date.now() - 86400000) group.hasNew = true;
-        if (sale.inventory_order_id != null) { group.matchedCount += 1; group.inventoryLinked = true; }
-        else group.unmatchedCount += 1;
+        if (sale.inventory_order_id != null) {
+          group.matchedCount += 1;
+          group.inventoryLinked = true;
+          if (group.matchedOrderId == null) group.matchedOrderId = sale.inventory_order_id;
+        } else group.unmatchedCount += 1;
 
         const platform = sale.marketplace;
         if (platform) {
@@ -1584,11 +1589,21 @@ export default function SalesClient() {
                                 Paid {formatCurrency(group.paidAmount)}
                               </span>
                             )}
-                            {group.inventoryLinked && (
-                              <span className="status-badge status-static" style={{ background: "rgba(155,92,255,0.12)", color: "#9b5cff", border: "1px solid rgba(155,92,255,0.25)" }}>
-                                Inventory linked
-                              </span>
-                            )}
+                            {group.inventoryLinked && (() => {
+                              const mo = group.matchedOrderId != null ? matchedOrders[group.matchedOrderId] : null;
+                              const label = mo
+                                ? mo.section && mo.row
+                                  ? `Matched: Sec ${mo.section} Row ${mo.row}`
+                                  : mo.booking_ref
+                                  ? `Matched: #${mo.booking_ref}`
+                                  : "Inventory matched"
+                                : "Inventory matched";
+                              return (
+                                <span className="status-badge status-static" style={{ background: "rgba(155,92,255,0.12)", color: "#9b5cff", border: "1px solid rgba(155,92,255,0.25)" }}>
+                                  {label}
+                                </span>
+                              );
+                            })()}
                             {group.unmatchedCount > 0 && (
                               <span className="status-badge status-static status-problem">Review {group.unmatchedCount}</span>
                             )}
