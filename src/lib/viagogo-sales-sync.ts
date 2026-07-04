@@ -1018,7 +1018,7 @@ function parseSoldConfirmation({
   const saleTotal = parseMoney(text, [/Subtotal\s+[£$€Â\s]*([\d,]+\.?\d*)/i]);
   const payoutTotal = parseMoney(text, [/Payment\s+Total\s+[£$€Â\s]*([\d,]+\.?\d*)/i]);
   const pricePerTicket =
-    qtySold && saleTotal ? Math.round((saleTotal / qtySold) * 100) / 100 : null;
+    qtySold && payoutTotal ? Math.round((payoutTotal / qtySold) * 100) / 100 : null;
   const eventDate = parseViagogoSaleDate(text);
   const venue =
     text.match(/\|\s*\d{1,2}:\d{2}[^\n]*\n+([^\n]+?)\n+OrderID/i)?.[1]?.trim() || "";
