@@ -1481,14 +1481,34 @@ function outlookStripHtml(text: string) {
     .replace(/&gt;/g, ">");
 }
 
-function parseDateLike(value?: string | null) {
-  if (!value) {
-    return null;
+const DATE_MONTHS: Record<string, number> = {
+  jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,oct:9,nov:10,dec:11,
+  january:0,february:1,march:2,april:3,june:5,july:6,august:7,
+  september:8,october:9,november:10,december:11,
+};
+function parseDateLike(value?: string | null): Date | null {
+  if (!value) return null;
+  const s = value.replace(/[|]/g, " ").replace(/\s+/g, " ").trim();
+
+  // ISO YYYY-MM-DD (fast path)
+  const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return new Date(Date.UTC(+iso[1], +iso[2] - 1, +iso[3]));
+
+  // "18 July 2026" or "18 Jul 2026" (day before month — TM/Viagogo format)
+  const dmy = s.match(/\b(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})\b/);
+  if (dmy) {
+    const month = DATE_MONTHS[dmy[2].toLowerCase()];
+    if (month !== undefined) return new Date(Date.UTC(+dmy[3], month, +dmy[1]));
   }
 
-  const cleaned = value.replace(/\|/g, " ").replace(/\s+/g, " ").trim();
-  const parsed = new Date(cleaned);
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
+  // "July 18 2026" or "Jul 18 2026" (month before day — US format)
+  const mdy = s.match(/\b([A-Za-z]+)\s+(\d{1,2})[,\s]+(\d{4})\b/);
+  if (mdy) {
+    const month = DATE_MONTHS[mdy[1].toLowerCase()];
+    if (month !== undefined) return new Date(Date.UTC(+mdy[3], month, +mdy[2]));
+  }
+
+  return null;
 }
 
 function normalizeTimestamp(value: string) {
