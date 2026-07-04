@@ -648,12 +648,14 @@ export default function SettingsClient() {
   // ── Webhook field customisation ──
   type WebhookFieldKey = "order" | "sale" | "transfer" | "payout";
   type WebhookFields = Record<WebhookFieldKey, string[]>;
+  type NotifEnabled = Record<WebhookFieldKey, boolean>;
   const DEFAULT_WEBHOOK_FIELDS: WebhookFields = {
     order:    ["venue", "date", "qty", "cost", "ref", "source", "section", "email"],
     sale:     ["date", "qty", "sale_total", "payout", "marketplace", "section"],
     transfer: ["date", "qty", "section", "venue", "order_id"],
-    payout:   ["payment_date", "total", "orders", "ref"],
+    payout:   ["payment_date", "total", "orders", "ref", "breakdown"],
   };
+  const DEFAULT_NOTIF_ENABLED: NotifEnabled = { order: true, sale: true, transfer: true, payout: true };
   const WEBHOOK_FIELD_DEFS: Record<WebhookFieldKey, { id: string; label: string; emoji: string }[]> = {
     order: [
       { id: "venue",   label: "Venue",          emoji: "📍" },
@@ -681,13 +683,15 @@ export default function SettingsClient() {
       { id: "order_id", label: "Order #",    emoji: "🔢" },
     ],
     payout: [
-      { id: "payment_date", label: "Payment Date", emoji: "📅" },
-      { id: "total",        label: "Total Payout", emoji: "💵" },
-      { id: "orders",       label: "Order Count",  emoji: "📦" },
-      { id: "ref",          label: "Payment Ref",  emoji: "🔢" },
+      { id: "payment_date", label: "Payment Date",    emoji: "📅" },
+      { id: "total",        label: "Total Payout",    emoji: "💵" },
+      { id: "orders",       label: "Order Count",     emoji: "📦" },
+      { id: "ref",          label: "Payment Ref",     emoji: "🔢" },
+      { id: "breakdown",    label: "Event Breakdown", emoji: "📋" },
     ],
   };
   const [webhookFields, setWebhookFields] = useState<WebhookFields>(DEFAULT_WEBHOOK_FIELDS);
+  const [notifEnabled, setNotifEnabled] = useState<NotifEnabled>(DEFAULT_NOTIF_ENABLED);
   const [webhookFieldsSaved, setWebhookFieldsSaved] = useState(false);
   const [webhookFieldsSaving, setWebhookFieldsSaving] = useState(false);
 
@@ -706,7 +710,7 @@ export default function SettingsClient() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
       await supabase.from("user_settings").upsert(
-        { user_id: user.id, webhook_fields: webhookFields, updated_at: new Date().toISOString() },
+        { user_id: user.id, webhook_fields: { ...webhookFields, _enabled: notifEnabled } as unknown, updated_at: new Date().toISOString() },
         { onConflict: "user_id" },
       );
       setWebhookFieldsSaved(true);
@@ -725,15 +729,22 @@ export default function SettingsClient() {
         .select("discord_webhook_url, webhook_fields, alert_time, alert_timezone")
         .eq("user_id", user.id)
         .maybeSingle();
-      const row = data as { discord_webhook_url?: string; webhook_fields?: Partial<WebhookFields>; alert_time?: string; alert_timezone?: string } | null;
+      const row = data as { discord_webhook_url?: string; webhook_fields?: Record<string, unknown>; alert_time?: string; alert_timezone?: string } | null;
       if (row?.discord_webhook_url) setDiscordWebhookUrl(row.discord_webhook_url);
       if (row?.webhook_fields) {
         const wf = row.webhook_fields;
         setWebhookFields({
-          order:    wf.order    ?? DEFAULT_WEBHOOK_FIELDS.order,
-          sale:     wf.sale     ?? DEFAULT_WEBHOOK_FIELDS.sale,
-          transfer: wf.transfer ?? DEFAULT_WEBHOOK_FIELDS.transfer,
-          payout:   wf.payout   ?? DEFAULT_WEBHOOK_FIELDS.payout,
+          order:    (wf.order    as string[] | undefined) ?? DEFAULT_WEBHOOK_FIELDS.order,
+          sale:     (wf.sale     as string[] | undefined) ?? DEFAULT_WEBHOOK_FIELDS.sale,
+          transfer: (wf.transfer as string[] | undefined) ?? DEFAULT_WEBHOOK_FIELDS.transfer,
+          payout:   (wf.payout   as string[] | undefined) ?? DEFAULT_WEBHOOK_FIELDS.payout,
+        });
+        const en = (wf._enabled ?? {}) as Partial<NotifEnabled>;
+        setNotifEnabled({
+          order:    en.order    !== false,
+          sale:     en.sale     !== false,
+          transfer: en.transfer !== false,
+          payout:   en.payout   !== false,
         });
       }
       if (row?.alert_time) setAlertTime(row.alert_time);
@@ -2872,31 +2883,57 @@ export default function SettingsClient() {
                     { key: "transfer" as WebhookFieldKey, label: "🚚 Tickets Delivered",   desc: "Sent when a Viagogo delivery confirmation is processed" },
                     { key: "payout"   as WebhookFieldKey, label: "💰 Payout",              desc: "Sent when a Viagogo payout email is processed" },
                   ] as const
-                ).map(({ key, label, desc }) => (
-                  <div key={key}>
-                    <div style={{ marginBottom: 10 }}>
-                      <strong style={{ fontSize: "0.9rem" }}>{label}</strong>
-                      <p style={{ margin: "3px 0 0", fontSize: "0.78rem", color: "var(--text-muted)" }}>{desc}</p>
-                    </div>
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                      {WEBHOOK_FIELD_DEFS[key].map(({ id, label: fieldLabel, emoji }) => (
-                        <label
-                          key={id}
-                          className="filter-field-checkbox"
-                          style={{ cursor: "pointer", userSelect: "none", display: "flex", alignItems: "center", gap: 6, padding: "6px 12px", borderRadius: 8, border: `1px solid ${webhookFields[key].includes(id) ? "rgba(96,165,250,0.5)" : "rgba(255,255,255,0.1)"}`, background: webhookFields[key].includes(id) ? "rgba(96,165,250,0.08)" : "rgba(255,255,255,0.03)", fontSize: "0.82rem", transition: "all 0.15s" }}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={webhookFields[key].includes(id)}
-                            onChange={() => toggleWebhookField(key, id)}
-                            style={{ accentColor: "#60a5fa" }}
-                          />
-                          <span>{emoji} {fieldLabel}</span>
+                ).map(({ key, label, desc }) => {
+                  const isEnabled = notifEnabled[key];
+                  return (
+                    <div key={key} style={{ opacity: isEnabled ? 1 : 0.5, transition: "opacity 0.2s" }}>
+                      <div style={{ marginBottom: 10, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+                        <div>
+                          <strong style={{ fontSize: "0.9rem" }}>{label}</strong>
+                          <p style={{ margin: "3px 0 0", fontSize: "0.78rem", color: "var(--text-muted)" }}>{desc}</p>
+                        </div>
+                        <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", flexShrink: 0 }}>
+                          <span style={{ fontSize: "0.78rem", color: "var(--text-muted)" }}>{isEnabled ? "On" : "Off"}</span>
+                          <span style={{ position: "relative", display: "inline-block", width: 36, height: 20 }}>
+                            <input
+                              type="checkbox"
+                              checked={isEnabled}
+                              onChange={() => setNotifEnabled(prev => ({ ...prev, [key]: !prev[key] }))}
+                              style={{ opacity: 0, width: 0, height: 0, position: "absolute" }}
+                            />
+                            <span style={{
+                              position: "absolute", inset: 0, borderRadius: 20,
+                              background: isEnabled ? "#60a5fa" : "rgba(255,255,255,0.15)",
+                              transition: "background 0.2s",
+                              cursor: "pointer",
+                            }} />
+                            <span style={{
+                              position: "absolute", top: 3, left: isEnabled ? 19 : 3, width: 14, height: 14,
+                              borderRadius: "50%", background: "#fff", transition: "left 0.2s",
+                            }} />
+                          </span>
                         </label>
-                      ))}
+                      </div>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, pointerEvents: isEnabled ? "auto" : "none" }}>
+                        {WEBHOOK_FIELD_DEFS[key].map(({ id, label: fieldLabel, emoji }) => (
+                          <label
+                            key={id}
+                            className="filter-field-checkbox"
+                            style={{ cursor: isEnabled ? "pointer" : "default", userSelect: "none", display: "flex", alignItems: "center", gap: 6, padding: "6px 12px", borderRadius: 8, border: `1px solid ${webhookFields[key].includes(id) ? "rgba(96,165,250,0.5)" : "rgba(255,255,255,0.1)"}`, background: webhookFields[key].includes(id) ? "rgba(96,165,250,0.08)" : "rgba(255,255,255,0.03)", fontSize: "0.82rem", transition: "all 0.15s" }}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={webhookFields[key].includes(id)}
+                              onChange={() => toggleWebhookField(key, id)}
+                              style={{ accentColor: "#60a5fa" }}
+                            />
+                            <span>{emoji} {fieldLabel}</span>
+                          </label>
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
 
                 <button
                   type="button"

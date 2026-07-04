@@ -95,12 +95,13 @@ const DEFAULT_WEBHOOK_FIELDS = {
   order:    ["venue", "date", "qty", "cost", "ref", "source", "section", "email"] as string[],
   sale:     ["date", "qty", "sale_total", "payout", "marketplace", "section"] as string[],
   transfer: ["date", "qty", "section", "venue", "order_id"] as string[],
-  payout:   ["payment_date", "total", "orders", "ref"] as string[],
+  payout:   ["payment_date", "total", "orders", "ref", "breakdown"] as string[],
 };
 
 type WebhookSettings = {
   url: string | null;
   fields: typeof DEFAULT_WEBHOOK_FIELDS;
+  payoutEnabled: boolean;
 };
 
 async function getWebhookSettings(supabase: SupabaseClient, userId: string): Promise<WebhookSettings> {
@@ -109,17 +110,19 @@ async function getWebhookSettings(supabase: SupabaseClient, userId: string): Pro
     .select("discord_webhook_url, webhook_fields")
     .eq("user_id", userId)
     .maybeSingle();
-  const raw = data as { discord_webhook_url?: string; webhook_fields?: Record<string, string[]> } | null;
+  const raw = data as { discord_webhook_url?: string; webhook_fields?: Record<string, unknown> } | null;
   const rawUrl = raw?.discord_webhook_url ?? "";
   const wf = raw?.webhook_fields ?? {};
+  const enabled = (wf._enabled ?? {}) as Record<string, boolean>;
   return {
     url: rawUrl.startsWith("https://discord.com/api/webhooks/") ? rawUrl : null,
     fields: {
-      order:    wf.order    ?? DEFAULT_WEBHOOK_FIELDS.order,
-      sale:     wf.sale     ?? DEFAULT_WEBHOOK_FIELDS.sale,
-      transfer: wf.transfer ?? DEFAULT_WEBHOOK_FIELDS.transfer,
-      payout:   wf.payout   ?? DEFAULT_WEBHOOK_FIELDS.payout,
+      order:    (wf.order    as string[] | undefined) ?? DEFAULT_WEBHOOK_FIELDS.order,
+      sale:     (wf.sale     as string[] | undefined) ?? DEFAULT_WEBHOOK_FIELDS.sale,
+      transfer: (wf.transfer as string[] | undefined) ?? DEFAULT_WEBHOOK_FIELDS.transfer,
+      payout:   (wf.payout   as string[] | undefined) ?? DEFAULT_WEBHOOK_FIELDS.payout,
     },
+    payoutEnabled: enabled.payout !== false,
   };
 }
 
@@ -249,15 +252,33 @@ function buildTransferEmbed(data: TransferEmailData, activeFields = DEFAULT_WEBH
   };
 }
 
-function buildPayoutEmbed(data: PayoutEmailData, activeFields = DEFAULT_WEBHOOK_FIELDS.payout) {
+type PayoutLineResult = { eventName: string | null; amount: number; orderId: string };
+
+function buildPayoutEmbed(data: PayoutEmailData, results: PayoutLineResult[], activeFields = DEFAULT_WEBHOOK_FIELDS.payout) {
   const has = (f: string) => activeFields.includes(f);
   const total = data.orderLines.reduce((sum, l) => sum + l.amount, 0);
-  const fields = [
+  const fields: { name: string; value: string; inline: boolean }[] = [
     has("payment_date") && data.paymentDate ? { name: "\u{1F4C5} Payment Date", value: data.paymentDate.slice(0, 10), inline: true  } : null,
     has("total")                            ? { name: "\u{1F4B5} Total Payout", value: fmtMoney(total),               inline: true  } : null,
     has("orders")                           ? { name: "\u{1F4E6} Orders",       value: String(data.orderLines.length), inline: true  } : null,
     has("ref")                              ? { name: "\u{1F522} Payment Ref",  value: data.paymentReference,          inline: false } : null,
   ].filter((f): f is NonNullable<typeof f> => f !== null);
+
+  if (has("breakdown") && results.length > 0) {
+    if (fields.length > 0) fields.push({ name: "​", value: "**— Breakdown —**", inline: false });
+    const limit = Math.min(results.length, 20);
+    for (let i = 0; i < limit; i++) {
+      const r = results[i];
+      fields.push({
+        name: (r.eventName ?? "Unknown Event").slice(0, 200),
+        value: fmtMoney(r.amount),
+        inline: false,
+      });
+    }
+    if (results.length > limit) {
+      fields.push({ name: "…", value: `+ ${results.length - limit} more`, inline: false });
+    }
+  }
 
   return {
     embeds: [{
@@ -469,16 +490,18 @@ export async function POST(request: Request) {
           await logEvent("failed", userId, settingId, { error_message: "payout email parse failed or no order lines found" });
           return NextResponse.json({ ok: true, status: "failed" });
         }
+        const payoutResults: PayoutLineResult[] = [];
         for (const line of data.orderLines) {
           const result = await processPayoutOrderLine(supabase, userId, line, data.paymentDate, null);
           console.log("[inbound] processPayoutOrderLine:", JSON.stringify(result));
+          payoutResults.push({ eventName: result.eventName, amount: line.amount, orderId: line.orderId });
         }
         void supabase.from("email_forwarding_settings")
           .update({ last_successful_import_at: new Date().toISOString(), updated_at: new Date().toISOString() })
           .eq("id", settingId);
         void (async () => {
           const ws = await getWebhookSettings(supabase, userId);
-          if (ws.url) void postDiscord(ws.url, buildPayoutEmbed(data, ws.fields.payout));
+          if (ws.url && ws.payoutEnabled) void postDiscord(ws.url, buildPayoutEmbed(data, payoutResults, ws.fields.payout));
         })();
         await logEvent("imported", userId, settingId);
         return NextResponse.json({ ok: true, status: "imported" });
