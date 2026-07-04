@@ -147,6 +147,7 @@ export default function SalesClient() {
   const [selectedSaleId, setSelectedSaleId] = useState<number | null>(null);
   const [matchingOrderId, setMatchingOrderId] = useState<number | null>(null);
   const [unmatching, setUnmatching] = useState(false);
+  const [reparsing, setReparsing] = useState(false);
   const [savingSale, setSavingSale] = useState(false);
   const [saleEdits, setSaleEdits] = useState<{ qty_sold: string; price_per_ticket: string; sale_total: string; sale_status: string; transfer_status: string; payment_status: string; transfer_date: string; payout_date: string; expected_payout_date: string; marketplace: string; buyer_name: string; notes: string } | null>(null);
   const [showImportModal, setShowImportModal] = useState(false);
@@ -509,6 +510,31 @@ export default function SalesClient() {
       setMessage("Sales scan failed");
     } finally {
       setScanning(false);
+    }
+  }
+
+  async function reparseSale(sale: Sale) {
+    setReparsing(true);
+    setMessage("");
+    try {
+      const res = await fetch("/api/rescan-sale", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ saleId: sale.id }),
+      });
+      const json = (await res.json()) as { ok?: boolean; error?: string };
+      if (!res.ok || !json.ok) {
+        setMessage(json.error ?? "Re-parse failed");
+        return;
+      }
+      const { data: refreshed } = await supabase.from("sales").select("*").eq("id", sale.id).single();
+      if (refreshed) {
+        setSales((prev) => prev.map((s) => (s.id === sale.id ? (refreshed as Sale) : s)));
+        setSelectedSaleId(sale.id);
+      }
+      setMessage("Sale re-parsed from email.");
+    } finally {
+      setReparsing(false);
     }
   }
 
@@ -2224,6 +2250,17 @@ export default function SalesClient() {
                 >
                   Archive Sale
                 </button>
+                {selectedSale.source_message_id && !selectedSale.source_message_id.startsWith("manual-") ? (
+                  <button
+                    className="secondary-button"
+                    type="button"
+                    onClick={() => void reparseSale(selectedSale)}
+                    disabled={reparsing}
+                    title="Re-fetch and re-parse the original email to fix missing venue or price"
+                  >
+                    {reparsing ? "Re-parsing..." : "Re-parse Email"}
+                  </button>
+                ) : null}
                 {selectedSale.inventory_order_id != null ? (
                   <button
                     className="secondary-button"

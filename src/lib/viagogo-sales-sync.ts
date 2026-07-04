@@ -3041,4 +3041,96 @@ export async function processSingleSaleEmail({
   return { inserted: !existingSale, matched: !!match, source, saleId };
 }
 
+export async function reparseSaleFromGmail({
+  supabase,
+  userId,
+  saleId,
+}: {
+  supabase: SupabaseClient;
+  userId: string;
+  saleId: number;
+}): Promise<{ ok: boolean; error?: string }> {
+  const { data: sale, error: saleError } = await supabase
+    .from("sales")
+    .select("id, source_message_id, account_email, inventory_order_id")
+    .eq("id", saleId)
+    .eq("user_id", userId)
+    .maybeSingle();
 
+  if (saleError || !sale) return { ok: false, error: "Sale not found" };
+  if (!sale.source_message_id || (sale.source_message_id as string).startsWith("manual-")) {
+    return { ok: false, error: "No Gmail message to re-parse" };
+  }
+
+  const { data: gmailAccounts } = await supabase
+    .from("gmail_accounts")
+    .select("id, email, access_token, refresh_token, token_expiry")
+    .eq("user_id", userId)
+    .eq("provider", "gmail")
+    .eq("is_active", true);
+
+  if (!gmailAccounts?.length) return { ok: false, error: "No active Gmail account" };
+
+  const gmailAccount =
+    (gmailAccounts as GmailAccount[]).find((a) => a.email === (sale.account_email as string)) ??
+    (gmailAccounts as GmailAccount[])[0];
+  if (!gmailAccount.access_token) return { ok: false, error: "Gmail account not authorized" };
+
+  let accessToken: string;
+  try {
+    accessToken = await getValidAccessToken({ supabase, gmailAccount });
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Token refresh failed" };
+  }
+
+  let message: GmailMessage;
+  try {
+    message = await getMessage(accessToken, sale.source_message_id as string);
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Failed to fetch Gmail message" };
+  }
+
+  const headers = message.payload.headers || [];
+  const subject = getHeader(headers, "Subject");
+  const body = getBody(message.payload);
+  const combined = cleanText(`${subject}\n${body}`);
+
+  const isSoldConf = /You sold your ticket for/i.test(subject);
+  const parsed = isSoldConf
+    ? parseSoldConfirmation({ headers, subject, text: combined })
+    : parseSale({ headers, subject, text: combined });
+
+  const isPreUpload = isSoldConf && combined.toLowerCase().includes("ticketpreupload");
+
+  const updates: Record<string, unknown> = {};
+  if (parsed.venue) updates.venue = parsed.venue;
+  if (parsed.eventName) updates.event_name = parsed.eventName;
+  if (parsed.eventDate) updates.event_date = parsed.eventDate;
+  if (parsed.saleTotal != null) updates.sale_total = parsed.saleTotal;
+  if (parsed.payoutTotal != null) updates.payout_total = parsed.payoutTotal;
+  if (parsed.pricePerTicket != null) updates.price_per_ticket = parsed.pricePerTicket;
+  if (parsed.section) updates.section = parsed.section;
+  if (parsed.row) updates.row = parsed.row;
+  if (parsed.seatFrom) updates.seat_from = parsed.seatFrom;
+  if (parsed.seatTo) updates.seat_to = parsed.seatTo;
+  if (isSoldConf) {
+    updates.sale_status = isPreUpload ? "Transferred" : "Sold – Awaiting Transfer";
+    updates.transfer_status = isPreUpload ? "Transfer Completed" : "Awaiting Transfer";
+  }
+
+  if (Object.keys(updates).length === 0) return { ok: false, error: "Nothing to update after re-parse" };
+
+  const { error: updateError } = await supabase
+    .from("sales")
+    .update(updates)
+    .eq("id", saleId)
+    .eq("user_id", userId);
+
+  if (updateError) return { ok: false, error: updateError.message };
+
+  if ((sale.inventory_order_id as number | null) != null) {
+    await recomputeOrderStatus(supabase, { userId, orderId: sale.inventory_order_id as number });
+  }
+
+  return { ok: true };
+}
