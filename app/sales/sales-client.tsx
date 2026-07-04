@@ -2789,6 +2789,7 @@ function getLifecycleLabel(status: string | null): string {
     case "Sold – Awaiting Transfer":
     case "Sold":
       return "Awaiting Transfer";
+    case "Transferred":
     case "Sold – Transfer Completed": return "Transfer Completed";
     case "Paid": return "Paid";
     case "Cancelled / Issue": return "Cancelled";
@@ -2801,6 +2802,7 @@ function getLifecycleBadgeStyle(status: string | null): React.CSSProperties {
     case "Sold – Awaiting Transfer":
     case "Sold":
       return { background: "rgba(249,115,22,0.15)", color: "#f97316", borderColor: "rgba(249,115,22,0.3)" };
+    case "Transferred":
     case "Sold – Transfer Completed":
       return { background: "rgba(79,195,255,0.15)", color: "#4fc3ff", borderColor: "rgba(79,195,255,0.3)" };
     case "Paid":
