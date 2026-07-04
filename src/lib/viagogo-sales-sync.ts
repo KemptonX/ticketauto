@@ -237,7 +237,9 @@ export async function syncViagogoSalesInbox({
       row: parsed.row,
       seat_from: parsed.seatFrom,
       seat_to: parsed.seatTo,
-      sale_status: "Sold – Awaiting Transfer",
+      sale_status: isSoldConfirmation && combined.includes("ticketpreupload.com")
+        ? "Transferred"
+        : "Sold – Awaiting Transfer",
       marketplace: "Viagogo",
       user_id: userId,
     };
@@ -586,7 +588,9 @@ export async function syncViagogoSalesOutlookInbox({
       row: parsed.row,
       seat_from: parsed.seatFrom,
       seat_to: parsed.seatTo,
-      sale_status: "Sold – Awaiting Transfer",
+      sale_status: isSoldConfirmation && combined.includes("ticketpreupload.com")
+        ? "Transferred"
+        : "Sold – Awaiting Transfer",
       marketplace: "Viagogo",
       inventory_order_id: existingSale?.inventory_order_id ?? match?.order.id ?? null,
       match_confidence:
@@ -1033,11 +1037,19 @@ function parseSoldConfirmation({
     payoutTotal,
     saleTotal,
     section,
-    row: text.match(/Row:\s*([^\n|,]+)/i)?.[1]?.trim() || "",
-    seatFrom: text.match(/Seat\(?s?\)?:\s*(\d+)/i)?.[1]?.trim() || "",
+    row:
+      text.match(/Row:\s*([^\n|,]+)/i)?.[1]?.trim() ||
+      text.match(/\bRow\s+(\w[^\n|,]*)/i)?.[1]?.trim() ||
+      "",
+    seatFrom:
+      text.match(/Seat\(?s?\)?:\s*(\d+)/i)?.[1]?.trim() ||
+      text.match(/Seat\(?s?\)?\s+(\d+)/i)?.[1]?.trim() ||
+      "",
     seatTo:
       text.match(/Seat\(?s?\)?:\s*\d+\s*[-–]\s*(\d+)/i)?.[1]?.trim() ||
       text.match(/Seat\(?s?\)?:\s*(\d+)/i)?.[1]?.trim() ||
+      text.match(/Seat\(?s?\)?\s+\d+\s*[-–]\s*(\d+)/i)?.[1]?.trim() ||
+      text.match(/Seat\(?s?\)?\s+(\d+)/i)?.[1]?.trim() ||
       "",
   };
 }
@@ -1335,6 +1347,14 @@ function getBody(payload: GmailPayload): string {
     const data = part.body?.data;
     if (data) {
       let decoded = decodeBase64Url(data);
+      // Gmail API delivers body.data as raw base64URL without decoding QP.
+      // Apply QP decode before HTML stripping so =C2=A3 → £ and =20 → space.
+      const cte = (part.headers || [])
+        .find((h) => h.name.toLowerCase() === "content-transfer-encoding")
+        ?.value?.toLowerCase() ?? "";
+      if (cte.includes("quoted-printable")) {
+        decoded = decodeQuotedPrintable(decoded);
+      }
       if (part.mimeType === "text/html") {
         decoded = stripHtml(decoded);
       }
@@ -2759,7 +2779,9 @@ export async function syncViagogoSalesImapInbox({
               row: saleParsed.row,
               seat_from: saleParsed.seatFrom,
               seat_to: saleParsed.seatTo,
-              sale_status: "Sold – Awaiting Transfer",
+              sale_status: isSoldConfirmation && combined.includes("ticketpreupload.com")
+                ? "Transferred"
+                : "Sold – Awaiting Transfer",
               marketplace: "Viagogo",
               inventory_order_id: existingSale?.inventory_order_id ?? match?.order.id ?? null,
               match_confidence:
@@ -2893,6 +2915,7 @@ export async function processSingleSaleEmail({
     ? null
     : findBestInventoryMatch({ orders: candidateOrders, orderUsage, sale: parsed });
 
+  const isSoldConf = isViagogo && lowerSubject.includes("you sold your ticket for");
   const saleData: SaleInsert = {
     external_sale_id: parsed.externalSaleId,
     gmail_account_id: null,
@@ -2914,7 +2937,9 @@ export async function processSingleSaleEmail({
     row: parsed.row,
     seat_from: parsed.seatFrom,
     seat_to: parsed.seatTo,
-    sale_status: "Sold – Awaiting Transfer",
+    sale_status: isSoldConf && combined.includes("ticketpreupload.com")
+      ? "Transferred"
+      : "Sold – Awaiting Transfer",
     marketplace,
     inventory_order_id: existingSale?.inventory_order_id ?? match?.order.id ?? null,
     match_confidence: existingSale?.match_confidence ?? (match ? Number(match.score.toFixed(2)) : null),
