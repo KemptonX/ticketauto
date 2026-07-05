@@ -1060,7 +1060,7 @@ function parseSoldConfirmation({
   const eventName =
     subject.match(/You sold your ticket for (.+?)\s*-\s*Order#/i)?.[1]?.trim() || "";
   const qtySold = parseInteger(text, [/(\d+)\s*Ticket\(s\)/i]);
-  const payoutTotal = parseMoney(text, [/Payment\s+Total\s+[£$€Â\s]*([\d,]+\.?\d*)/i]);
+  const payoutTotal = parseMoney(text, [/Payment\s+Total[\s:]+[£$€Â\s]*([\d,]+\.?\d*)/i]);
   const saleTotal = payoutTotal;
   const pricePerTicket =
     qtySold && payoutTotal ? Math.round((payoutTotal / qtySold) * 100) / 100 : null;
