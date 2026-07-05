@@ -1066,7 +1066,7 @@ function parseSoldConfirmation({
     qtySold && payoutTotal ? Math.round((payoutTotal / qtySold) * 100) / 100 : null;
   const eventDate = parseViagogoSaleDate(text);
   const venue =
-    text.match(/\|\s*\d{1,2}:\d{2}[^\n]*\n+([^\n]+?):?\s*\n+OrderID/i)?.[1]?.trim() || "";
+    text.match(/\|\s*\d{1,2}:\d{2}[^\n]*\s+([^\n]+?):?\s+OrderID/i)?.[1]?.trim() || "";
   const section = text.match(/Section:\s*([^\n|:]+)/i)?.[1]?.trim() || "";
 
   return {
