@@ -167,8 +167,10 @@ export async function processNormalisedEmail(
     qty = parseAxsQty(combined);
     sourceType = "axs";
   } else if (intl) {
+    const restrictionsIdx = combined.search(/\bRestrictions?\s*:/i);
+    const combinedBeforeRestrictions = restrictionsIdx > 0 ? combined.slice(0, restrictionsIdx) : combined;
     section = parseSection(combined);
-    row = parseRow(combined);
+    row = parseRow(combinedBeforeRestrictions);
     [seatFrom, seatTo] = parseSeats(combined);
     qty = parseIntlQty(combined);
     sourceType = getIntlSourceType(effectiveFrom, email.subject);
@@ -1352,16 +1354,25 @@ function parseIntlVenue(from: string, text: string): string {
     if (venue) return venue;
   }
 
-  // IE: same format as UK — venue is the line after the date, skipping time lines
+  // IE: venue is the line immediately before the date (not after — after is "Ticket Quantity:")
   if (f.includes("ticketmaster.ie")) {
     const ieLines = text.split(/\n/).map((l) => l.trim()).filter(Boolean);
     for (let i = 0; i < ieLines.length; i++) {
       if (/^(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)/i.test(ieLines[i]) ||
           /\b(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+\d{1,2}\s+[A-Z][a-z]{2,8}\s+\d{4}/i.test(ieLines[i])) {
+        if (i > 0) {
+          const before = ieLines[i - 1];
+          if (before &&
+              !/^ORDER\s*#/i.test(before) &&
+              !/^(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)/i.test(before)) {
+            return before;
+          }
+        }
+        // Fallback: look after date, skipping time and quantity lines
         for (let j = i + 1; j < Math.min(i + 4, ieLines.length); j++) {
           const candidate = ieLines[j];
           if (/^\d{1,2}:\d{2}/.test(candidate)) continue;
-          if (/^\d+\s*(x\s*)?(ticket)/i.test(candidate)) break;
+          if (/^(?:Ticket\s+Quantity|\d+\s*(x\s*)?ticket)/i.test(candidate)) break;
           if (candidate) return candidate;
         }
       }
@@ -1534,6 +1545,10 @@ function parseIntlTotal(text: string): string {
   const eurComma = cleaned.match(/(\d{1,6}),(\d{2})\s*(?:EUR|€|[^\d\w\s])/i);
   if (eurComma) return `${eurComma[1]}.${eurComma[2]}`;
 
+  // Anchored to Total: — handles IE/UK 2-column plain-text where amount follows "Total:" by several lines
+  const totalContextM = cleaned.match(/\bTotal\s*:\s*[^€£$\d]*(€|£|\$)\s*(\d[\d,]*\.\d{2})/i);
+  if (totalContextM) return totalContextM[2].replace(/,/g, "");
+
   // EUR dot-decimal: "12.00 €" or "€ 12.00"
   const eurDot =
     cleaned.match(/(?:€|EUR)\s*(\d+\.\d{2})/i)?.[1] ||
@@ -1553,6 +1568,7 @@ function parseIntlTotal(text: string): string {
 
 function parseIntlQty(text: string): string {
   return (
+    text.match(/Ticket\s+Quantity\s*:\s*(\d+)/i)?.[1] ||
     text.match(/([1-9]\d{0,2})\s*x\s+(?:tickets?|Mobile Ticket)/i)?.[1] ||
     text.match(/([1-9]\d{0,2})\s+billets?\b/i)?.[1] ||
     text.match(/([1-9]\d{0,2})\s+tickets?\b/i)?.[1] ||
