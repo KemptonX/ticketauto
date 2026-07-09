@@ -61,6 +61,7 @@ export type PayoutOrderLine = {
   orderDate: string;
   amount: number;
   qty: number | null;
+  eventName?: string | null;
 };
 
 export type PayoutEmailData = {
@@ -636,10 +637,18 @@ function parsePayoutHtmlTable(html: string, paymentReference: string): PayoutOrd
   const lines: PayoutOrderLine[] = [];
   const rowRegex = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
 
+  let lastEventName: string | null = null;
   let rowMatch: RegExpExecArray | null;
   while ((rowMatch = rowRegex.exec(html)) !== null) {
     const cells = extractCells(rowMatch[1]);
-    // Data rows: cells[0] = payment ID (8+ digits), cells[1] = order ID (9+ digits)
+
+    // Single-cell colspan rows carry the event name for the following data row(s)
+    if (cells.length === 1 && cells[0] && !/^\d+$/.test(cells[0])) {
+      lastEventName = cells[0];
+      continue;
+    }
+
+    // Data rows: cells[0] = payment ID (6+ digits), cells[1] = order ID (9+ digits)
     if (cells.length >= 4 && /^\d{6,}$/.test(cells[0]) && /^\d{6,}$/.test(cells[1])) {
       const amountRaw = (cells[3] ?? "").replace(/[£$€,\s]/g, "");
       const amount = Number.parseFloat(amountRaw);
@@ -651,6 +660,7 @@ function parsePayoutHtmlTable(html: string, paymentReference: string): PayoutOrd
         orderDate: cells[2] ?? "",
         amount,
         qty: Number.isNaN(qtyRaw) ? null : qtyRaw || null,
+        eventName: lastEventName,
       });
     }
   }
@@ -905,8 +915,11 @@ export async function processPayoutOrderLine(
 
   if (error) throw new Error(error.message);
 
+  // Fall back to the event name extracted from the payout email when the DB has none
+  const emailEventName = line.eventName ?? null;
+
   if (!sale) {
-    return { ...base, saleId: null, matchStatus: "unmatched", actionTaken: null, confidence: null, notes: "No sale found with this order ID" };
+    return { ...base, eventName: emailEventName, saleId: null, matchStatus: "unmatched", actionTaken: null, confidence: null, notes: "No sale found with this order ID" };
   }
 
   const s = sale as {
@@ -917,8 +930,10 @@ export async function processPayoutOrderLine(
     event_name: string | null;
   };
 
+  const resolvedEventName = s.event_name ?? emailEventName;
+
   if (s.payment_status === "Paid") {
-    return { ...base, eventName: s.event_name, saleId: s.id, matchStatus: "already_processed", actionTaken: "no_change", confidence: "exact", notes: "Payment already recorded" };
+    return { ...base, eventName: resolvedEventName, saleId: s.id, matchStatus: "already_processed", actionTaken: "no_change", confidence: "exact", notes: "Payment already recorded" };
   }
 
   const paidDate = paymentDate.slice(0, 10);
@@ -936,7 +951,7 @@ export async function processPayoutOrderLine(
     .eq("id", s.id)
     .eq("user_id", userId);
 
-  return { ...base, eventName: s.event_name, saleId: s.id, matchStatus: "matched", actionTaken: "updated_payment", confidence: "exact", notes: null };
+  return { ...base, eventName: resolvedEventName, saleId: s.id, matchStatus: "matched", actionTaken: "updated_payment", confidence: "exact", notes: null };
 }
 
 function tally(
