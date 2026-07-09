@@ -3470,9 +3470,11 @@ export async function processSingleSaleEmail({
   const isViagogo = SALE_SUBJECT_KEYWORDS.some((kw) => lowerSubject.includes(kw));
   const isStubHub = !isViagogo && STUBHUB_SUBJECT_KEYWORDS.some((kw) => lowerSubject.includes(kw));
   const isTicombo = !isViagogo && !isStubHub && TICOMBO_SUBJECT_KEYWORDS.some((kw) => lowerSubject.includes(kw));
+  // Detect Lysted by subject tag only — forwarded emails arrive from the user's Gmail,
+  // so we cannot rely on the sender domain being lysted.com here.
   const isLysted = !isViagogo && !isStubHub && !isTicombo &&
-    LYSTED_SUBJECT_KEYWORDS.some((kw) => lowerSubject.includes(kw)) &&
-    accountEmail.toLowerCase().includes("lysted.com");
+    lowerSubject.includes("[lysted]") &&
+    LYSTED_SUBJECT_KEYWORDS.some((kw) => lowerSubject.includes(kw));
 
   if (!isViagogo && !isStubHub && !isTicombo && !isLysted) return null;
 
