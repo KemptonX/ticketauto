@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { syncGmailInbox } from "@/src/lib/gmail-sync";
-import { rematchViagogoSales, syncViagogoSalesInbox } from "@/src/lib/viagogo-sales-sync";
+import { rematchViagogoSales, syncViagogoSalesInbox, syncLystedSalesInbox } from "@/src/lib/viagogo-sales-sync";
 import { syncImapInbox } from "@/src/lib/imap-sync";
 import type { ImapAccount } from "@/src/lib/imap-sync";
 
@@ -139,6 +139,20 @@ export async function GET(request: NextRequest) {
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Sales scan failed";
         summary.errors.push(`sales:${account.email}: ${msg}`);
+      }
+
+      try {
+        const lystedResult = await syncLystedSalesInbox({
+          supabase,
+          gmailAccount: account,
+          userId,
+        });
+        salesScanned += lystedResult.scanned;
+        salesInserted += lystedResult.inserted;
+        salesMatched += lystedResult.matched;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Lysted scan failed";
+        summary.errors.push(`lysted:${account.email}: ${msg}`);
       }
     }
 

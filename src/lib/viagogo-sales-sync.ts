@@ -2902,6 +2902,548 @@ export async function syncViagogoSalesImapInbox({
   return { scanned, inserted, matched, email: imapAccount.username };
 }
 
+// ─── Lysted Sales Sync ────────────────────────────────────────────────────────
+
+const LYSTED_GMAIL_QUERY =
+  'is:unread from:lysted.com subject:"TICKETS SOLD" newer_than:14d';
+
+const LYSTED_SUBJECT_KEYWORDS = ["tickets sold:"];
+
+// Exchange-rate cache shared across Lysted sync calls (1-hour TTL).
+let _saleRateCache: { rates: Record<string, number>; fetchedAt: number } | null = null;
+
+async function getSaleGbpRates(): Promise<Record<string, number>> {
+  const now = Date.now();
+  if (_saleRateCache && now - _saleRateCache.fetchedAt < 3_600_000) return _saleRateCache.rates;
+  try {
+    const res = await fetch("https://api.frankfurter.app/latest?from=GBP", { cache: "no-store" });
+    const data = (await res.json()) as { rates?: Record<string, number> };
+    if (data.rates) {
+      _saleRateCache = { rates: data.rates, fetchedAt: now };
+      return data.rates;
+    }
+  } catch { /* fall through */ }
+  return {};
+}
+
+async function convertToGbpAmount(amount: number | null, currency: string): Promise<number | null> {
+  if (amount == null || amount <= 0) return null;
+  if (currency === "GBP") return amount;
+  const rates = await getSaleGbpRates();
+  const rate = rates[currency];
+  if (!rate) return amount; // fallback: keep original if rate unavailable
+  return Math.round((amount / rate) * 100) / 100;
+}
+
+function parseLystedDate(text: string): string {
+  // "Jul 11th 2026, 8:00pm" — strip ordinal suffix then delegate to parseDateLike
+  const m = text.match(/\b([A-Za-z]{3,9})\s+(\d{1,2})(?:st|nd|rd|th)?\s+(\d{4})\b/i);
+  if (!m) return "";
+  const d = parseDateLike(`${m[1]} ${m[2]} ${m[3]}`);
+  return d ? d.toISOString().slice(0, 10) : "";
+}
+
+function parseLystedVenue(text: string): string {
+  // Venue is the first non-empty line after the date line and before Section/Row/Seat
+  const lines = text.split(/\n/).map((l) => l.trim()).filter(Boolean);
+  for (let i = 0; i < lines.length; i++) {
+    if (/\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{1,2}(?:st|nd|rd|th)?\s+\d{4}\b/i.test(lines[i])) {
+      for (let j = i + 1; j < Math.min(i + 4, lines.length); j++) {
+        const candidate = lines[j];
+        if (candidate && !/^(?:Section|Row|Seat|\d+\s*(?:&[a-z]+;|[×x]))/i.test(candidate)) {
+          return candidate;
+        }
+      }
+    }
+  }
+  return "";
+}
+
+function parseLystedSaleEmail({
+  headers,
+  subject,
+  text,
+}: {
+  headers: GmailHeader[];
+  subject: string;
+  text: string;
+}): ParsedSale {
+  // Invoice # from subject: "[lysted] TICKETS SOLD: ... (Invoice #11479582)"
+  const externalSaleId = subject.match(/Invoice\s*#(\d+)/i)?.[1] || "";
+
+  // Event name: strip "[lysted] TICKETS SOLD: " prefix and " (Invoice #...)" suffix
+  const eventName =
+    subject.match(/TICKETS\s+SOLD:\s*(.+?)\s*\(Invoice/i)?.[1]?.trim() ||
+    subject.replace(/^\[lysted\]\s*/i, "").replace(/\s*\(Invoice[^)]+\)/i, "").replace(/^TICKETS\s+SOLD:\s*/i, "").trim();
+
+  const eventDate = parseLystedDate(text);
+  const venue = parseLystedVenue(text);
+
+  // Section / Row / Seat — appear as "Section 303", "Row 19", "Seat 13"
+  // outlookStripHtml produces "Section: 303" so the :? handles both forms.
+  const section = text.match(/\bSection\s*:?\s*(\w+)/i)?.[1]?.trim() || "";
+  const row = text.match(/\bRow\s*:?\s*([A-Z0-9]+)/i)?.[1]?.trim() || "";
+  const seatFrom = text.match(/\bSeat\s*:?\s*(\d+)/i)?.[1] || "";
+  const seatTo = seatFrom;
+
+  // Quantity and per-ticket price: "1 &times; $1,421.00" (HTML entity for ×)
+  const qtyLineMatch = text.match(/(\d+)\s+(?:&times;|[×x])\s+\$([\d,]+\.?\d*)/i);
+  const qtySold = qtyLineMatch ? parseInt(qtyLineMatch[1], 10) : 1;
+  const pricePerTicketUsd = qtyLineMatch ? parseFloat(qtyLineMatch[2].replace(/,/g, "")) : null;
+
+  // Sale Total in USD — label on one line, amount on the next (2-column email layout)
+  const saleTotalStr = text.match(/Sale\s+Total[\s\S]{0,60}?\$([\d,]+\.?\d*)/i)?.[1]?.replace(/,/g, "");
+  const saleTotalUsd = saleTotalStr
+    ? parseFloat(saleTotalStr)
+    : pricePerTicketUsd != null
+      ? Math.round(pricePerTicketUsd * qtySold * 100) / 100
+      : null;
+
+  // Payout in USD
+  const payoutStr = text.match(/\bPayout[\s\S]{0,60}?\$([\d,]+\.?\d*)/i)?.[1]?.replace(/,/g, "");
+  const payoutUsd = payoutStr ? parseFloat(payoutStr) : null;
+
+  return {
+    externalSaleId,
+    subject,
+    eventName,
+    venue,
+    eventDate,
+    soldAt: normalizeTimestamp(getHeader(headers, "Date")) || new Date().toISOString(),
+    buyerEmail: "",
+    qtySold,
+    pricePerTicket: pricePerTicketUsd,  // original USD per-ticket price (for Discord display)
+    saleTotal: saleTotalUsd,            // USD — caller must convert to GBP before storing
+    payoutTotal: payoutUsd,            // USD — caller must convert to GBP before storing
+    section,
+    row,
+    seatFrom,
+    seatTo,
+  };
+}
+
+async function findExistingLystedSale(
+  supabase: SupabaseClient,
+  { userId, externalSaleId, sourceMessageId }: { userId: string; externalSaleId: string; sourceMessageId: string },
+) {
+  if (externalSaleId) {
+    const { data, error } = await supabase
+      .from("sales")
+      .select("id, external_sale_id, source_message_id, inventory_order_id, match_confidence, qty_sold")
+      .eq("user_id", userId)
+      .eq("source", "lysted")
+      .eq("external_sale_id", externalSaleId)
+      .limit(1)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    if (data) return data as ExistingSale;
+  }
+  const { data, error } = await supabase
+    .from("sales")
+    .select("id, external_sale_id, source_message_id, inventory_order_id, match_confidence, qty_sold")
+    .eq("user_id", userId)
+    .eq("source_message_id", sourceMessageId)
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return (data as ExistingSale | null) || null;
+}
+
+export async function syncLystedSalesInbox({
+  supabase,
+  gmailAccount,
+  userId,
+}: {
+  supabase: SupabaseClient;
+  gmailAccount: GmailAccount;
+  userId: string;
+}): Promise<SyncResult> {
+  const accessToken = await getValidAccessToken({ supabase, gmailAccount });
+  const labelId = await getOrCreateLabel(accessToken, PROCESSED_LABEL);
+  const messages = await listMessages(accessToken, LYSTED_GMAIL_QUERY);
+  const candidateOrders = await loadCandidateOrders(supabase, userId);
+  const orderUsage = await loadOrderUsage(supabase, userId);
+
+  const BATCH_SIZE = 10;
+  const fullMessages: Awaited<ReturnType<typeof getMessage>>[] = [];
+  for (let i = 0; i < messages.length; i += BATCH_SIZE) {
+    const chunk = messages.slice(i, i + BATCH_SIZE);
+    const fetched = await Promise.all(chunk.map((m) => getMessage(accessToken, m.id)));
+    fullMessages.push(...fetched);
+  }
+
+  let inserted = 0;
+  let matched = 0;
+
+  for (let msgIdx = 0; msgIdx < messages.length; msgIdx++) {
+    const message = messages[msgIdx];
+    const fullMessage = fullMessages[msgIdx];
+    const headers = fullMessage.payload.headers || [];
+    const subject = getHeader(headers, "Subject");
+    const body = getBody(fullMessage.payload);
+    const combined = cleanText(`${subject}\n${body}`);
+    const sourceMessageId = getHeader(headers, "Message-ID") || message.id;
+
+    if (!LYSTED_SUBJECT_KEYWORDS.some((kw) => subject.toLowerCase().includes(kw))) continue;
+
+    const lystedRaw = parseLystedSaleEmail({ headers, subject, text: combined });
+    if (!lystedRaw.externalSaleId) continue;
+
+    const gbpSaleTotal = await convertToGbpAmount(lystedRaw.saleTotal, "USD");
+    const gbpPayoutTotal = await convertToGbpAmount(lystedRaw.payoutTotal, "USD");
+
+    const existingSale = await findExistingLystedSale(supabase, {
+      userId, externalSaleId: lystedRaw.externalSaleId, sourceMessageId,
+    });
+
+    const parsedGbp: ParsedSale = { ...lystedRaw, saleTotal: gbpSaleTotal, payoutTotal: gbpPayoutTotal };
+    const match = existingSale?.inventory_order_id
+      ? null
+      : findBestInventoryMatch({ orders: candidateOrders, orderUsage, sale: parsedGbp });
+
+    const saleData: SaleInsert = {
+      external_sale_id: lystedRaw.externalSaleId,
+      gmail_account_id: gmailAccount.id,
+      source: "lysted",
+      source_message_id: sourceMessageId,
+      subject: lystedRaw.subject,
+      event_name: lystedRaw.eventName,
+      venue: lystedRaw.venue,
+      event_date: lystedRaw.eventDate,
+      sold_at: lystedRaw.soldAt,
+      account_email: gmailAccount.email,
+      buyer_email: "",
+      qty_sold: lystedRaw.qtySold,
+      price_per_ticket: lystedRaw.pricePerTicket,  // original USD per-ticket price
+      sale_total: gbpSaleTotal,
+      payout_total: gbpPayoutTotal,
+      currency: "USD",
+      section: lystedRaw.section,
+      row: lystedRaw.row,
+      seat_from: lystedRaw.seatFrom,
+      seat_to: lystedRaw.seatTo,
+      sale_status: "Sold – Awaiting Transfer",
+      marketplace: "Lysted",
+      inventory_order_id: existingSale?.inventory_order_id ?? match?.order.id ?? null,
+      match_confidence: existingSale?.match_confidence ?? (match ? Number(match.score.toFixed(2)) : null),
+      user_id: userId,
+    };
+
+    const mutation = existingSale
+      ? supabase
+          .from("sales")
+          .update({ ...saleData, source_message_id: existingSale.source_message_id || sourceMessageId })
+          .eq("id", existingSale.id)
+      : supabase.from("sales").insert(saleData);
+
+    const { error } = await mutation;
+    if (error) throw new Error(error.message);
+    if (!existingSale) inserted += 1;
+
+    if (match) {
+      const currentUsed = orderUsage.get(match.order.id) ?? 0;
+      const newQtySold = currentUsed + (lystedRaw.qtySold ?? 1);
+      orderUsage.set(match.order.id, newQtySold);
+      matched += 1;
+      await updateMatchedOrder(supabase, { userId, order: match.order, payoutTotal: gbpPayoutTotal, totalQtySold: newQtySold });
+    } else if (existingSale?.inventory_order_id != null) {
+      await recomputeOrderStatus(supabase, { userId, orderId: existingSale.inventory_order_id });
+    }
+
+    await markMessageProcessed(accessToken, message.id, labelId);
+  }
+
+  await supabase
+    .from("gmail_accounts")
+    .update({ last_synced_at: new Date().toISOString(), status: "Ready" })
+    .eq("id", gmailAccount.id);
+
+  return { scanned: messages.length, inserted, matched, email: gmailAccount.email };
+}
+
+export async function syncLystedSalesOutlookInbox({
+  supabase,
+  outlookAccount,
+  userId,
+}: {
+  supabase: SupabaseClient;
+  outlookAccount: OutlookSalesAccount;
+  userId: string;
+}): Promise<SyncResult> {
+  const accessToken = await getValidOutlookToken({ supabase, outlookAccount });
+
+  const url = new URL("https://graph.microsoft.com/v1.0/me/messages");
+  url.searchParams.set("$search", '"lysted"');
+  url.searchParams.set("$top", "25");
+  url.searchParams.set("$select", "id,subject,body,receivedDateTime,isRead");
+  const data = await outlookGraphRequest<{ value?: OutlookGraphMessage[] }>(
+    accessToken, url.toString(), { headers: { Prefer: 'outlook.body-content-type="text"' } },
+  );
+  const messages = data.value || [];
+
+  const candidateOrders = await loadCandidateOrders(supabase, userId);
+  const orderUsage = await loadOrderUsage(supabase, userId);
+  let inserted = 0;
+  let matched = 0;
+
+  for (const msg of messages) {
+    if (msg.isRead) continue;
+    const subject = msg.subject || "";
+    if (!LYSTED_SUBJECT_KEYWORDS.some((kw) => subject.toLowerCase().includes(kw))) continue;
+
+    const rawBody = decodeQuotedPrintable(msg.body.content);
+    const bodyText = msg.body.contentType === "html" ? outlookStripHtml(rawBody) : rawBody;
+    const combined = cleanText(`${subject}\n${bodyText}`);
+    const sourceMessageId = msg.id;
+    const fakeHeaders: GmailHeader[] = [{ name: "Date", value: msg.receivedDateTime || "" }];
+
+    const lystedRaw = parseLystedSaleEmail({ headers: fakeHeaders, subject, text: combined });
+    if (!lystedRaw.externalSaleId) continue;
+
+    const gbpSaleTotal = await convertToGbpAmount(lystedRaw.saleTotal, "USD");
+    const gbpPayoutTotal = await convertToGbpAmount(lystedRaw.payoutTotal, "USD");
+
+    const existingSale = await findExistingLystedSale(supabase, {
+      userId, externalSaleId: lystedRaw.externalSaleId, sourceMessageId,
+    });
+
+    const parsedGbp: ParsedSale = { ...lystedRaw, saleTotal: gbpSaleTotal, payoutTotal: gbpPayoutTotal };
+    const match = existingSale?.inventory_order_id
+      ? null
+      : findBestInventoryMatch({ orders: candidateOrders, orderUsage, sale: parsedGbp });
+
+    const saleData: SaleInsert = {
+      external_sale_id: lystedRaw.externalSaleId,
+      gmail_account_id: outlookAccount.id,
+      source: "lysted",
+      source_message_id: sourceMessageId,
+      subject: lystedRaw.subject,
+      event_name: lystedRaw.eventName,
+      venue: lystedRaw.venue,
+      event_date: lystedRaw.eventDate,
+      sold_at: lystedRaw.soldAt,
+      account_email: outlookAccount.email,
+      buyer_email: "",
+      qty_sold: lystedRaw.qtySold,
+      price_per_ticket: lystedRaw.pricePerTicket,
+      sale_total: gbpSaleTotal,
+      payout_total: gbpPayoutTotal,
+      currency: "USD",
+      section: lystedRaw.section,
+      row: lystedRaw.row,
+      seat_from: lystedRaw.seatFrom,
+      seat_to: lystedRaw.seatTo,
+      sale_status: "Sold – Awaiting Transfer",
+      marketplace: "Lysted",
+      inventory_order_id: existingSale?.inventory_order_id ?? match?.order.id ?? null,
+      match_confidence: existingSale?.match_confidence ?? (match ? Number(match.score.toFixed(2)) : null),
+      user_id: userId,
+    };
+
+    const mutation = existingSale
+      ? supabase
+          .from("sales")
+          .update({ ...saleData, source_message_id: existingSale.source_message_id || sourceMessageId })
+          .eq("id", existingSale.id)
+      : supabase.from("sales").insert(saleData);
+
+    const { error } = await mutation;
+    if (error) throw new Error(error.message);
+    if (!existingSale) inserted += 1;
+
+    if (match) {
+      const currentUsed = orderUsage.get(match.order.id) ?? 0;
+      const newQtySold = currentUsed + (lystedRaw.qtySold ?? 1);
+      orderUsage.set(match.order.id, newQtySold);
+      matched += 1;
+      await updateMatchedOrder(supabase, { userId, order: match.order, payoutTotal: gbpPayoutTotal, totalQtySold: newQtySold });
+    } else if (existingSale?.inventory_order_id != null) {
+      await recomputeOrderStatus(supabase, { userId, orderId: existingSale.inventory_order_id });
+    }
+
+    await outlookMarkRead(accessToken, msg.id);
+  }
+
+  await supabase
+    .from("gmail_accounts")
+    .update({ last_synced_at: new Date().toISOString(), status: "Ready" })
+    .eq("id", outlookAccount.id);
+
+  return { scanned: messages.length, inserted, matched, email: outlookAccount.email };
+}
+
+export async function syncLystedSalesImapInbox({
+  supabase,
+  imapAccount,
+  userId,
+}: {
+  supabase: SupabaseClient;
+  imapAccount: ImapAccount;
+  userId: string;
+}): Promise<SyncResult> {
+  const { ImapFlow } = await import("imapflow");
+  const { simpleParser } = await import("mailparser");
+
+  const client = new ImapFlow({
+    host: imapAccount.host,
+    port: imapAccount.port,
+    secure: imapAccount.use_tls,
+    auth: { user: imapAccount.username, pass: imapAccount.password },
+    logger: false,
+    disableAutoIdle: true,
+    socketTimeout: 30000,
+  });
+
+  let inserted = 0;
+  let matched = 0;
+  let scanned = 0;
+
+  try {
+    await client.connect();
+    const lock = await client.getMailboxLock(imapAccount.mailbox || "INBOX");
+    try {
+      const since14 = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
+      const uidResult = await client.search({ since: since14, seen: false }, { uid: true });
+      const allUids = (Array.isArray(uidResult) ? uidResult : []).slice(-500) as number[];
+
+      if (allUids.length === 0) return { scanned: 0, inserted, matched, email: imapAccount.username };
+
+      const candidateUids: number[] = [];
+      const ENV_BATCH = 50;
+      for (let ei = 0; ei < allUids.length; ei += ENV_BATCH) {
+        const chunk = allUids.slice(ei, ei + ENV_BATCH);
+        for await (const msg of client.fetch(chunk, { envelope: true }, { uid: true })) {
+          const subject = msg.envelope?.subject ?? "";
+          const from = (msg.envelope?.from?.[0]?.address ?? "").toLowerCase();
+          if (
+            from.includes("lysted.com") &&
+            LYSTED_SUBJECT_KEYWORDS.some((kw) => subject.toLowerCase().includes(kw))
+          ) {
+            candidateUids.push(msg.uid);
+          }
+        }
+      }
+
+      if (candidateUids.length === 0) return { scanned: 0, inserted, matched, email: imapAccount.username };
+
+      try { await client.mailboxCreate("My Sales"); } catch { /* already exists */ }
+
+      const candidateOrders = await loadCandidateOrders(supabase, userId);
+      const orderUsage = await loadOrderUsage(supabase, userId);
+
+      const BODY_BATCH = 10;
+      for (let bi = 0; bi < candidateUids.length; bi += BODY_BATCH) {
+        const batchUids = candidateUids.slice(bi, bi + BODY_BATCH);
+        const batchSources = new Map<number, Buffer>();
+        for await (const msg of client.fetch(batchUids, { source: true }, { uid: true })) {
+          if (msg.source) batchSources.set(msg.uid, msg.source as Buffer);
+        }
+
+        for (const uid of batchUids) {
+          const source = batchSources.get(uid);
+          if (!source) continue;
+          try {
+            const parsed = await simpleParser(source, { skipHtmlToText: true });
+            scanned++;
+            const subject = parsed.subject ?? "";
+            const sourceMessageId = parsed.messageId
+              ? parsed.messageId.replace(/^<|>$/g, "")
+              : `imap-uid-${uid}`;
+
+            const plainPart = parsed.text ?? "";
+            const rawHtml = typeof parsed.html === "string" ? parsed.html : "";
+            const bodyParts: string[] = [];
+            if (plainPart) bodyParts.push(plainPart);
+            if (rawHtml) bodyParts.push(stripHtml(rawHtml));
+            const combined = cleanText(`${subject}\n${cleanText(bodyParts.join("\n"))}`);
+
+            const fakeHeaders: GmailHeader[] = [{ name: "Date", value: parsed.date?.toUTCString() ?? "" }];
+            const lystedRaw = parseLystedSaleEmail({ headers: fakeHeaders, subject, text: combined });
+            if (!lystedRaw.externalSaleId) { scanned--; continue; }
+
+            const gbpSaleTotal = await convertToGbpAmount(lystedRaw.saleTotal, "USD");
+            const gbpPayoutTotal = await convertToGbpAmount(lystedRaw.payoutTotal, "USD");
+
+            const existingSale = await findExistingLystedSale(supabase, {
+              userId, externalSaleId: lystedRaw.externalSaleId, sourceMessageId,
+            });
+
+            const parsedGbp: ParsedSale = { ...lystedRaw, saleTotal: gbpSaleTotal, payoutTotal: gbpPayoutTotal };
+            const match = existingSale?.inventory_order_id
+              ? null
+              : findBestInventoryMatch({ orders: candidateOrders, orderUsage, sale: parsedGbp });
+
+            const saleData: SaleInsert = {
+              external_sale_id: lystedRaw.externalSaleId,
+              gmail_account_id: imapAccount.id,
+              source: "lysted",
+              source_message_id: sourceMessageId,
+              subject: lystedRaw.subject,
+              event_name: lystedRaw.eventName,
+              venue: lystedRaw.venue,
+              event_date: lystedRaw.eventDate,
+              sold_at: lystedRaw.soldAt,
+              account_email: imapAccount.username,
+              buyer_email: "",
+              qty_sold: lystedRaw.qtySold,
+              price_per_ticket: lystedRaw.pricePerTicket,
+              sale_total: gbpSaleTotal,
+              payout_total: gbpPayoutTotal,
+              currency: "USD",
+              section: lystedRaw.section,
+              row: lystedRaw.row,
+              seat_from: lystedRaw.seatFrom,
+              seat_to: lystedRaw.seatTo,
+              sale_status: "Sold – Awaiting Transfer",
+              marketplace: "Lysted",
+              inventory_order_id: existingSale?.inventory_order_id ?? match?.order.id ?? null,
+              match_confidence: existingSale?.match_confidence ?? (match ? Number(match.score.toFixed(2)) : null),
+              user_id: userId,
+            };
+
+            const mutation = existingSale
+              ? supabase
+                  .from("sales")
+                  .update({ ...saleData, source_message_id: existingSale.source_message_id || sourceMessageId })
+                  .eq("id", existingSale.id)
+              : supabase.from("sales").insert(saleData);
+
+            const { error } = await mutation;
+            if (error) throw new Error(error.message);
+            if (!existingSale) inserted++;
+
+            if (match) {
+              const currentUsed = orderUsage.get(match.order.id) ?? 0;
+              const newQtySold = currentUsed + (lystedRaw.qtySold ?? 1);
+              orderUsage.set(match.order.id, newQtySold);
+              matched++;
+              await updateMatchedOrder(supabase, { userId, order: match.order, payoutTotal: gbpPayoutTotal, totalQtySold: newQtySold });
+            } else if (existingSale?.inventory_order_id != null) {
+              await recomputeOrderStatus(supabase, { userId, orderId: existingSale.inventory_order_id });
+            }
+
+            try { await client.messageFlagsAdd(String(uid), ["\\Seen"], { uid: true }); } catch { /* best-effort */ }
+            try { await client.messageMove(String(uid), "My Sales", { uid: true }); } catch { /* best-effort */ }
+          } catch {
+            scanned--;
+          }
+        }
+      }
+    } finally {
+      lock.release();
+    }
+  } finally {
+    try { await client.logout(); } catch { /* ignore */ }
+  }
+
+  await supabase
+    .from("imap_accounts")
+    .update({ last_synced_at: new Date().toISOString() })
+    .eq("id", imapAccount.id);
+
+  return { scanned, inserted, matched, email: imapAccount.username };
+}
+
 // ─── Single-email processing (inbound email forwarding) ───────────────────────
 
 export async function processSingleSaleEmail({
@@ -2928,8 +3470,11 @@ export async function processSingleSaleEmail({
   const isViagogo = SALE_SUBJECT_KEYWORDS.some((kw) => lowerSubject.includes(kw));
   const isStubHub = !isViagogo && STUBHUB_SUBJECT_KEYWORDS.some((kw) => lowerSubject.includes(kw));
   const isTicombo = !isViagogo && !isStubHub && TICOMBO_SUBJECT_KEYWORDS.some((kw) => lowerSubject.includes(kw));
+  const isLysted = !isViagogo && !isStubHub && !isTicombo &&
+    LYSTED_SUBJECT_KEYWORDS.some((kw) => lowerSubject.includes(kw)) &&
+    accountEmail.toLowerCase().includes("lysted.com");
 
-  if (!isViagogo && !isStubHub && !isTicombo) return null;
+  if (!isViagogo && !isStubHub && !isTicombo && !isLysted) return null;
 
   const bodyText = textBody || (htmlBody ? outlookStripHtml(htmlBody) : "");
   const combined = cleanText(`${subject}\n${bodyText}`);
@@ -2939,6 +3484,7 @@ export async function processSingleSaleEmail({
   let source: string;
   let marketplace: string;
   let existingSale: ExistingSale | null;
+  let saleCurrency = "GBP";
 
   if (isViagogo) {
     // Skip pre-sale upload reminders — they say "Thank you for listing" / "if they sell"
@@ -2960,12 +3506,23 @@ export async function processSingleSaleEmail({
     marketplace = "StubHub";
     if (!parsed.externalSaleId) return null;
     existingSale = await findExistingStubHubSale(supabase, { userId, externalSaleId: parsed.externalSaleId, sourceMessageId });
-  } else {
+  } else if (isTicombo) {
     parsed = parseTicomboSale({ headers: fakeHeaders, subject, text: combined });
     source = "ticombo";
     marketplace = "Ticombo";
     if (!parsed.externalSaleId) return null;
     existingSale = await findExistingTicomboSale(supabase, { userId, externalSaleId: parsed.externalSaleId, sourceMessageId });
+  } else {
+    // isLysted
+    const lystedRaw = parseLystedSaleEmail({ headers: fakeHeaders, subject, text: combined });
+    source = "lysted";
+    marketplace = "Lysted";
+    if (!lystedRaw.externalSaleId) return null;
+    existingSale = await findExistingLystedSale(supabase, { userId, externalSaleId: lystedRaw.externalSaleId, sourceMessageId });
+    const gbpSaleTotal = await convertToGbpAmount(lystedRaw.saleTotal, "USD");
+    const gbpPayoutTotal = await convertToGbpAmount(lystedRaw.payoutTotal, "USD");
+    parsed = { ...lystedRaw, saleTotal: gbpSaleTotal, payoutTotal: gbpPayoutTotal };
+    saleCurrency = "USD";
   }
 
   const [candidateOrders, orderUsage] = await Promise.all([
@@ -2994,7 +3551,7 @@ export async function processSingleSaleEmail({
     price_per_ticket: parsed.pricePerTicket,
     sale_total: parsed.saleTotal,
     payout_total: parsed.payoutTotal,
-    currency: "GBP",
+    currency: saleCurrency,
     section: parsed.section,
     row: parsed.row,
     seat_from: parsed.seatFrom,

@@ -179,6 +179,8 @@ type SaleRow = {
   marketplace: string | null;
   section: string | null;
   row: string | null;
+  currency: string | null;
+  price_per_ticket: number | null;
 };
 
 function buildOrderEmbed(order: OrderRow, bookingRef: string, action: "inserted" | "updated", activeFields = DEFAULT_WEBHOOK_FIELDS.order) {
@@ -207,13 +209,27 @@ function buildOrderEmbed(order: OrderRow, bookingRef: string, action: "inserted"
   };
 }
 
+const CURRENCY_SYMBOLS: Record<string, string> = {
+  USD: "$", EUR: "€", AUD: "A$", CAD: "C$", CHF: "Fr", JPY: "¥", SEK: "kr", NOK: "kr", DKK: "kr",
+};
+
+function fmtOriginalPrice(sale: SaleRow): string | null {
+  if (!sale.currency || sale.currency === "GBP") return null;
+  if (sale.price_per_ticket == null || sale.qty_sold == null) return null;
+  const sym = CURRENCY_SYMBOLS[sale.currency] ?? (sale.currency + " ");
+  const total = Math.round(sale.price_per_ticket * sale.qty_sold * 100) / 100;
+  return `${sym}${total.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${sale.currency}`;
+}
+
 function buildSaleEmbed(sale: SaleRow, activeFields = DEFAULT_WEBHOOK_FIELDS.sale) {
   const has = (f: string) => activeFields.includes(f);
+  const originalPrice = fmtOriginalPrice(sale);
   const fields = [
     has("date")        && sale.event_date       ? { name: "\u{1F4C5} Date",       value: sale.event_date,              inline: true } : null,
     has("qty")         && sale.qty_sold != null  ? { name: "\u{1F3AB} Qty Sold",  value: String(sale.qty_sold),        inline: true } : null,
     has("sale_total")  && sale.sale_total != null? { name: "\u{1F4B0} Sale Total",value: fmtMoney(sale.sale_total),    inline: true } : null,
     has("payout")      && sale.payout_total != null?{ name: "\u{1F4B5} Payout",  value: fmtMoney(sale.payout_total),  inline: true } : null,
+    originalPrice                               ? { name: "\u{1F4B1} Original",   value: originalPrice,                inline: true } : null,
     has("marketplace") && sale.marketplace       ? { name: "\u{1F3EA} Marketplace",value: sale.marketplace,            inline: true } : null,
     has("section")     && sale.section           ? { name: "\u{1F6BA} Section",   value: sale.section + (sale.row ? ` / Row ${sale.row}` : ""), inline: true } : null,
   ].filter((f): f is NonNullable<typeof f> => f !== null);
@@ -540,7 +556,7 @@ export async function POST(request: Request) {
           if (!ws.url) return;
           const { data: rows } = await supabase
             .from("sales")
-            .select("event_name, event_date, qty_sold, sale_total, payout_total, marketplace, section, row")
+            .select("event_name, event_date, qty_sold, sale_total, payout_total, marketplace, section, row, currency, price_per_ticket")
             .eq("id", saleResult.saleId)
             .eq("user_id", userId)
             .limit(1);

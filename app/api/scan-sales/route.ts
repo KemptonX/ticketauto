@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/src/lib/supabase-server";
-import { rematchViagogoSales, syncViagogoSalesImapInbox, syncViagogoSalesInbox, syncViagogoSalesOutlookInbox, syncStubHubSalesInbox, syncStubHubSalesOutlookInbox, syncStubHubSalesImapInbox, syncTicomboSalesInbox, syncTicomboSalesOutlookInbox, syncTicomboSalesImapInbox } from "@/src/lib/viagogo-sales-sync";
+import { rematchViagogoSales, syncViagogoSalesImapInbox, syncViagogoSalesInbox, syncViagogoSalesOutlookInbox, syncStubHubSalesInbox, syncStubHubSalesOutlookInbox, syncStubHubSalesImapInbox, syncTicomboSalesInbox, syncTicomboSalesOutlookInbox, syncTicomboSalesImapInbox, syncLystedSalesInbox, syncLystedSalesOutlookInbox, syncLystedSalesImapInbox } from "@/src/lib/viagogo-sales-sync";
 
 export const runtime = "nodejs";
 
@@ -74,6 +74,10 @@ export async function POST() {
         totals.scanned += tc.scanned;
         totals.inserted += tc.inserted;
         totals.matched += tc.matched;
+        const ly = await syncLystedSalesOutlookInbox({ supabase, outlookAccount: account, userId: user.id });
+        totals.scanned += ly.scanned;
+        totals.inserted += ly.inserted;
+        totals.matched += ly.matched;
       } else {
         const vg = await syncViagogoSalesInbox({ supabase, gmailAccount: account, userId: user.id });
         totals.scanned += vg.scanned;
@@ -87,6 +91,10 @@ export async function POST() {
         totals.scanned += tc.scanned;
         totals.inserted += tc.inserted;
         totals.matched += tc.matched;
+        const ly = await syncLystedSalesInbox({ supabase, gmailAccount: account, userId: user.id });
+        totals.scanned += ly.scanned;
+        totals.inserted += ly.inserted;
+        totals.matched += ly.matched;
       }
     }
 
@@ -103,6 +111,10 @@ export async function POST() {
       totals.scanned += tc.scanned;
       totals.inserted += tc.inserted;
       totals.matched += tc.matched;
+      const ly = await syncLystedSalesImapInbox({ supabase, imapAccount: account, userId: user.id });
+      totals.scanned += ly.scanned;
+      totals.inserted += ly.inserted;
+      totals.matched += ly.matched;
     }
 
     totals.matched += await rematchViagogoSales({
