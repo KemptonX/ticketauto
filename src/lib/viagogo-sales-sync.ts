@@ -3478,7 +3478,11 @@ export async function processSingleSaleEmail({
 
   if (!isViagogo && !isStubHub && !isTicombo && !isLysted) return null;
 
-  const bodyText = textBody || (htmlBody ? outlookStripHtml(htmlBody) : "");
+  // For Lysted, always parse from HTML — auto-forwarded emails produce a textBody that
+  // only contains Gmail's forwarding header, not the actual email content.
+  const bodyText = isLysted
+    ? (htmlBody ? outlookStripHtml(htmlBody) : textBody || "")
+    : (textBody || (htmlBody ? outlookStripHtml(htmlBody) : ""));
   const combined = cleanText(`${subject}\n${bodyText}`);
   const fakeHeaders: GmailHeader[] = [{ name: "Date", value: receivedAt }];
 
