@@ -81,9 +81,11 @@ export default function PresaleClient() {
   const [addOpen, setAddOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
   const exportRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { void load(); }, []);
+  useEffect(() => { setSelected(new Set()); }, [activeCampaign]);
 
   async function load() {
     setLoading(true);
@@ -115,6 +117,29 @@ export default function PresaleClient() {
       setRescanMsg("Rescan failed");
     }
     setRescanning(false);
+  }
+
+  function toggleRow(id: number) {
+    setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  }
+
+  function toggleAll(ids: number[]) {
+    setSelected(prev => {
+      const n = new Set(prev);
+      const allOn = ids.every(id => n.has(id));
+      ids.forEach(id => allOn ? n.delete(id) : n.add(id));
+      return n;
+    });
+  }
+
+  async function handleBulkDelete(ids: number[]) {
+    if (!ids.length) return;
+    if (!confirm(`Remove ${ids.length} ${ids.length === 1 ? "entry" : "entries"}?`)) return;
+    await Promise.all(
+      ids.map(id => fetch("/api/presale", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) }))
+    );
+    setEntries(prev => prev.filter(e => !ids.includes(e.id)));
+    setSelected(new Set());
   }
 
   function handleExport(format: "csv" | "xlsx") {
@@ -276,9 +301,21 @@ export default function PresaleClient() {
         <div className="table-card">
           <div className="table-card-header">
             <h4>{campaignMeta?.emoji} {campaignMeta?.label}</h4>
-            <span className="table-count">
-              {filtered.length} {filtered.length === 1 ? "entry" : "entries"}
-            </span>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              {selected.size > 0 && (
+                <button
+                  type="button"
+                  className="danger-button"
+                  style={{ padding: "6px 14px", fontSize: 13 }}
+                  onClick={() => void handleBulkDelete([...selected])}
+                >
+                  Delete {selected.size} selected
+                </button>
+              )}
+              <span className="table-count">
+                {filtered.length} {filtered.length === 1 ? "entry" : "entries"}
+              </span>
+            </div>
           </div>
 
           {loading ? (
@@ -307,6 +344,9 @@ export default function PresaleClient() {
                   onCopy={copyCode}
                   onDelete={handleDelete}
                   onUpdateEmail={handleUpdateEmail}
+                  selected={selected}
+                  onToggle={toggleRow}
+                  onToggleAll={toggleAll}
                 />
               )}
               {expiredEntries.length > 0 && (
@@ -321,6 +361,9 @@ export default function PresaleClient() {
                     onCopy={copyCode}
                     onDelete={handleDelete}
                     onUpdateEmail={handleUpdateEmail}
+                    selected={selected}
+                    onToggle={toggleRow}
+                    onToggleAll={toggleAll}
                     dimmed
                   />
                 </>
@@ -391,7 +434,8 @@ function AccountEmailCell({ value, onSave }: { value: string; onSave: (email: st
 }
 
 function PresaleTable({
-  entries, campaignMeta, copied, onCopy, onDelete, onUpdateEmail, dimmed = false,
+  entries, campaignMeta, copied, onCopy, onDelete, onUpdateEmail,
+  selected, onToggle, onToggleAll, dimmed = false,
 }: {
   entries: PresaleEntry[];
   campaignMeta: typeof CAMPAIGNS[string] | undefined;
@@ -399,12 +443,27 @@ function PresaleTable({
   onCopy: (id: number, code: string) => void;
   onDelete: (id: number) => void;
   onUpdateEmail: (id: number, email: string) => void;
+  selected: Set<number>;
+  onToggle: (id: number) => void;
+  onToggleAll: (ids: number[]) => void;
   dimmed?: boolean;
 }) {
+  const ids = entries.map(e => e.id);
+  const allChecked = ids.length > 0 && ids.every(id => selected.has(id));
+  const someChecked = ids.some(id => selected.has(id));
+
   return (
     <table className="premium-table" style={{ opacity: dimmed ? 0.55 : 1 }}>
       <thead>
         <tr>
+          <th style={{ width: 36, paddingRight: 0 }}>
+            <input
+              type="checkbox"
+              checked={allChecked}
+              ref={el => { if (el) el.indeterminate = someChecked && !allChecked; }}
+              onChange={() => onToggleAll(ids)}
+            />
+          </th>
           <th>Account Email</th>
           {!campaignMeta?.accountBound && <th>Code</th>}
           <th>Slot Opens</th>
@@ -415,7 +474,15 @@ function PresaleTable({
       </thead>
       <tbody>
         {entries.map((entry) => (
-          <tr key={entry.id}>
+          <tr key={entry.id} style={{ opacity: selected.has(entry.id) ? 1 : undefined }}>
+            <td style={{ paddingRight: 0 }}>
+              <input
+                type="checkbox"
+                checked={selected.has(entry.id)}
+                onChange={() => onToggle(entry.id)}
+                style={{ cursor: "pointer" }}
+              />
+            </td>
             <td>
               <AccountEmailCell
                 value={entry.account_email}
