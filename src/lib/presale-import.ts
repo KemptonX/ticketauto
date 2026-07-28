@@ -14,22 +14,24 @@ export type ParsedFileResult = {
 const MAX_ROWS = 5_000;
 
 // ── Date-split repair ────────────────────────────────────────────────────
-// CSV commas inside "July 29, 2026 10:00" split that value across two cells.
-// Detect "Month DD" in one cell and "YYYY..." in the next, then rejoin them.
+// CSV commas inside "July 29, 2026 10:00" cause the value to be split across
+// two cells. Merge them back BEFORE assigning to headers, so the overflow
+// cell isn't discarded.
 
-function mergeSplitDates(rows: Record<string, string>[], headers: string[]): void {
-  for (const row of rows) {
-    for (let i = 0; i < headers.length - 1; i++) {
-      const h     = headers[i];
-      const hNext = headers[i + 1];
-      const val   = (row[h]     ?? "").trim();
-      const next  = (row[hNext] ?? "").trim();
-      if (/^[A-Za-z]+\s+\d{1,2}$/.test(val) && /^\d{4}/.test(next)) {
-        row[h]     = `${val}, ${next}`;
-        row[hNext] = "";
-      }
+function mergeAdjacentDateCells(cells: string[]): string[] {
+  const result: string[] = [];
+  for (let k = 0; k < cells.length; k++) {
+    const val  = cells[k].trim();
+    const next = (cells[k + 1] ?? "").trim();
+    // "July 29" followed by "2026 10:00" → "July 29, 2026 10:00"
+    if (/^[A-Za-z]+\s+\d{1,2}$/.test(val) && /^\d{4}/.test(next)) {
+      result.push(`${val}, ${next}`);
+      k++; // consume the next cell too
+    } else {
+      result.push(val);
     }
   }
+  return result;
 }
 
 // ── Spreadsheet parsing ───────────────────────────────────────────────────
@@ -63,15 +65,15 @@ export function parseSpreadsheetBuffer(buffer: Buffer, filename: string): Parsed
   const dataRows = data.slice(hdrIdx + 1) as unknown[][];
 
   for (const rowArr of dataRows) {
-    const cells = rowArr as unknown[];
-    if (!cells.some(c => String(c ?? "").trim())) continue;
+    const rawCells = (rowArr as unknown[]).map(c => String(c ?? "").trim());
+    if (!rawCells.some(c => c)) continue;
+    const cells = mergeAdjacentDateCells(rawCells);
     const obj: Record<string, string> = {};
-    headers.forEach((h, j) => { obj[h] = String(cells[j] ?? "").trim(); });
+    headers.forEach((h, j) => { obj[h] = cells[j] ?? ""; });
     rawRows.push(obj);
   }
 
   const totalCount = rawRows.length;
-  mergeSplitDates(rawRows.slice(0, MAX_ROWS), headers);
   return { headers, rawRows: rawRows.slice(0, MAX_ROWS), method, sheetName, totalCount };
 }
 
@@ -142,17 +144,16 @@ export function parsePastedText(text: string): ParsedFileResult {
     return line.split("\t").map(c => c.trim());
   }
 
-  const headers = splitLine(firstLine);
+  const headers = mergeAdjacentDateCells(splitLine(firstLine));
   const rawRows: Record<string, string>[] = [];
   for (let i = 1; i < lines.length && rawRows.length < MAX_ROWS; i++) {
-    const cells = splitLine(lines[i]);
+    const cells = mergeAdjacentDateCells(splitLine(lines[i]));
     if (!cells.some(c => c)) continue;
     const obj: Record<string, string> = {};
     headers.forEach((h, j) => { obj[h] = cells[j] ?? ""; });
     rawRows.push(obj);
   }
 
-  mergeSplitDates(rawRows, headers);
   return { headers, rawRows, method, totalCount: rawRows.length };
 }
 
