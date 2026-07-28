@@ -382,7 +382,7 @@ export default function ForwardMailClient() {
                             ) : "—"}
                           </td>
                           <td style={{ fontSize: "0.8125rem", maxWidth: "13rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                            {ev.x_forwarded_to
+                            {ev.x_forwarded_to && !ev.x_forwarded_to.includes("inbound.tixtracker.app")
                               ? <span className="mono-text" style={{ fontSize: "0.8rem" }}>{ev.x_forwarded_to}</span>
                               : <span style={{ color: "var(--text-muted)" }}>—</span>}
                           </td>

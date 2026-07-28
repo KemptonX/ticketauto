@@ -370,11 +370,16 @@ export async function POST(request: Request) {
   const normalizedHash = computeNormalizedHash(from, subject, payload.Date ?? "", textBody);
 
   // --- Internal log helper ---
-  // X-Forwarded-To = the email account that forwarded this email to TixTracker.
-  // For Gmail auto-forwarding, this is the Gmail address — i.e. the account the
-  // original email was sent to (e.g. the presale account for LA28 emails).
+  // Find the original account email (Delivered-To of the Gmail/email account that
+  // forwarded to TixTracker). X-Forwarded-To is the DESTINATION (scan+ address),
+  // not the source. Delivered-To can appear multiple times; we want the one that
+  // is NOT the inbound.tixtracker.app address.
   const xForwardedTo =
-    (payload.Headers ?? []).find((h) => h.Name.toLowerCase() === "x-forwarded-to")?.Value?.trim() || null;
+    (payload.Headers ?? [])
+      .filter((h) => h.Name.toLowerCase() === "delivered-to")
+      .map((h) => h.Value?.trim() ?? "")
+      .find((v) => v && !v.toLowerCase().includes("inbound.tixtracker.app")) ||
+    null;
 
   async function logEvent(
     status: string,
