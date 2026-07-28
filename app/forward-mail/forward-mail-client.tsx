@@ -355,6 +355,7 @@ export default function ForwardMailClient() {
                 <thead>
                   <tr>
                     <th>Received</th>
+                    <th>Account</th>
                     <th>From</th>
                     <th>Subject</th>
                     <th>Status</th>
@@ -380,17 +381,15 @@ export default function ForwardMailClient() {
                               </>
                             ) : "—"}
                           </td>
-                          <td style={{ fontSize: "0.8125rem", maxWidth: "14rem" }}>
-                            <span style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                              {ev.sender_email ?? "—"}
-                            </span>
-                            {ev.x_forwarded_to && (
-                              <span style={{ display: "block", fontSize: "0.7rem", color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: 2 }}>
-                                → {ev.x_forwarded_to}
-                              </span>
-                            )}
+                          <td style={{ fontSize: "0.8125rem", maxWidth: "13rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {ev.x_forwarded_to
+                              ? <span className="mono-text" style={{ fontSize: "0.8rem" }}>{ev.x_forwarded_to}</span>
+                              : <span style={{ color: "var(--text-muted)" }}>—</span>}
                           </td>
-                          <td style={{ fontSize: "0.8125rem", maxWidth: "22rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          <td style={{ fontSize: "0.8125rem", maxWidth: "12rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {ev.sender_email ?? "—"}
+                          </td>
+                          <td style={{ fontSize: "0.8125rem", maxWidth: "20rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                             {ev.subject ?? <span style={{ color: "var(--muted)" }}>(no subject)</span>}
                             <span style={{ marginLeft: "0.4rem", color: "var(--muted)", fontSize: "0.7rem" }}>
                               {isExpanded ? "▲" : "▼"}
@@ -413,7 +412,7 @@ export default function ForwardMailClient() {
                         </tr>
                         {isExpanded && (
                           <tr>
-                            <td colSpan={5} style={{ padding: 0, background: "var(--surface-1, rgba(0,0,0,0.15))", borderTop: "1px solid var(--border)" }}>
+                            <td colSpan={6} style={{ padding: 0, background: "var(--surface-1, rgba(0,0,0,0.15))", borderTop: "1px solid var(--border)" }}>
                               <BodyPanel ev={ev} />
                             </td>
                           </tr>
