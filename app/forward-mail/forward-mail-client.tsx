@@ -30,6 +30,7 @@ type MailEvent = {
   postmark_message_id: string | null;
   text_body: string | null;
   html_body: string | null;
+  x_forwarded_to: string | null;
 };
 
 type FilterType = "all" | "imported" | "failed" | "duplicate" | "skipped" | "verification";
@@ -202,7 +203,7 @@ export default function ForwardMailClient() {
     try {
       const { data, error } = await supabase
         .from("inbound_email_events")
-        .select("id, sender_email, subject, received_at, processing_status, booking_ref_detected, error_message, postmark_message_id, text_body, html_body")
+        .select("id, sender_email, subject, received_at, processing_status, booking_ref_detected, error_message, postmark_message_id, text_body, html_body, x_forwarded_to")
         .order("received_at", { ascending: false })
         .limit(500);
       if (error) throw error;
@@ -379,8 +380,15 @@ export default function ForwardMailClient() {
                               </>
                             ) : "—"}
                           </td>
-                          <td style={{ fontSize: "0.8125rem", maxWidth: "12rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                            {ev.sender_email ?? "—"}
+                          <td style={{ fontSize: "0.8125rem", maxWidth: "14rem" }}>
+                            <span style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                              {ev.sender_email ?? "—"}
+                            </span>
+                            {ev.x_forwarded_to && (
+                              <span style={{ display: "block", fontSize: "0.7rem", color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: 2 }}>
+                                → {ev.x_forwarded_to}
+                              </span>
+                            )}
                           </td>
                           <td style={{ fontSize: "0.8125rem", maxWidth: "22rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                             {ev.subject ?? <span style={{ color: "var(--muted)" }}>(no subject)</span>}

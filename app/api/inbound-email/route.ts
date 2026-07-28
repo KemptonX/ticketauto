@@ -370,6 +370,12 @@ export async function POST(request: Request) {
   const normalizedHash = computeNormalizedHash(from, subject, payload.Date ?? "", textBody);
 
   // --- Internal log helper ---
+  // X-Forwarded-To = the email account that forwarded this email to TixTracker.
+  // For Gmail auto-forwarding, this is the Gmail address — i.e. the account the
+  // original email was sent to (e.g. the presale account for LA28 emails).
+  const xForwardedTo =
+    (payload.Headers ?? []).find((h) => h.Name.toLowerCase() === "x-forwarded-to")?.Value?.trim() || null;
+
   async function logEvent(
     status: string,
     userId: string | null,
@@ -388,6 +394,7 @@ export async function POST(request: Request) {
       received_at: receivedAt,
       normalized_hash: normalizedHash,
       processing_status: status,
+      x_forwarded_to: xForwardedTo,
       ...extra,
     };
     try {
@@ -446,15 +453,8 @@ export async function POST(request: Request) {
       const presaleCampaign = CAMPAIGN_DEFS.find((c) => c.detect(from, subject));
       if (!presaleCampaign) return;
 
-      // X-Forwarded-To = the Gmail/email account that forwarded this email to TixTracker.
-      // That is the account LA28 sent the presale to — the one the user needs to log in with.
-      const headers = payload.Headers ?? [];
-      const accountEmail = [
-        headers.find((h) => h.Name.toLowerCase() === "x-forwarded-to")?.Value ?? "",
-        headers.find((h) => h.Name.toLowerCase() === "delivered-to")?.Value ?? "",
-      ]
-        .map((v) => v.trim())
-        .find((v) => v && !v.toLowerCase().includes("inbound.tixtracker.app")) ?? "";
+      // xForwardedTo is already extracted above from Postmark headers.
+      const accountEmail = xForwardedTo ?? "";
 
       const body = cleanText([
         textBody,

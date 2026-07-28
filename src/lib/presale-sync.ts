@@ -82,6 +82,7 @@ type InboundEmailRow = {
   html_body: string | null;
   postmark_message_id: string | null;
   normalized_hash: string | null;
+  x_forwarded_to: string | null;
 };
 
 export async function syncPresaleFromInboundEvents({
@@ -95,7 +96,7 @@ export async function syncPresaleFromInboundEvents({
 
   const { data: emails } = await supabase
     .from("inbound_email_events")
-    .select("id, sender_email, subject, text_body, html_body, postmark_message_id, normalized_hash")
+    .select("id, sender_email, subject, text_body, html_body, postmark_message_id, normalized_hash, x_forwarded_to")
     .eq("user_id", userId)
     .gte("received_at", since)
     .order("received_at", { ascending: false }) as { data: InboundEmailRow[] | null };
@@ -128,9 +129,9 @@ export async function syncPresaleFromInboundEvents({
       email.html_body ? stripHtml(email.html_body) : "",
     ].filter(Boolean).join("\n"));
 
-    // toAddress is not stored in inbound_email_events — pass empty string.
-    // The user can edit account_email manually in the UI if needed.
-    const parsed = campaign.parse(subject, body, "");
+    // Use x_forwarded_to as the account email — this is the Gmail/email account
+    // that forwarded the email to TixTracker, i.e. the account the presale was sent to.
+    const parsed = campaign.parse(subject, body, email.x_forwarded_to ?? "");
     if (!parsed) continue;
 
     const { error } = await supabase.from("presale_entries").insert({
