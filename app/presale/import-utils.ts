@@ -104,6 +104,20 @@ export function parseDate(value: string): string | null {
   const v = value.trim();
   if (!v) return null;
 
+  // US format: "July 29, 2026" or "July 29, 2026 10:00" or "July 29 2026 10:00"
+  const usMatch = v.match(/^([A-Za-z]{3,})\s+(\d{1,2}),?\s+(\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?/i);
+  if (usMatch) {
+    const month = MONTH_MAP[usMatch[1].toLowerCase()];
+    const day   = parseInt(usMatch[2], 10);
+    const year  = parseInt(usMatch[3], 10);
+    if (month) {
+      const d = new Date(year, month - 1, day,
+        usMatch[4] ? parseInt(usMatch[4], 10) : 0,
+        usMatch[5] ? parseInt(usMatch[5], 10) : 0);
+      if (!isNaN(d.getTime())) return d.toISOString();
+    }
+  }
+
   // ISO or any format Date() can handle natively
   const d1 = new Date(v);
   if (!isNaN(d1.getTime())) return d1.toISOString();

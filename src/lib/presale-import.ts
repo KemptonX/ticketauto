@@ -13,6 +13,25 @@ export type ParsedFileResult = {
 
 const MAX_ROWS = 5_000;
 
+// ── Date-split repair ────────────────────────────────────────────────────
+// CSV commas inside "July 29, 2026 10:00" split that value across two cells.
+// Detect "Month DD" in one cell and "YYYY..." in the next, then rejoin them.
+
+function mergeSplitDates(rows: Record<string, string>[], headers: string[]): void {
+  for (const row of rows) {
+    for (let i = 0; i < headers.length - 1; i++) {
+      const h     = headers[i];
+      const hNext = headers[i + 1];
+      const val   = (row[h]     ?? "").trim();
+      const next  = (row[hNext] ?? "").trim();
+      if (/^[A-Za-z]+\s+\d{1,2}$/.test(val) && /^\d{4}/.test(next)) {
+        row[h]     = `${val}, ${next}`;
+        row[hNext] = "";
+      }
+    }
+  }
+}
+
 // ── Spreadsheet parsing ───────────────────────────────────────────────────
 
 export function parseSpreadsheetBuffer(buffer: Buffer, filename: string): ParsedFileResult {
@@ -52,6 +71,7 @@ export function parseSpreadsheetBuffer(buffer: Buffer, filename: string): Parsed
   }
 
   const totalCount = rawRows.length;
+  mergeSplitDates(rawRows.slice(0, MAX_ROWS), headers);
   return { headers, rawRows: rawRows.slice(0, MAX_ROWS), method, sheetName, totalCount };
 }
 
@@ -132,6 +152,7 @@ export function parsePastedText(text: string): ParsedFileResult {
     rawRows.push(obj);
   }
 
+  mergeSplitDates(rawRows, headers);
   return { headers, rawRows, method, totalCount: rawRows.length };
 }
 
