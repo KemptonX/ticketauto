@@ -206,6 +206,7 @@ export default function ForwardMailClient() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<FilterType>("all");
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
+  const [userEmail, setUserEmail] = useState<string | null>(null);
 
   async function handleLogout() {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -214,6 +215,9 @@ export default function ForwardMailClient() {
 
   async function load() {
     setLoading(true);
+
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user?.email) setUserEmail(user.email);
 
     // Stats query — lightweight, no limit, just the status column for accurate KPIs.
     const { data: allStatuses } = await supabase
@@ -411,9 +415,14 @@ export default function ForwardMailClient() {
                             ) : "—"}
                           </td>
                           <td style={{ fontSize: "0.8125rem", maxWidth: "13rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                            {ev.x_forwarded_to && !ev.x_forwarded_to.includes("inbound.tixtracker.app")
-                              ? <span className="mono-text" style={{ fontSize: "0.8rem" }}>{ev.x_forwarded_to}</span>
-                              : <span style={{ color: "var(--text-muted)" }}>—</span>}
+                            {(() => {
+                              const acct = ev.x_forwarded_to && !ev.x_forwarded_to.includes("inbound.tixtracker.app")
+                                ? ev.x_forwarded_to
+                                : userEmail;
+                              return acct
+                                ? <span className="mono-text" style={{ fontSize: "0.8rem" }}>{acct}</span>
+                                : <span style={{ color: "var(--text-muted)" }}>—</span>;
+                            })()}
                           </td>
                           <td style={{ fontSize: "0.8125rem", maxWidth: "12rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                             {ev.sender_email ?? "—"}
