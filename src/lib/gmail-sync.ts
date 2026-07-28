@@ -117,12 +117,25 @@ export type ProcessResult = {
   bookingRef: string | null;
 };
 
+// Subjects that should never be imported as ticket orders
+const SKIP_SUBJECT_PATTERNS = [
+  /refund has been issued/i,
+  /tickets got cancelled/i,
+  /not had a refund/i,
+  /your refund/i,
+  /cancell?ation confirm/i,
+];
+
 export async function processNormalisedEmail(
   supabase: SupabaseClient,
   email: NormalisedEmail,
   userId: string,
   fallbackAccountEmail: string,
 ): Promise<ProcessResult> {
+  if (SKIP_SUBJECT_PATTERNS.some((p) => p.test(email.subject))) {
+    return { action: "no_ref", bookingRef: null };
+  }
+
   const combined = cleanText(`${email.subject}\n${email.body}`);
 
   const axs = isAxsEmail(email.from, email.subject);
