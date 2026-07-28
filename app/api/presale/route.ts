@@ -59,6 +59,27 @@ export async function POST(request: Request) {
   return NextResponse.json({ entry: data });
 }
 
+// PATCH — update account_email on an existing entry
+export async function PATCH(request: Request) {
+  const supabase = await createSupabaseServerClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const { id, account_email } = await request.json() as { id: number; account_email: string };
+  if (!id || !account_email?.trim()) {
+    return NextResponse.json({ error: "id and account_email are required" }, { status: 400 });
+  }
+
+  const { error } = await supabase
+    .from("presale_entries")
+    .update({ account_email: account_email.trim() })
+    .eq("id", id)
+    .eq("user_id", user.id);
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  return NextResponse.json({ ok: true });
+}
+
 // DELETE — remove an entry by id
 export async function DELETE(request: Request) {
   const supabase = await createSupabaseServerClient();

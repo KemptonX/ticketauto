@@ -118,6 +118,17 @@ export default function PresaleClient() {
     setEntries((prev) => prev.filter((e) => e.id !== id));
   }
 
+  async function handleUpdateEmail(id: number, email: string) {
+    const res = await fetch("/api/presale", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, account_email: email }),
+    });
+    if (res.ok) {
+      setEntries((prev) => prev.map((e) => e.id === id ? { ...e, account_email: email } : e));
+    }
+  }
+
   function copyCode(id: number, code: string) {
     void navigator.clipboard.writeText(code);
     setCopied(id);
@@ -214,7 +225,7 @@ export default function PresaleClient() {
             <div className="state-card">
               <div className="state-orb state-orb-muted" />
               <h5>No {campaignMeta?.label} entries yet</h5>
-              <p>Click <strong>Rescan Emails</strong> to import from Gmail, or use <strong>+ Add Entry</strong> to add manually.</p>
+              <p>Click <strong>Rescan Emails</strong> to pull from your forwarded mail, or use <strong>+ Add Entry</strong> to add manually.</p>
             </div>
           ) : (
             <div className="table-scroll">
@@ -230,6 +241,7 @@ export default function PresaleClient() {
                   copied={copied}
                   onCopy={copyCode}
                   onDelete={handleDelete}
+                  onUpdateEmail={handleUpdateEmail}
                 />
               )}
               {expiredEntries.length > 0 && (
@@ -243,6 +255,7 @@ export default function PresaleClient() {
                     copied={copied}
                     onCopy={copyCode}
                     onDelete={handleDelete}
+                    onUpdateEmail={handleUpdateEmail}
                     dimmed
                   />
                 </>
@@ -263,14 +276,58 @@ export default function PresaleClient() {
   );
 }
 
+function AccountEmailCell({ value, onSave }: { value: string; onSave: (email: string) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+
+  function commit() {
+    const trimmed = draft.trim();
+    if (trimmed && trimmed !== value) onSave(trimmed);
+    setEditing(false);
+  }
+
+  if (editing) {
+    return (
+      <input
+        className="field"
+        type="email"
+        value={draft}
+        autoFocus
+        style={{ fontSize: "0.8rem", padding: "4px 8px", minWidth: 190, display: "inline-block" }}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); commit(); } if (e.key === "Escape") setEditing(false); }}
+      />
+    );
+  }
+
+  return (
+    <span
+      className={value ? "mono-text" : undefined}
+      style={{
+        cursor: "pointer",
+        color: value ? undefined : "var(--accent)",
+        fontSize: "0.8rem",
+        opacity: value ? 1 : 0.8,
+        textDecoration: value ? undefined : "underline dotted",
+      }}
+      onClick={() => { setDraft(value); setEditing(true); }}
+      title={value ? "Click to edit" : "Click to set account email"}
+    >
+      {value || "+ Set email"}
+    </span>
+  );
+}
+
 function PresaleTable({
-  entries, campaignMeta, copied, onCopy, onDelete, dimmed = false,
+  entries, campaignMeta, copied, onCopy, onDelete, onUpdateEmail, dimmed = false,
 }: {
   entries: PresaleEntry[];
   campaignMeta: typeof CAMPAIGNS[string] | undefined;
   copied: number | null;
   onCopy: (id: number, code: string) => void;
   onDelete: (id: number) => void;
+  onUpdateEmail: (id: number, email: string) => void;
   dimmed?: boolean;
 }) {
   return (
@@ -289,7 +346,10 @@ function PresaleTable({
         {entries.map((entry) => (
           <tr key={entry.id}>
             <td>
-              <span className="mono-text">{entry.account_email}</span>
+              <AccountEmailCell
+                value={entry.account_email}
+                onSave={(email) => onUpdateEmail(entry.id, email)}
+              />
             </td>
             {!campaignMeta?.accountBound && (
               <td>
