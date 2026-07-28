@@ -188,8 +188,21 @@ function BodyPanel({ ev }: { ev: MailEvent }) {
   );
 }
 
+const IMPORTED_STATUSES = ["imported", "updated", "presale_imported"];
+const SKIPPED_STATUSES  = ["no_ref_ignored", "unknown_token", "disabled_token"];
+
+type Stats = {
+  total: number;
+  imported: number;
+  failed: number;
+  duplicates: number;
+  verification: number;
+  skipped: number;
+};
+
 export default function ForwardMailClient() {
   const [events, setEvents] = useState<MailEvent[]>([]);
+  const [stats, setStats] = useState<Stats>({ total: 0, imported: 0, failed: 0, duplicates: 0, verification: 0, skipped: 0 });
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<FilterType>("all");
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
@@ -201,13 +214,31 @@ export default function ForwardMailClient() {
 
   async function load() {
     setLoading(true);
+
+    // Stats query — lightweight, no limit, just the status column for accurate KPIs.
+    const { data: allStatuses } = await supabase
+      .from("inbound_email_events")
+      .select("processing_status");
+    if (allStatuses) {
+      const s = allStatuses.map((r) => r.processing_status ?? "");
+      setStats({
+        total:        s.length,
+        imported:     s.filter((v) => IMPORTED_STATUSES.includes(v)).length,
+        failed:       s.filter((v) => v === "failed").length,
+        duplicates:   s.filter((v) => v === "duplicate").length,
+        verification: s.filter((v) => v === "verification_email").length,
+        skipped:      s.filter((v) => SKIPPED_STATUSES.includes(v)).length,
+      });
+    }
+
+    // Display query — most recent 1000 rows with full fields for the table.
     let rows: MailEvent[] = [];
     try {
       const { data, error } = await supabase
         .from("inbound_email_events")
         .select("id, sender_email, subject, received_at, processing_status, booking_ref_detected, error_message, postmark_message_id, text_body, html_body, x_forwarded_to")
         .order("received_at", { ascending: false })
-        .limit(500);
+        .limit(1000);
       if (error) throw error;
       rows = (data as MailEvent[]) ?? [];
     } catch {
@@ -215,7 +246,7 @@ export default function ForwardMailClient() {
         .from("inbound_email_events")
         .select("id, sender_email, subject, received_at, processing_status, booking_ref_detected, error_message, postmark_message_id")
         .order("received_at", { ascending: false })
-        .limit(500);
+        .limit(1000);
       rows = (data as MailEvent[]) ?? [];
     }
     setEvents(rows);
@@ -232,30 +263,26 @@ export default function ForwardMailClient() {
     });
   }
 
-  const total      = events.length;
-  const imported   = events.filter((e) => e.processing_status === "imported" || e.processing_status === "updated" || e.processing_status === "presale_imported").length;
-  const failed     = events.filter((e) => e.processing_status === "failed").length;
-  const duplicates = events.filter((e) => e.processing_status === "duplicate").length;
-  const lastFull   = events[0]?.received_at ? formatTs(events[0].received_at) : "No emails yet";
-  const lastAgo    = events[0]?.received_at ? timeAgo(events[0].received_at) : "—";
+  const lastFull = events[0]?.received_at ? formatTs(events[0].received_at) : "No emails yet";
+  const lastAgo  = events[0]?.received_at ? timeAgo(events[0].received_at) : "—";
 
   const filtered = events.filter((e) => {
     const s = e.processing_status ?? "";
-    if (filter === "imported")     return s === "imported" || s === "updated" || s === "presale_imported";
+    if (filter === "imported")     return IMPORTED_STATUSES.includes(s);
     if (filter === "failed")       return s === "failed";
     if (filter === "duplicate")    return s === "duplicate";
     if (filter === "verification") return s === "verification_email";
-    if (filter === "skipped")      return ["no_ref_ignored","unknown_token","disabled_token"].includes(s);
+    if (filter === "skipped")      return SKIPPED_STATUSES.includes(s);
     return true;
   });
 
   const filterTabs: { key: FilterType; label: string; count: number }[] = [
-    { key: "all",          label: "All",          count: total },
-    { key: "imported",     label: "Imported",     count: imported },
-    { key: "failed",       label: "Failed",       count: failed },
-    { key: "duplicate",    label: "Duplicate",    count: duplicates },
-    { key: "verification", label: "Verification", count: events.filter((e) => e.processing_status === "verification_email").length },
-    { key: "skipped",      label: "Skipped",      count: events.filter((e) => ["no_ref_ignored","unknown_token","disabled_token"].includes(e.processing_status ?? "")).length },
+    { key: "all",          label: "All",          count: stats.total },
+    { key: "imported",     label: "Imported",     count: stats.imported },
+    { key: "failed",       label: "Failed",       count: stats.failed },
+    { key: "duplicate",    label: "Duplicate",    count: stats.duplicates },
+    { key: "verification", label: "Verification", count: stats.verification },
+    { key: "skipped",      label: "Skipped",      count: stats.skipped },
   ];
 
   return (
@@ -300,30 +327,30 @@ export default function ForwardMailClient() {
           </div>
           <div className="hero-meta">
             <div><span className="hero-meta-label">Last received</span><strong>{lastAgo}</strong></div>
-            <div><span className="hero-meta-label">Total received</span><strong>{total}</strong></div>
-            <div><span className="hero-meta-label">Imported</span><strong style={{ color: "#22c55e" }}>{imported}</strong></div>
+            <div><span className="hero-meta-label">Total received</span><strong>{stats.total}</strong></div>
+            <div><span className="hero-meta-label">Imported</span><strong style={{ color: "#22c55e" }}>{stats.imported}</strong></div>
           </div>
         </section>
 
         <section className="kpi-grid connections-kpi-grid" style={{ marginBottom: "1.25rem" }}>
           <article className="kpi-card">
             <p className="kpi-label">Total emails</p>
-            <strong className="kpi-value">{total}</strong>
+            <strong className="kpi-value">{stats.total}</strong>
             <span className="kpi-trend">all time</span>
           </article>
           <article className="kpi-card">
             <p className="kpi-label">Imported</p>
-            <strong className="kpi-value" style={{ color: "#22c55e" }}>{imported}</strong>
-            <span className="kpi-trend">tickets &amp; sales added</span>
+            <strong className="kpi-value" style={{ color: "#22c55e" }}>{stats.imported}</strong>
+            <span className="kpi-trend">tickets, sales &amp; presale</span>
           </article>
           <article className="kpi-card">
             <p className="kpi-label">Failed</p>
-            <strong className="kpi-value" style={{ color: failed > 0 ? "#f87171" : undefined }}>{failed}</strong>
-            <span className="kpi-trend">{failed === 0 ? "All clean" : "Check details below"}</span>
+            <strong className="kpi-value" style={{ color: stats.failed > 0 ? "#f87171" : undefined }}>{stats.failed}</strong>
+            <span className="kpi-trend">{stats.failed === 0 ? "All clean" : "Check details below"}</span>
           </article>
           <article className="kpi-card">
             <p className="kpi-label">Duplicates</p>
-            <strong className="kpi-value">{duplicates}</strong>
+            <strong className="kpi-value">{stats.duplicates}</strong>
             <span className="kpi-trend">already imported</span>
           </article>
         </section>
