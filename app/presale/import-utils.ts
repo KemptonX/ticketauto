@@ -131,7 +131,7 @@ export function parseDate(value: string): string | null {
   }
 
   // DD/MM/YYYY or DD-MM-YYYY HH:MM
-  const dmyMatch = v.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})(?:\s+(\d{1,2}):(\d{2}))?/);
+  const dmyMatch = v.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})(?:[,\s]+(\d{1,2}):(\d{2}))?/);
   if (dmyMatch) {
     const day = parseInt(dmyMatch[1], 10);
     const month = parseInt(dmyMatch[2], 10);
