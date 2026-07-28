@@ -456,49 +456,44 @@ export async function POST(request: Request) {
     .update({ last_received_at: receivedAt, updated_at: new Date().toISOString() })
     .eq("id", settingId);
 
-  // --- Presale auto-detection (non-blocking, runs for every inbound email) ---
-  // At this point we have the full Postmark payload including all forwarded headers,
-  // so we can extract the original recipient email (X-Forwarded-To) as account_email.
-  void (async () => {
-    try {
-      const presaleCampaign = CAMPAIGN_DEFS.find((c) => c.detect(from, subject));
-      if (!presaleCampaign) return;
-
-      // xForwardedTo is already extracted above from Postmark headers.
+  // --- Presale auto-detection (blocking so the status reflects the outcome) ---
+  let presaleInserted = false;
+  try {
+    const presaleCampaign = CAMPAIGN_DEFS.find((c) => c.detect(from, subject));
+    if (presaleCampaign) {
       const accountEmail = xForwardedTo ?? "";
-
       const body = cleanText([
         textBody,
         htmlBody ? stripHtml(htmlBody) : "",
       ].filter(Boolean).join("\n"));
-
       const parsed = presaleCampaign.parse(subject, body, accountEmail);
-      if (!parsed) return;
-
-      const msgId = postmarkMessageId ?? normalizedHash;
-      const { data: existing } = await supabase
-        .from("presale_entries")
-        .select("id")
-        .eq("user_id", userId)
-        .eq("campaign", presaleCampaign.id)
-        .eq("source_message_id", msgId)
-        .maybeSingle();
-      if (existing) return;
-
-      await supabase.from("presale_entries").insert({
-        user_id: userId,
-        campaign: presaleCampaign.id,
-        account_email: parsed.account_email,
-        presale_code: parsed.presale_code,
-        slot_start: parsed.slot_start,
-        slot_end: parsed.slot_end,
-        notes: parsed.notes,
-        source_message_id: msgId,
-      });
-    } catch (err) {
-      console.error("[inbound] presale detection error:", err instanceof Error ? err.message : err);
+      if (parsed) {
+        const msgId = postmarkMessageId ?? normalizedHash;
+        const { data: existing } = await supabase
+          .from("presale_entries")
+          .select("id")
+          .eq("user_id", userId)
+          .eq("campaign", presaleCampaign.id)
+          .eq("source_message_id", msgId)
+          .maybeSingle();
+        if (!existing) {
+          const { error: insertErr } = await supabase.from("presale_entries").insert({
+            user_id: userId,
+            campaign: presaleCampaign.id,
+            account_email: parsed.account_email,
+            presale_code: parsed.presale_code,
+            slot_start: parsed.slot_start,
+            slot_end: parsed.slot_end,
+            notes: parsed.notes,
+            source_message_id: msgId,
+          });
+          if (!insertErr) presaleInserted = true;
+        }
+      }
     }
-  })();
+  } catch (err) {
+    console.error("[inbound] presale detection error:", err instanceof Error ? err.message : err);
+  }
 
   // --- Postmark-level duplicate check ---
   // Catches the same Postmark delivery arriving twice (retry/webhook duplication)
@@ -717,9 +712,13 @@ export async function POST(request: Request) {
     }
   }
 
-  await logEvent(eventStatus, userId, settingId, {
+  const finalStatus = presaleInserted && eventStatus === "no_ref_ignored"
+    ? "presale_imported"
+    : eventStatus;
+
+  await logEvent(finalStatus, userId, settingId, {
     booking_ref_detected: processResult.bookingRef ?? null,
   });
 
-  return NextResponse.json({ ok: true, status: eventStatus });
+  return NextResponse.json({ ok: true, status: finalStatus });
 }

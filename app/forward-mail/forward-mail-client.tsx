@@ -42,6 +42,7 @@ const STATUS_LABELS: Record<string, string> = {
   failed:             "Failed",
   verification_email: "Verification",
   no_ref_ignored:     "No Ref",
+  presale_imported:   "Presale",
   unknown_token:      "Bad Token",
   disabled_token:     "Disabled",
   received:           "Received",
@@ -53,6 +54,7 @@ function statusBadge(status: string | null) {
   const cls =
     s === "imported"           ? "status-sold"     :
     s === "updated"            ? "status-listed"   :
+    s === "presale_imported"   ? "status-personal" :
     s === "duplicate"          ? "status-unlisted" :
     s === "failed"             ? "status-problem"  :
     s === "verification_email" ? "status-personal" :
@@ -231,7 +233,7 @@ export default function ForwardMailClient() {
   }
 
   const total      = events.length;
-  const imported   = events.filter((e) => e.processing_status === "imported" || e.processing_status === "updated").length;
+  const imported   = events.filter((e) => e.processing_status === "imported" || e.processing_status === "updated" || e.processing_status === "presale_imported").length;
   const failed     = events.filter((e) => e.processing_status === "failed").length;
   const duplicates = events.filter((e) => e.processing_status === "duplicate").length;
   const lastFull   = events[0]?.received_at ? formatTs(events[0].received_at) : "No emails yet";
@@ -239,7 +241,7 @@ export default function ForwardMailClient() {
 
   const filtered = events.filter((e) => {
     const s = e.processing_status ?? "";
-    if (filter === "imported")     return s === "imported" || s === "updated";
+    if (filter === "imported")     return s === "imported" || s === "updated" || s === "presale_imported";
     if (filter === "failed")       return s === "failed";
     if (filter === "duplicate")    return s === "duplicate";
     if (filter === "verification") return s === "verification_email";
