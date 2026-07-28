@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/src/lib/supabase";
 import { SidebarLogo, NavIcon, SidebarFooter } from "@/app/components/nav-icons";
+import { ImportModal } from "./ImportModal";
 
 // Campaign metadata — keep in sync with presale-sync.ts CAMPAIGN_DEFS
 const CAMPAIGNS: Record<string, { label: string; emoji: string; accountBound: boolean }> = {
@@ -78,6 +79,9 @@ export default function PresaleClient() {
   const [activeCampaign, setActiveCampaign] = useState("la28_olympics");
   const [copied, setCopied] = useState<number | null>(null);
   const [addOpen, setAddOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
+  const exportRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { void load(); }, []);
 
@@ -111,6 +115,17 @@ export default function PresaleClient() {
       setRescanMsg("Rescan failed");
     }
     setRescanning(false);
+  }
+
+  function handleExport(format: "csv" | "xlsx") {
+    setExportOpen(false);
+    const campaign = activeCampaign ? `&campaign=${activeCampaign}` : "";
+    const a = document.createElement("a");
+    a.href = `/api/presale/export?format=${format}${campaign}`;
+    a.download = "";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
   }
 
   async function handleDelete(id: number) {
@@ -179,6 +194,56 @@ export default function PresaleClient() {
               disabled={rescanning}
             >
               {rescanning ? "Scanning…" : "Rescan Emails"}
+            </button>
+
+            {/* Export dropdown */}
+            <div ref={exportRef} style={{ position: "relative" }}>
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => setExportOpen(o => !o)}
+              >
+                Export ▾
+              </button>
+              {exportOpen && (
+                <>
+                  <div
+                    style={{ position: "fixed", inset: 0, zIndex: 40 }}
+                    onClick={() => setExportOpen(false)}
+                  />
+                  <div style={{
+                    position: "absolute", right: 0, top: "calc(100% + 6px)", zIndex: 50,
+                    background: "var(--surface, #18181b)", border: "1px solid rgba(255,255,255,0.1)",
+                    borderRadius: 10, padding: "6px 0", minWidth: 150,
+                    boxShadow: "0 8px 32px rgba(0,0,0,0.4)",
+                  }}>
+                    {(["csv", "xlsx"] as const).map(fmt => (
+                      <button
+                        key={fmt}
+                        type="button"
+                        onClick={() => handleExport(fmt)}
+                        style={{
+                          display: "block", width: "100%", textAlign: "left",
+                          padding: "9px 16px", background: "none", border: "none",
+                          color: "var(--text-primary)", cursor: "pointer", fontSize: 13,
+                        }}
+                        onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "rgba(255,255,255,0.06)"; }}
+                        onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "none"; }}
+                      >
+                        {fmt === "csv" ? "📄 Export CSV" : "📊 Export Excel (.xlsx)"}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() => setImportOpen(true)}
+            >
+              Import
             </button>
             <button
               type="button"
@@ -270,6 +335,12 @@ export default function PresaleClient() {
           campaign={activeCampaign}
           onAdded={() => { setAddOpen(false); void load(); }}
           onClose={() => setAddOpen(false)}
+        />
+      )}
+      {importOpen && (
+        <ImportModal
+          onClose={() => setImportOpen(false)}
+          onImported={() => void load()}
         />
       )}
     </div>
