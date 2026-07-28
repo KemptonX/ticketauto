@@ -129,9 +129,10 @@ export async function syncPresaleFromInboundEvents({
       email.html_body ? stripHtml(email.html_body) : "",
     ].filter(Boolean).join("\n"));
 
-    // Use x_forwarded_to as the account email — this is the Gmail/email account
-    // that forwarded the email to TixTracker, i.e. the account the presale was sent to.
-    const parsed = campaign.parse(subject, body, email.x_forwarded_to ?? "");
+    // x_forwarded_to = original recipient for auto-forwards (X-Original-To header).
+    // For manual forwards that header is absent; fall back to sender_email (the From,
+    // which is the account that manually forwarded).
+    const parsed = campaign.parse(subject, body, email.x_forwarded_to ?? email.sender_email ?? "");
     if (!parsed) continue;
 
     const { error } = await supabase.from("presale_entries").insert({

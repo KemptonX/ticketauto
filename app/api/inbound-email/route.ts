@@ -461,7 +461,9 @@ export async function POST(request: Request) {
   try {
     const presaleCampaign = CAMPAIGN_DEFS.find((c) => c.detect(from, subject));
     if (presaleCampaign) {
-      const accountEmail = xForwardedTo ?? "";
+      // For auto-forwards x_forwarded_to has the original recipient (X-Original-To).
+      // For manual forwards that header is absent, but From is the account that forwarded.
+      const accountEmail = xForwardedTo ?? from;
       const body = cleanText([
         textBody,
         htmlBody ? stripHtml(htmlBody) : "",
