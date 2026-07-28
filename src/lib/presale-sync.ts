@@ -31,10 +31,10 @@ function parseLA28(subject: string, text: string, toAddress: string): ParsedPres
   // Account email is the To: address the email arrived at
   const accountEmail = toAddress.trim();
 
-  // "- Start: July 29/07, 2026 | 16:00 PT"
-  // "- End:   July 31/07, 2026 | 16:00 PT"
-  const startMatch = text.match(/[-–]\s*Start:\s*([A-Za-z]+\s+[\d/]+,?\s*\d{4})\s*\|\s*([\d:]+)\s*PT/i);
-  const endMatch   = text.match(/[-–]\s*End:\s*([A-Za-z]+\s+[\d/]+,?\s*\d{4})\s*\|\s*([\d:]+)\s*PT/i);
+  // "- Start: July 29/07, 2026 | 16:00 PT"  (dash optional)
+  // "Start: July 29, 2026 | 16:00 PDT"    (no dash, different timezone abbr)
+  const startMatch = text.match(/(?:[-–]\s*)?Start:\s*([A-Za-z]+\s+[\d/]+,?\s*\d{4})\s*\|\s*([\d:]+)\s*(?:PDT|PST|PT)/i);
+  const endMatch   = text.match(/(?:[-–]\s*)?End:\s*([A-Za-z]+\s+[\d/]+,?\s*\d{4})\s*\|\s*([\d:]+)\s*(?:PDT|PST|PT)/i);
 
   function parseSlot(datePart: string, timePart: string): string | null {
     // "July 29/07, 2026" → "July 29 2026"
