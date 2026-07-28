@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import crypto from "node:crypto";
-import { processNormalisedEmail } from "@/src/lib/gmail-sync";
+import { processNormalisedEmail, stripHtml, cleanText } from "@/src/lib/gmail-sync";
 import type { NormalisedEmail } from "@/src/lib/gmail-sync";
+import { CAMPAIGN_DEFS } from "@/src/lib/presale-sync";
 import {
   isTransferEmail,
   isPayoutEmail,
@@ -436,6 +437,57 @@ export async function POST(request: Request) {
     .from("email_forwarding_settings")
     .update({ last_received_at: receivedAt, updated_at: new Date().toISOString() })
     .eq("id", settingId);
+
+  // --- Presale auto-detection (non-blocking, runs for every inbound email) ---
+  // At this point we have the full Postmark payload including all forwarded headers,
+  // so we can extract the original recipient email (X-Forwarded-To) as account_email.
+  void (async () => {
+    try {
+      const presaleCampaign = CAMPAIGN_DEFS.find((c) => c.detect(from, subject));
+      if (!presaleCampaign) return;
+
+      // X-Forwarded-To = the Gmail/email account that forwarded this email to TixTracker.
+      // That is the account LA28 sent the presale to — the one the user needs to log in with.
+      const headers = payload.Headers ?? [];
+      const accountEmail = [
+        headers.find((h) => h.Name.toLowerCase() === "x-forwarded-to")?.Value ?? "",
+        headers.find((h) => h.Name.toLowerCase() === "delivered-to")?.Value ?? "",
+      ]
+        .map((v) => v.trim())
+        .find((v) => v && !v.toLowerCase().includes("inbound.tixtracker.app")) ?? "";
+
+      const body = cleanText([
+        textBody,
+        htmlBody ? stripHtml(htmlBody) : "",
+      ].filter(Boolean).join("\n"));
+
+      const parsed = presaleCampaign.parse(subject, body, accountEmail);
+      if (!parsed) return;
+
+      const msgId = postmarkMessageId ?? normalizedHash;
+      const { data: existing } = await supabase
+        .from("presale_entries")
+        .select("id")
+        .eq("user_id", userId)
+        .eq("campaign", presaleCampaign.id)
+        .eq("source_message_id", msgId)
+        .maybeSingle();
+      if (existing) return;
+
+      await supabase.from("presale_entries").insert({
+        user_id: userId,
+        campaign: presaleCampaign.id,
+        account_email: parsed.account_email,
+        presale_code: parsed.presale_code,
+        slot_start: parsed.slot_start,
+        slot_end: parsed.slot_end,
+        notes: parsed.notes,
+        source_message_id: msgId,
+      });
+    } catch (err) {
+      console.error("[inbound] presale detection error:", err instanceof Error ? err.message : err);
+    }
+  })();
 
   // --- Postmark-level duplicate check ---
   // Catches the same Postmark delivery arriving twice (retry/webhook duplication)
