@@ -6,7 +6,7 @@ import { useState } from "react";
 import {
   IconDashboard, IconTickets, IconSales, IconAnalytics,
   IconCashFlow, IconCosts, IconCalculator, IconScans,
-  IconInventory, IconGuides, IconMail, IconSettings, IconLogout,
+  IconInventory, IconGuides, IconMail, IconSettings, IconLogout, IconPresale,
 } from "./nav-icons";
 
 const MAIN_TABS = [
@@ -21,6 +21,7 @@ const MORE_ITEMS = [
   { href: "/costs",               label: "Costs",       icon: () => <IconCosts /> },
   { href: "/viagogo-calculator",  label: "Calculator",  icon: () => <IconCalculator /> },
   { href: "/scans",               label: "Scans",       icon: () => <IconScans /> },
+  { href: "/presale",             label: "Presale & Codes", icon: () => <IconPresale /> },
   { href: "/forward-mail",        label: "Forward Mail", icon: () => <IconMail /> },
   { href: "/inventory",           label: "Inventory",   icon: () => <IconInventory /> },
   { href: "/faq",                 label: "FAQ",         icon: () => <IconGuides />, newTab: true },
