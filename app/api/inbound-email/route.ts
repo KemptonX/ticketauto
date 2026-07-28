@@ -377,14 +377,31 @@ export async function POST(request: Request) {
   // - Delivered-To in the forwarded copy is also the scan+ address
   // Fall back to ToFull if no X-Original-To is present (e.g. mailmeridian).
   const allHeaders = payload.Headers ?? [];
+  // Reject addresses that are clearly routing aliases, not real user inboxes.
+  const isUserAddress = (v: string) => {
+    const l = v.toLowerCase();
+    return l.length > 0 &&
+      !l.includes("inbound.tixtracker.app") &&
+      !l.includes("noreply") &&
+      !l.includes("no-reply") &&
+      !l.includes("@reply.github.com");
+  };
   const xForwardedTo =
+    // X-Original-To: set by Gmail on auto-forward — the original Gmail delivery address.
     allHeaders
       .filter((h) => h.Name.toLowerCase() === "x-original-to")
       .map((h) => h.Value?.trim() ?? "")
-      .find((v) => v && !v.toLowerCase().includes("inbound.tixtracker.app")) ||
+      .find(isUserAddress) ||
+    // Delivered-To: also stamped by Gmail with the real delivery address.
+    // Useful when X-Original-To carries a notification alias (e.g. GitHub noreply).
+    allHeaders
+      .filter((h) => h.Name.toLowerCase() === "delivered-to")
+      .map((h) => h.Value?.trim() ?? "")
+      .find(isUserAddress) ||
+    // Last resort: To: field (may be a notification alias — only used if nothing better).
     (payload.ToFull ?? [])
       .map((t) => t.Email?.trim() ?? "")
-      .find((v) => v && !v.toLowerCase().includes("inbound.tixtracker.app")) ||
+      .find(isUserAddress) ||
     null;
 
   async function logEvent(
