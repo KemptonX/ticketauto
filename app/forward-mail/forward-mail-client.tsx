@@ -375,7 +375,7 @@ export default function ForwardMailClient() {
               <div style={{ padding: "2rem", textAlign: "center", color: "var(--muted)", fontSize: "0.875rem" }}>Loading…</div>
             ) : filtered.length === 0 ? (
               <div style={{ padding: "2rem", textAlign: "center", color: "var(--muted)", fontSize: "0.875rem" }}>
-                {total === 0
+                {stats.total === 0
                   ? "No emails received yet. Forward a ticket confirmation email to your scan address to get started."
                   : "No emails match this filter."}
               </div>
