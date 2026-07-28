@@ -60,7 +60,9 @@ export const CAMPAIGN_DEFS: CampaignDef[] = [
     id: "la28_olympics",
     label: "LA28 Olympics",
     detect: (from, subject) =>
-      (from.includes("la28.org") || from.includes("tickets.la28")) &&
+      // Match direct LA28 senders AND iCloud/other privacy-relay senders
+      // (iCloud relay rewrites From to *_at_tickets_la28_org_*@icloud.com)
+      (from.toLowerCase().includes("la28") || /la28/i.test(subject)) &&
       (/time slot/i.test(subject) || /ticket alert/i.test(subject)),
     parse: parseLA28,
   },
@@ -171,10 +173,13 @@ async function listMessages(accessToken: string, query: string): Promise<Array<{
   return all;
 }
 
-// Gmail query that catches presale emails across all known campaigns
+// Gmail query that catches presale emails across all known campaigns.
+// No is:unread — emails may already be read. Also catches iCloud-relay senders
+// by matching on subject so we don't miss accounts that use Apple Hide My Email.
 const PRESALE_GMAIL_QUERY =
-  'is:unread newer_than:60d (' +
-  '(from:tickets.la28.org (subject:"time slot" OR subject:"ticket alert"))' +
+  'newer_than:90d (' +
+  '(from:la28.org (subject:"time slot" OR subject:"ticket alert")) OR' +
+  ' (subject:"LA28" (subject:"time slot" OR subject:"ticket alert"))' +
   ')';
 
 export async function syncPresaleGmailInbox({
