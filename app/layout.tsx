@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import MobileNav from "@/app/components/mobile-nav";
+import { CurrencyProvider } from "@/app/components/CurrencyProvider";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -29,8 +30,10 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
-        {children}
-        <MobileNav />
+        <CurrencyProvider>
+          {children}
+          <MobileNav />
+        </CurrencyProvider>
       </body>
     </html>
   );

@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/src/lib/supabase";
-import { formatCurrency } from "@/src/lib/currency";
+import { formatCurrency, getCurrencyCode, convertToGbpClient } from "@/src/lib/currency";
+import { useRatesReady } from "@/app/components/CurrencyProvider";
 import { SidebarLogo, NavIcon, SidebarFooter } from "@/app/components/nav-icons";
 import { ShareMultiBannerModal, type MultiSaleStats } from "@/app/sales/ShareBannerModal";
 import ListingDraftModal from "@/app/components/marketplace/ListingDraftModal";
@@ -174,6 +175,7 @@ function computeGroupId(key: string): string {
 }
 
 export default function OrdersClient() {
+  useRatesReady();
   const [orders, setOrders] = useState<Order[]>([]);
   const [soldQtyByOrderId, setSoldQtyByOrderId] = useState<Map<number, number>>(new Map());
   const [saleTotalByOrderId, setSaleTotalByOrderId] = useState<Map<number, number>>(new Map());
@@ -709,7 +711,7 @@ export default function OrdersClient() {
         seat_from: newTicket.seat_from.trim() || null,
         seat_to: newTicket.seat_to.trim() || null,
         qty_bought: newTicket.qty_bought > 0 ? newTicket.qty_bought : null,
-        total_cost: newTicket.total_cost !== "" ? Number(newTicket.total_cost) : null,
+        total_cost: newTicket.total_cost !== "" ? convertToGbpClient(Number(newTicket.total_cost), getCurrencyCode()) : null,
         sold_total: null,
         listing_status: newTicket.listing_status,
         source_type: newTicket.source_type,

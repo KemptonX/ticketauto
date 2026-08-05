@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/src/lib/supabase";
-import { formatCurrency } from "@/src/lib/currency";
+import { formatCurrency, convertFromGbp, getCurrencyCode } from "@/src/lib/currency";
+import { useRatesReady } from "@/app/components/CurrencyProvider";
 import { SidebarLogo, NavIcon, SidebarFooter } from "@/app/components/nav-icons";
 
 type Order = {
@@ -79,6 +80,7 @@ const accentColors = ["#FF4FA3", "#9B5CFF", "#4FC3FF", "#67F0A5", "#FFB84F", "#F
 type DatePreset = "all" | "this-week" | "this-month" | "this-year" | "last-year" | "custom";
 
 export default function AnalyticsClient() {
+  useRatesReady();
   const [orders, setOrders] = useState<Order[]>([]);
   const [saleMetrics, setSaleMetrics] = useState<SaleMetrics | null>(null);
   const [soldAtMap, setSoldAtMap] = useState<Record<number, string>>({});
@@ -1041,10 +1043,13 @@ function buildEventProfit(orders: Order[], soldQtyByOrderId: Map<number, number>
 
 
 function formatCompactCurrency(value: number) {
+  const code = getCurrencyCode();
   return new Intl.NumberFormat("en-GB", {
+    style: "currency",
+    currency: code,
     notation: "compact",
     maximumFractionDigits: 1,
-  }).format(value);
+  }).format(convertFromGbp(value, code));
 }
 
 // ── Chart components ──────────────────────────────────────────────────────────

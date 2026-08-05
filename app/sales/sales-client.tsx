@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { supabase } from "@/src/lib/supabase";
 import { formatCurrency } from "@/src/lib/currency";
+import { useRatesReady } from "@/app/components/CurrencyProvider";
 import { loadTemplate, interpolate } from "@/src/lib/email-template";
 import { SidebarLogo, NavIcon, SidebarFooter } from "@/app/components/nav-icons";
 import ShareBannerModal, { ShareMultiBannerModal, type MultiSaleStats } from "./ShareBannerModal";
@@ -130,6 +131,7 @@ function computeGroupId(key: string): string {
 }
 
 export default function SalesClient() {
+  useRatesReady();
   const [sales, setSales] = useState<Sale[]>([]);
   const [metricSales, setMetricSales] = useState<Pick<Sale, "qty_sold" | "sale_total" | "payout_total" | "payment_status" | "sale_status" | "transfer_status">[]>([]);
   const [matchedOrders, setMatchedOrders] = useState<Record<number, MatchedOrder>>({});

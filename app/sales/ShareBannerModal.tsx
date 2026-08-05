@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { formatCurrency } from "@/src/lib/currency";
+import { useRatesReady } from "@/app/components/CurrencyProvider";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -139,6 +140,7 @@ function ScaledPreview({ children, w = 500, h = 460 }: { children: React.ReactNo
 type BannerProps = { sale: Sale; order: MatchedOrder | null; animated: boolean; hideDetails?: boolean };
 
 export function SaleBanner({ sale, order, animated, hideDetails = false }: BannerProps) {
+  useRatesReady();
   const s = hideDetails
     ? { ...sale, event_name:"••••••••••••", venue:"••••••••", event_date:null, section:null, row:null }
     : sale;
@@ -266,6 +268,7 @@ export type MultiSaleStats = {
 };
 
 export function MultiSaleBanner({ stats, animated, hideDetails = false }: { stats: MultiSaleStats; animated: boolean; hideDetails?: boolean }) {
+  useRatesReady();
   const { totalRevenue, totalCost, totalProfit, roi, salesCount, totalTickets } = stats;
   const eventNames = hideDetails ? stats.eventNames.map(() => "••••••••••••") : stats.eventNames;
   const isPos = totalProfit >= 0;
@@ -856,6 +859,7 @@ export function ShareMultiBannerModal({ stats, onClose }: MultiShareProps) {
 type Props = { sale: Sale; order: MatchedOrder | null; onClose: () => void };
 
 export default function ShareBannerModal({ sale, order, onClose }: Props) {
+  useRatesReady();
   const [visible, setVisible]           = useState(false);
   const [copying, setCopying]           = useState(false);
   const [copied, setCopied]             = useState(false);

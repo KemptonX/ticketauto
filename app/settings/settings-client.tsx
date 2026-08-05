@@ -5,6 +5,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "re
 import { useSearchParams } from "next/navigation";
 import { supabase } from "@/src/lib/supabase";
 import { CURRENCY_OPTIONS, getCurrencyCode, setCurrencyCode, formatCurrency } from "@/src/lib/currency";
+import { useRatesReady } from "@/app/components/CurrencyProvider";
 import { TEMPLATE_VARS, DEFAULT_SUBJECT, DEFAULT_BODY, EmailTemplate, loadTemplates, saveTemplates, loadActiveTemplateId, saveActiveTemplateId, interpolate } from "@/src/lib/email-template";
 import { SidebarLogo, NavIcon, SidebarFooter } from "@/app/components/nav-icons";
 import AccountsTab from "@/app/components/marketplace/AccountsTab";
@@ -549,6 +550,7 @@ function formatOAuthError(error: string) {
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function SettingsClient() {
+  useRatesReady();
   const searchParams = useSearchParams();
 
   // Tab

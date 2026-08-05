@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/src/lib/supabase";
 import { formatCurrency } from "@/src/lib/currency";
+import { useRatesReady } from "@/app/components/CurrencyProvider";
 import { SidebarLogo, NavIcon, SidebarFooter } from "@/app/components/nav-icons";
 
 type Sale = {
@@ -38,6 +39,7 @@ const navItems = [
 ];
 
 export default function ArchivedSalesClient() {
+  useRatesReady();
   const [sales, setSales] = useState<Sale[]>([]);
   const [matchedOrders, setMatchedOrders] = useState<Record<number, MatchedOrder>>({});
   const [loading, setLoading] = useState(true);

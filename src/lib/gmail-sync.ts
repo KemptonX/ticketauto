@@ -1,20 +1,5 @@
 ﻿import type { SupabaseClient } from "@supabase/supabase-js";
-
-let _rateCache: { rates: Record<string, number>; fetchedAt: number } | null = null;
-
-async function getGbpRates(): Promise<Record<string, number>> {
-  const now = Date.now();
-  if (_rateCache && now - _rateCache.fetchedAt < 3_600_000) return _rateCache.rates;
-  try {
-    const res = await fetch("https://api.frankfurter.app/latest?from=GBP", { cache: "no-store" });
-    const data = (await res.json()) as { rates?: Record<string, number> };
-    if (data.rates) {
-      _rateCache = { rates: data.rates, fetchedAt: now };
-      return data.rates;
-    }
-  } catch { /* fall through */ }
-  return {};
-}
+import { convertToGbp } from "@/src/lib/exchange";
 
 function isEventInPast(eventDate: string): boolean {
   if (!eventDate) return false;
@@ -28,15 +13,6 @@ function isEventInPast(eventDate: string): boolean {
   return d < new Date();
 }
 
-async function convertToGbp(rawAmount: string, currency: string): Promise<string> {
-  if (!rawAmount) return "";
-  const num = parseFloat(rawAmount);
-  if (isNaN(num) || num <= 0) return "";
-  const rates = await getGbpRates();
-  const rate = rates[currency];
-  if (!rate) return rawAmount; // fallback: keep original if rate unavailable
-  return String(Math.round((num / rate) * 100) / 100);
-}
 
 const GMAIL_QUERY = [
   '(ticketmaster -subject:"Welcome to Ticketmaster" ("Order Update" OR "ticket confirmation" OR "You\'re in!" OR "You Got Tickets" OR "Your Ticketmaster order" OR "Order confirm" OR "Confirmacion de compra" OR "compra para" OR "ORDER NUMBER" OR "Order number" OR "Confirmation de votre commande" OR "Ticketmaster confirmation for order"))',
@@ -136,7 +112,13 @@ export async function processNormalisedEmail(
     return { action: "no_ref", bookingRef: null };
   }
 
-  const combined = cleanText(`${email.subject}\n${email.body}`);
+  // HTML-only emails (e.g. AXS US) have an empty text body — fall back to
+  // stripped HTML so parsers can find confirmation numbers and other fields.
+  const strippedHtml = email.htmlBody ? stripHtml(email.htmlBody) : "";
+  const bodyText = (email.body || "").trim().length >= strippedHtml.trim().length
+    ? email.body
+    : strippedHtml;
+  const combined = cleanText(`${email.subject}\n${bodyText}`);
 
   const axs = isAxsEmail(email.from, email.subject);
   const intl = !axs && isIntlTmEmail(email.from, email.subject);
@@ -998,7 +980,8 @@ function isAxsEmail(from: string, subject: string) {
   return (
     fromLower.includes("axs.co.uk") ||
     fromLower.includes("axs.com") ||
-    subjectLower.includes("thank you for purchasing tickets for")
+    subjectLower.includes("thank you for purchasing tickets for") ||
+    subjectLower.includes("thank you for your order for")
   );
 }
 

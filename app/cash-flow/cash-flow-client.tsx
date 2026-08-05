@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/src/lib/supabase";
 import { formatCurrency } from "@/src/lib/currency";
+import { useRatesReady } from "@/app/components/CurrencyProvider";
 import { SidebarLogo, NavIcon, SidebarFooter } from "@/app/components/nav-icons";
 
 type Order = {
@@ -111,6 +112,7 @@ function txMonths(startYear: number): Array<{ year: number; month: number; month
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function CashFlowClient() {
+  useRatesReady();
   const [orders, setOrders] = useState<Order[]>([]);
   const [salePayments, setSalePayments] = useState<SalePayment[]>([]);
   const [soldQtyByOrderId, setSoldQtyByOrderId] = useState<Map<number, number>>(new Map());

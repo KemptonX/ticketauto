@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/src/lib/supabase";
 import { formatCurrency } from "@/src/lib/currency";
+import { useRatesReady } from "@/app/components/CurrencyProvider";
 import { SidebarLogo, NavIcon, SidebarFooter } from "@/app/components/nav-icons";
 
 type Order = {
@@ -73,6 +74,7 @@ const statusFilterOptions = ["All", "Unlisted", "Listed", "Sold", "Problem / Mis
 const dateFilterOptions = ["All", "This week", "This month"];
 
 export default function InventoryClient() {
+  useRatesReady();
   const [orders, setOrders] = useState<Order[]>([]);
   const [archivedSalesByOrder, setArchivedSalesByOrder] = useState<Record<number, number>>({});
   const [payoutByOrder, setPayoutByOrder] = useState<Record<number, number>>({});

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/src/lib/supabase";
 import { formatCurrency } from "@/src/lib/currency";
+import { useRatesReady } from "@/app/components/CurrencyProvider";
 import { SidebarLogo, NavIcon, SidebarFooter } from "@/app/components/nav-icons";
 
 type BillingCycle = "monthly" | "annual" | "weekly" | "one-off";
@@ -57,6 +58,7 @@ function formatBilledDate(value: string) {
 
 
 export default function CostsClient() {
+  useRatesReady();
   const [overheads, setOverheads] = useState<Overhead[]>([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
