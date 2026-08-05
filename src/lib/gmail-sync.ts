@@ -176,9 +176,12 @@ export async function processNormalisedEmail(
     section = parseAxsSection(combined);
     row = parseAxsRow(combined);
     [seatFrom, seatTo] = parseAxsSeats(combined);
-    total = parseAxsTotal(combined);
+    const rawAxsTotal = parseAxsTotal(combined);
+    // AXS US emails use $ totals; UK/EU use £ — convert USD to GBP if needed
+    const axsIsUsd = /\$[0-9]+\.[0-9]{2}/.test(combined) && !/£[0-9]+\.[0-9]{2}/.test(combined);
+    total = axsIsUsd && rawAxsTotal ? await convertToGbp(rawAxsTotal, "USD") : rawAxsTotal;
     qty = parseAxsQty(combined);
-    sourceType = "axs";
+    sourceType = axsIsUsd ? "axs_us" : "axs";
   } else if (intl) {
     const restrictionsIdx = combined.search(/\bRestrictions?\s*:/i);
     const combinedBeforeRestrictions = restrictionsIdx > 0 ? combined.slice(0, restrictionsIdx) : combined;
@@ -1011,18 +1014,24 @@ function parseAxsBookingRef(text: string) {
 function parseAxsEvent(subject: string) {
   // Handle "Fwd: " prefix on forwarded emails
   return (
-    subject.match(/thank you for purchasing tickets for\s+(.+)/i)?.[1]?.trim() || ""
+    subject.match(/thank you for purchasing tickets for\s+(.+)/i)?.[1]?.trim() ||
+    subject.match(/thank you for your order for\s+(.+)/i)?.[1]?.trim() ||
+    ""
   );
 }
 
 function parseAxsDate(text: string) {
   return (
+    // UK/EU format: "Saturday, 29 Aug 2026, 15:00"
     text.match(
       /((?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)[,\s]+\d{1,2}\s+[A-Z][a-z]+\s+\d{4}[^A-Z\n]{0,10}\d{1,2}:\d{2})/i,
     )?.[1]?.trim() ||
     text.match(
       /((?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)[,\s]+\d{1,2}\s+[A-Z][a-z]+\s+\d{4})/i,
     )?.[1]?.trim() ||
+    // US format: "scheduled on 8/29/2026 3:00 PM"
+    text.match(/scheduled\s+on\s+(\d{1,2}\/\d{1,2}\/\d{4}\s+\d{1,2}:\d{2}(?::\d{2})?\s*[AP]M)/i)?.[1]?.trim() ||
+    text.match(/(\d{1,2}\/\d{1,2}\/\d{4}\s+\d{1,2}:\d{2}(?::\d{2})?\s*[AP]M)/i)?.[1]?.trim() ||
     ""
   );
 }
@@ -1066,6 +1075,8 @@ function parseAxsQty(text: string) {
   return (
     text.match(/(\d+)\s+Tickets?\s*[-–]/i)?.[1] ||
     text.match(/(\d+)\s+Tickets?\b/i)?.[1] ||
+    // US table format: "2 Artist Presale" / "2 General Admission"
+    text.match(/(\d+)\s+(?:Artist|VIP|Standard|Floor|Premium|General)\s+(?:Presale|Admission|Ticket)/i)?.[1] ||
     ""
   );
 }
@@ -1080,6 +1091,9 @@ function parseAxsSection(text: string) {
     text.match(/(?:Regular|Floor|Block|Stand|Section|Sec)\s+(\S+)\s*\|/i)?.[1] ||
     text.match(/([^\s|]+)\s*\|\s*[A-Z0-9]+\s*\|\s*\d+/i)?.[1]?.trim();
   if (piped) return piped;
+  // US GA format: "General Admission 4"
+  const ga = text.match(/General\s+Admission(?:\s+\d+)?/i)?.[0]?.trim();
+  if (ga) return ga;
   // Plain text: "Block 110" / "Section A2"
   return text.match(/\b(?:Block|Section|Stand|Floor)\s+([A-Z0-9]+)\b/i)?.[1]?.trim() || "";
 }

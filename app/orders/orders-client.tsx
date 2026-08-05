@@ -51,6 +51,7 @@ const sourceOptions = [
   "ticketmaster_es",
   "ticketmaster_it",
   "axs",
+  "axs_us",
   "manual",
 ];
 
@@ -86,6 +87,7 @@ const sourceLabels: Record<string, string> = {
   ticketmaster_au: "TM AU",
   ticketmaster_ca: "TM CA",
   axs: "AXS",
+  axs_us: "AXS US",
   manual: "Manual",
 };
 
@@ -102,6 +104,7 @@ const sourceTypeOptions = [
   { value: "ticketmaster_au", label: "TM AU" },
   { value: "ticketmaster_ca", label: "TM CA" },
   { value: "axs", label: "AXS" },
+  { value: "axs_us", label: "AXS US" },
 ];
 
 function getProportionalCost(

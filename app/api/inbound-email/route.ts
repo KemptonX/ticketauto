@@ -155,6 +155,7 @@ function fmtSourceType(source: string | null | undefined): string {
     ticketmaster_it: "Ticketmaster IT",
     ticketmaster_us: "Ticketmaster US",
     axs: "AXS",
+    axs_us: "AXS US",
   };
   return map[source ?? ""] ?? source ?? "Unknown";
 }
