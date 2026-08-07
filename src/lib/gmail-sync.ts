@@ -714,6 +714,9 @@ function isAccountEmail(email: string) {
 
 function extractAccount(headers: GmailHeader[], text: string) {
   const headerCandidates = [
+    // X-Forwarded-For is set by Gmail auto-forward and lists the original recipient
+    // BEFORE any relay hops — more reliable than X-Original-To when relays are involved.
+    "X-Forwarded-For",
     "X-Original-To",
     "To",
     "Reply-To",
@@ -925,6 +928,8 @@ function parseSection(text: string) {
     /\bSECTION\s*[:\-]?\s*(.+?)(?=\s+\b(?:ROW|SEAT|Fila|Asiento)\b|[\n\r]|$)/i,
     /\bSector\s+(\S+)/i,
     /\bSEC(?:tor|tion)\.?\s*[:\-]?\s*(.+?)(?=\s+\b(?:ROW|SEAT|Fila|Asiento)\b|[\n\r]|$)/i,
+    // TM US format: "Sec SEC 4, Row 5" or "Sec GA, Row ..."
+    /\b(Sec\s+(?:SEC\s+)?[A-Z0-9]+)(?=\s*,|\s+Row|\s+Seat|[\n\r]|$)/i,
     /\b(Pitch Standing|Standing|General Admission)\b/i,
   ];
 
