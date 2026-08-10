@@ -713,10 +713,19 @@ function isAccountEmail(email: string) {
 }
 
 function extractAccount(headers: GmailHeader[], text: string) {
+  // X-Forwarded-For: Gmail stamps one per auto-forward hop.
+  // Multi-hop chains (e.g. presale_account → relay → scan) produce multiple headers
+  // in newest-first order. The LAST header (innermost hop) has the original recipient first.
+  const xffHeaders = headers
+    .filter((h) => h.name.toLowerCase() === "x-forwarded-for")
+    .map((h) => h.value?.trim() ?? "");
+  for (let i = xffHeaders.length - 1; i >= 0; i--) {
+    const m = xffHeaders[i].match(/([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})/i);
+    const addr = m?.[1]?.toLowerCase() ?? "";
+    if (isAccountEmail(addr)) return addr;
+  }
+
   const headerCandidates = [
-    // X-Forwarded-For is set by Gmail auto-forward and lists the original recipient
-    // BEFORE any relay hops — more reliable than X-Original-To when relays are involved.
-    "X-Forwarded-For",
     "X-Original-To",
     "To",
     "Reply-To",

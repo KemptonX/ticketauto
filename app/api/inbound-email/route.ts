@@ -387,19 +387,35 @@ export async function POST(request: Request) {
       !l.includes("no-reply") &&
       !l.includes("@reply.github.com");
   };
+  // X-Forwarded-For: Gmail stamps this on every auto-forward hop.
+  // Multi-hop chains produce multiple headers (newest = outermost = first in array).
+  // We want the LAST header (innermost hop) which carries the original recipient first.
+  const xffHeaders = allHeaders
+    .filter((h) => h.Name.toLowerCase() === "x-forwarded-for")
+    .map((h) => h.Value?.trim() ?? "");
+  let xffEmail: string | null = null;
+  for (let i = xffHeaders.length - 1; i >= 0; i--) {
+    const m = xffHeaders[i].match(/([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})/i);
+    const addr = m?.[1]?.trim() ?? "";
+    if (addr && isUserAddress(addr)) { xffEmail = addr; break; }
+  }
+
   const xForwardedTo =
-    // X-Original-To: set by Gmail on auto-forward — the original Gmail delivery address.
+    xffEmail ||
+    // X-Original-To: set by the MTA on delivery — may be a relay in multi-hop chains.
     allHeaders
       .filter((h) => h.Name.toLowerCase() === "x-original-to")
       .map((h) => h.Value?.trim() ?? "")
       .find(isUserAddress) ||
-    // Delivered-To: also stamped by Gmail with the real delivery address.
-    // Useful when X-Original-To carries a notification alias (e.g. GitHub noreply).
-    allHeaders
-      .filter((h) => h.Name.toLowerCase() === "delivered-to")
-      .map((h) => h.Value?.trim() ?? "")
-      .find(isUserAddress) ||
-    // Last resort: To: field (may be a notification alias — only used if nothing better).
+    // Delivered-To: take the LAST valid entry (outermost = scan address, innermost = original).
+    (() => {
+      const addrs = allHeaders
+        .filter((h) => h.Name.toLowerCase() === "delivered-to")
+        .map((h) => h.Value?.trim() ?? "")
+        .filter(isUserAddress);
+      return addrs[addrs.length - 1] ?? "";
+    })() ||
+    // Last resort: To: field.
     (payload.ToFull ?? [])
       .map((t) => t.Email?.trim() ?? "")
       .find(isUserAddress) ||
