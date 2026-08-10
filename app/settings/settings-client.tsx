@@ -173,7 +173,7 @@ const IMPORT_FIELDS: ImportField[] = [
   {
     key: "source_type", group: "Ticket / Inventory",
     label: "Source / Platform (ticket)",
-    aliases: ["source", "source type", "source_type", "bought from", "purchased from", "supplier", "provider"],
+    aliases: ["source", "source type", "source_type", "bought from", "purchased from", "supplier", "provider", "la28"],
     dataType: "text",
   },
 
@@ -2283,6 +2283,23 @@ export default function SettingsClient() {
                     If your file has mixed statuses per row, map those columns above and leave these blank.
                   </p>
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: "0.75rem" }}>
+                    <label className="field-label">
+                      <span>Bought From (Source)</span>
+                      <select
+                        className="field"
+                        value={fixedValues.source_type ?? ""}
+                        onChange={(e) => setFixedValues((p) => ({ ...p, source_type: e.target.value }))}
+                      >
+                        <option value="">— not set —</option>
+                        <option value="la28">LA28</option>
+                        <option value="ticketmaster_direct">Ticketmaster Direct</option>
+                        <option value="ticketmaster_resale">Ticketmaster Resale</option>
+                        <option value="ticketmaster_us">Ticketmaster US</option>
+                        <option value="axs">AXS</option>
+                        <option value="axs_us">AXS US</option>
+                        <option value="manual">Manual / Other</option>
+                      </select>
+                    </label>
                     <label className="field-label">
                       <span>Platform / Marketplace</span>
                       <select
