@@ -1032,7 +1032,7 @@ export default function SettingsClient() {
       const mode = new URLSearchParams(window.location.search).get("mode");
       if (mode === "tickets") return { listing_status: "Unlisted" };
     }
-    return {};
+    return {} as Record<string, string>;
   });
   const fileInputRef = useRef<HTMLInputElement>(null);
 
