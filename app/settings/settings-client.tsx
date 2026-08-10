@@ -101,7 +101,7 @@ const IMPORT_FIELDS: ImportField[] = [
   {
     key: "section", group: "Ticket / Inventory",
     label: "Section / Block",
-    aliases: ["section", "block", "sec", "stand", "area", "zone", "sector"],
+    aliases: ["section", "block", "sec", "stand", "area", "zone", "sector", "category", "cat", "tier", "seating category", "seat category", "event code", "event cat"],
     dataType: "text",
   },
   {
@@ -1312,6 +1312,25 @@ export default function SettingsClient() {
         if (value && !(key in obj)) obj[key] = value;
       }
       toInsert.push({ rowNum: i + 2, data: obj });
+    }
+
+    // Deduplicate booking_refs within this batch: if multiple rows share the same
+    // ref (e.g. one order with multiple events), append -1, -2 so each gets its own row
+    {
+      const refCount = new Map<string, number>();
+      for (const item of toInsert) {
+        const ref = item.data.booking_ref as string | undefined;
+        if (ref) refCount.set(ref, (refCount.get(ref) ?? 0) + 1);
+      }
+      const refSeen = new Map<string, number>();
+      for (const item of toInsert) {
+        const ref = item.data.booking_ref as string | undefined;
+        if (ref && (refCount.get(ref) ?? 0) > 1) {
+          const n = (refSeen.get(ref) ?? 0) + 1;
+          refSeen.set(ref, n);
+          item.data.booking_ref = `${ref}-${n}`;
+        }
+      }
     }
 
     let inserted = 0;
