@@ -1188,6 +1188,9 @@ export default function OrdersClient() {
                 <button className="secondary-button" onClick={scanMailNow} disabled={scanning} type="button">
                   {scanning ? "Scanning..." : "Scan Mail"}
                 </button>
+                <Link href="/settings?tab=import&mode=tickets" className="secondary-button">
+                  Import Tickets
+                </Link>
                 <button className="primary-button" onClick={openAddForm} type="button">
                   Add Ticket
                 </button>

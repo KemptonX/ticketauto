@@ -572,6 +572,7 @@ export default function SettingsClient() {
   const [exported, setExported] = useState(false);
   const [linkError, setLinkError] = useState("");
   const justLinked = searchParams.get("linked") === "true";
+  const ticketsMode = searchParams.get("mode") === "tickets";
 
   useEffect(() => {
     void (async () => {
@@ -1026,7 +1027,13 @@ export default function SettingsClient() {
   const [failedEdits, setFailedEdits] = useState<FailedRow[]>([]);
   const [retrying, setRetrying] = useState(false);
   const [dragOver, setDragOver] = useState(false);
-  const [fixedValues, setFixedValues] = useState<Record<string, string>>({});
+  const [fixedValues, setFixedValues] = useState<Record<string, string>>(() => {
+    if (typeof window !== "undefined") {
+      const mode = new URLSearchParams(window.location.search).get("mode");
+      if (mode === "tickets") return { listing_status: "Unlisted" };
+    }
+    return {};
+  });
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   async function handleLogout() {
@@ -1322,11 +1329,11 @@ export default function SettingsClient() {
       }
 
       if (!orderData.booking_ref) orderData.booking_ref = crypto.randomUUID();
+      const rowType = getRowType({ ...saleData, ...data });
       if (!orderData.listing_status) {
-        orderData.listing_status = (Object.keys(saleData).length > 0 || orderData.sold_total) ? "Sold" : "Unlisted";
+        orderData.listing_status = (rowType !== "inventory_only" && rowType !== "skip") ? "Sold" : "Unlisted";
       }
 
-      const rowType = getRowType({ ...saleData, ...data });
       let orderId: string | null = null;
 
       // Insert order (or update on duplicate booking_ref)
@@ -1474,11 +1481,11 @@ export default function SettingsClient() {
         else if (SALE_COLUMNS.has(key)) saleData[key] = value;
       }
       if (!orderData.booking_ref) orderData.booking_ref = crypto.randomUUID();
+      const rowType = getRowType({ ...saleData, ...data });
       if (!orderData.listing_status) {
-        orderData.listing_status = (Object.keys(saleData).length > 0 || orderData.sold_total) ? "Sold" : "Unlisted";
+        orderData.listing_status = (rowType !== "inventory_only" && rowType !== "skip") ? "Sold" : "Unlisted";
       }
 
-      const rowType = getRowType({ ...saleData, ...data });
       let orderId: string | null = null;
 
       const { data: insertedOrder, error } = await supabase.from("orders").insert(orderData).select("id").single();
@@ -2111,6 +2118,13 @@ export default function SettingsClient() {
                 <div><span className="hero-meta-label">Step</span><strong>{importStep === "upload" ? "1 / 4" : importStep === "map" ? "2 / 4" : importStep === "preview" ? "3 / 4" : "Done"}</strong></div>
               </div>
             </section>
+
+            {ticketsMode && (
+              <div className="feedback-banner" role="status" style={{ background: "var(--accent-soft, #e8f4fd)", borderColor: "var(--accent, #2196f3)" }}>
+                <span className="feedback-dot" style={{ background: "var(--accent, #2196f3)" }} />
+                <span><strong>Ticket import mode</strong> — all rows will be imported as tickets (Unlisted) and will appear on your Tickets page, not the Sold page.</span>
+              </div>
+            )}
 
             {importMessage && (
               <div className="feedback-banner feedback-banner-error" role="status">
