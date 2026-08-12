@@ -22,6 +22,7 @@ const GMAIL_QUERY = [
   '(from:eventim.de "Bestellnummer")',
   '(from:eventim.co.uk "order confirmation")',
   '(from:royalalberthall.com "Order Number")',
+  '(from:dice.fm subject:"Your tickets:")',
 ].join(' OR ');
 const GMAIL_QUERY_FILTERED = `is:unread newer_than:14d (${GMAIL_QUERY})`;
 const PROCESSED_LABEL = "My Tickets";
@@ -125,6 +126,7 @@ export async function processNormalisedEmail(
   const eventimDe = !axs && !intl && isEventimDeEmail(email.from, email.subject, combined);
   const seeGigs = !axs && !intl && !eventimDe && isSeeGigsEmail(email.from, email.subject, combined);
   const rah = !axs && !intl && !eventimDe && !seeGigs && isRahEmail(email.from, combined);
+  const dice = !axs && !intl && !eventimDe && !seeGigs && !rah && isDiceEmail(email.from, email.subject);
   const effectiveFrom = intl ? getEffectiveFrom(email.from, email.subject, combined) : email.from;
 
   const bookingRef = axs
@@ -137,7 +139,9 @@ export async function processNormalisedEmail(
           ? parseSeeGigsBookingRef(email.subject, combined)
           : rah
             ? parseRahBookingRef(combined)
-            : parseBookingRef(email.subject, combined);
+            : dice
+              ? parseDiceBookingRef(combined)
+              : parseBookingRef(email.subject, combined);
 
   if (!bookingRef) {
     return { action: "no_ref", bookingRef: null };
@@ -205,6 +209,15 @@ export async function processNormalisedEmail(
     qty = parseRahQty(combined);
     sourceType = "royal_albert_hall";
     total = parseRahTotal(combined);
+  } else if (dice) {
+    section = parseDiceSection(combined);
+    row = "";
+    seatFrom = "";
+    seatTo = "";
+    qty = parseDiceQty(combined);
+    sourceType = "dice";
+    const rawDiceTotal = parseDiceTotal(combined);
+    total = rawDiceTotal ? await convertToGbp(rawDiceTotal, "USD") : rawDiceTotal;
   } else {
     section = parseSection(combined);
     row = parseRow(combined);
@@ -216,9 +229,9 @@ export async function processNormalisedEmail(
 
   const orderData: OrderInsert = {
     booking_ref: bookingRef,
-    event_name: axs ? parseAxsEvent(email.subject) : intl ? parseIntlEvent(effectiveFrom, email.subject, combined) : eventimDe ? parseEventimDeEvent(email.subject) : seeGigs ? parseSeeGigsEvent(email.subject, combined) : rah ? parseRahEvent(combined) : parseEvent(combined),
-    venue: axs ? parseAxsVenue(combined) : intl ? parseIntlVenue(effectiveFrom, combined) : eventimDe ? parseEventimDeVenue(combined) : seeGigs ? parseSeeGigsVenue(combined) : rah ? "Royal Albert Hall" : parseVenue(email.body),
-    event_date: axs ? parseAxsDate(combined) : intl ? parseIntlDate(effectiveFrom, combined) : eventimDe ? parseEventimDeDate(combined) : seeGigs ? parseSeeGigsDate(combined) : rah ? parseRahDate(combined) : parseDate(combined),
+    event_name: axs ? parseAxsEvent(email.subject) : intl ? parseIntlEvent(effectiveFrom, email.subject, combined) : eventimDe ? parseEventimDeEvent(email.subject) : seeGigs ? parseSeeGigsEvent(email.subject, combined) : rah ? parseRahEvent(combined) : dice ? parseDiceEvent(email.subject) : parseEvent(combined),
+    venue: axs ? parseAxsVenue(combined) : intl ? parseIntlVenue(effectiveFrom, combined) : eventimDe ? parseEventimDeVenue(combined) : seeGigs ? parseSeeGigsVenue(combined) : rah ? "Royal Albert Hall" : dice ? parseDiceVenue(combined) : parseVenue(email.body),
+    event_date: axs ? parseAxsDate(combined) : intl ? parseIntlDate(effectiveFrom, combined) : eventimDe ? parseEventimDeDate(combined) : seeGigs ? parseSeeGigsDate(combined) : rah ? parseRahDate(combined) : dice ? parseDiceDate(combined) : parseDate(combined),
     purchased_at: parsePurchasedAt(email.headers, combined),
     account_email: accountEmail,
     section,
@@ -1837,5 +1850,58 @@ function parseRahQty(text: string): string {
 
 function parseRahTotal(text: string): string {
   return text.match(/Basket\s+total[^£]*£\s*([\d.]+)/i)?.[1] || "";
+}
+
+// ── DICE ──────────────────────────────────────────────────────────────────────
+
+function isDiceEmail(from: string, subject: string): boolean {
+  return from.toLowerCase().includes("dice.fm") || subject.toLowerCase().startsWith("your tickets:");
+}
+
+function parseDiceBookingRef(combined: string): string {
+  // DICE emails have no order number — use the unique dice_id from the ticket deep-link.
+  return (
+    combined.match(/dice[_-]id=([a-z0-9]+)/i)?.[1] ||
+    combined.match(/link\.dice\.fm\/([a-z0-9]+)/i)?.[1] ||
+    ""
+  );
+}
+
+function parseDiceEvent(subject: string): string {
+  return subject.replace(/^(?:fwd?|fw)\s*:\s*/i, "").replace(/^your tickets:\s*/i, "").trim();
+}
+
+function parseDiceVenue(combined: string): string {
+  return combined.match(/\bVenue\s{2,}(.+?)(?:\s{2,}|\n)/i)?.[1]?.trim() || "";
+}
+
+function parseDiceDate(combined: string): string {
+  const m =
+    combined.match(/Date\s*(?:&|and)\s*time\s+(.+?)(?:\s{2,}|\n|Doors)/i) ||
+    combined.match(/(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+\d{1,2}\s+\w{3,}[^\n]*(?:PM|AM)[^\n]*/i);
+  return m?.[1]?.trim() || m?.[0]?.trim() || "";
+}
+
+function parseDiceSection(combined: string): string {
+  // "6 × General Admission" — use ticket type as section when no seat block exists
+  return combined.match(/\d+\s*[×x]\s*(.+?)(?:\s{2,}|\n|$)/i)?.[1]?.trim() || "";
+}
+
+function parseDiceQty(combined: string): string {
+  return (
+    combined.match(/(\d+)\s*[×x]\s*(?:General Admission|GA\b|Ticket)/i)?.[1] ||
+    combined.match(/Tickets?\s+(\d+)\s*[×x]/i)?.[1] ||
+    combined.match(/(\d+)\s*[×x]/i)?.[1] ||
+    ""
+  );
+}
+
+function parseDiceTotal(combined: string): string {
+  // "Total  $1081.50" — always USD on DICE
+  return (
+    combined.match(/\bTotal\s+\$?([\d,]+\.\d{2})/i)?.[1]?.replace(/,/g, "") ||
+    combined.match(/\$([\d,]+\.\d{2})/)?.[1]?.replace(/,/g, "") ||
+    ""
+  );
 }
 
