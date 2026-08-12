@@ -704,7 +704,7 @@ export async function POST(request: Request) {
   // We make zero changes to that function.
   let processResult;
   try {
-    processResult = await processNormalisedEmail(supabase, normEmail, userId, from);
+    processResult = await processNormalisedEmail(supabase, normEmail, userId, xForwardedTo || from);
     console.log("[inbound] processNormalisedEmail action:", processResult.action, "| bookingRef:", processResult.bookingRef);
   } catch (err) {
     const msg = err instanceof Error ? err.message : "processing error";
