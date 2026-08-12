@@ -142,7 +142,7 @@ export async function processNormalisedEmail(
           : rah
             ? parseRahBookingRef(combined)
             : dice
-              ? parseDiceBookingRef(combined)
+              ? parseDiceBookingRef(combined, email.htmlBody || "")
               : tixr
                 ? parseTixrBookingRef(combined)
                 : parseBookingRef(email.subject, combined);
@@ -1881,11 +1881,13 @@ function isDiceEmail(from: string, subject: string, text: string = ""): boolean 
   return t.includes("dice.fm") && (t.includes("your tickets") || t.includes("view tickets in the app"));
 }
 
-function parseDiceBookingRef(combined: string): string {
+function parseDiceBookingRef(combined: string, rawHtml: string = ""): string {
   // DICE emails have no order number — use the unique dice_id from the ticket deep-link.
+  // The dice_id URL lives in an href attribute which stripHtml discards, so search raw HTML too.
+  const full = combined + "\n" + rawHtml;
   return (
-    combined.match(/dice[_-]id=([a-z0-9]+)/i)?.[1] ||
-    combined.match(/link\.dice\.fm\/([a-z0-9]+)/i)?.[1] ||
+    full.match(/dice[_-]id=([a-z0-9]+)/i)?.[1] ||
+    full.match(/link\.dice\.fm\/([a-z0-9]+)/i)?.[1] ||
     ""
   );
 }
