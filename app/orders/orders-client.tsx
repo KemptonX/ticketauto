@@ -54,6 +54,7 @@ const sourceOptions = [
   "axs",
   "axs_us",
   "dice",
+  "tixr",
   "la28",
   "manual",
 ];
@@ -92,6 +93,7 @@ const sourceLabels: Record<string, string> = {
   axs: "AXS",
   axs_us: "AXS US",
   dice: "DICE",
+  tixr: "Tixr",
   la28: "LA28",
   manual: "Manual",
 };
@@ -111,6 +113,7 @@ const sourceTypeOptions = [
   { value: "axs", label: "AXS" },
   { value: "axs_us", label: "AXS US" },
   { value: "dice", label: "DICE" },
+  { value: "tixr", label: "Tixr" },
   { value: "la28", label: "LA28" },
   { value: "manual", label: "Manual" },
 ];

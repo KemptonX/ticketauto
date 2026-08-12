@@ -2293,6 +2293,7 @@ export default function SettingsClient() {
                         <option value="">— not set —</option>
                         <option value="la28">LA28</option>
                         <option value="dice">DICE</option>
+                        <option value="tixr">Tixr</option>
                         <option value="ticketmaster_direct">Ticketmaster Direct</option>
                         <option value="ticketmaster_resale">Ticketmaster Resale</option>
                         <option value="ticketmaster_us">Ticketmaster US</option>

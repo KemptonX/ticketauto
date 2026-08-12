@@ -23,6 +23,7 @@ const GMAIL_QUERY = [
   '(from:eventim.co.uk "order confirmation")',
   '(from:royalalberthall.com "Order Number")',
   '(from:dice.fm subject:"Your tickets:")',
+  '(from:tixr.com "Order Confirmation:")',
 ].join(' OR ');
 const GMAIL_QUERY_FILTERED = `is:unread newer_than:14d (${GMAIL_QUERY})`;
 const PROCESSED_LABEL = "My Tickets";
@@ -127,6 +128,7 @@ export async function processNormalisedEmail(
   const seeGigs = !axs && !intl && !eventimDe && isSeeGigsEmail(email.from, email.subject, combined);
   const rah = !axs && !intl && !eventimDe && !seeGigs && isRahEmail(email.from, combined);
   const dice = !axs && !intl && !eventimDe && !seeGigs && !rah && isDiceEmail(email.from, email.subject, combined);
+  const tixr = !axs && !intl && !eventimDe && !seeGigs && !rah && !dice && isTixrEmail(email.from, email.subject, combined);
   const effectiveFrom = intl ? getEffectiveFrom(email.from, email.subject, combined) : email.from;
 
   const bookingRef = axs
@@ -141,7 +143,9 @@ export async function processNormalisedEmail(
             ? parseRahBookingRef(combined)
             : dice
               ? parseDiceBookingRef(combined)
-              : parseBookingRef(email.subject, combined);
+              : tixr
+                ? parseTixrBookingRef(combined)
+                : parseBookingRef(email.subject, combined);
 
   if (!bookingRef) {
     return { action: "no_ref", bookingRef: null };
@@ -218,6 +222,15 @@ export async function processNormalisedEmail(
     sourceType = "dice";
     const rawDiceTotal = parseDiceTotal(combined);
     total = rawDiceTotal ? await convertToGbp(rawDiceTotal, "USD") : rawDiceTotal;
+  } else if (tixr) {
+    section = parseTixrSection(combined);
+    row = "";
+    seatFrom = "";
+    seatTo = "";
+    qty = parseTixrQty(combined);
+    sourceType = "tixr";
+    const rawTixrTotal = parseTixrTotal(combined);
+    total = rawTixrTotal ? await convertToGbp(rawTixrTotal, "USD") : rawTixrTotal;
   } else {
     section = parseSection(combined);
     row = parseRow(combined);
@@ -229,9 +242,9 @@ export async function processNormalisedEmail(
 
   const orderData: OrderInsert = {
     booking_ref: bookingRef,
-    event_name: axs ? parseAxsEvent(email.subject) : intl ? parseIntlEvent(effectiveFrom, email.subject, combined) : eventimDe ? parseEventimDeEvent(email.subject) : seeGigs ? parseSeeGigsEvent(email.subject, combined) : rah ? parseRahEvent(combined) : dice ? parseDiceEvent(email.subject) : parseEvent(combined),
-    venue: axs ? parseAxsVenue(combined) : intl ? parseIntlVenue(effectiveFrom, combined) : eventimDe ? parseEventimDeVenue(combined) : seeGigs ? parseSeeGigsVenue(combined) : rah ? "Royal Albert Hall" : dice ? parseDiceVenue(combined) : parseVenue(email.body),
-    event_date: axs ? parseAxsDate(combined) : intl ? parseIntlDate(effectiveFrom, combined) : eventimDe ? parseEventimDeDate(combined) : seeGigs ? parseSeeGigsDate(combined) : rah ? parseRahDate(combined) : dice ? parseDiceDate(combined) : parseDate(combined),
+    event_name: axs ? parseAxsEvent(email.subject) : intl ? parseIntlEvent(effectiveFrom, email.subject, combined) : eventimDe ? parseEventimDeEvent(email.subject) : seeGigs ? parseSeeGigsEvent(email.subject, combined) : rah ? parseRahEvent(combined) : dice ? parseDiceEvent(email.subject) : tixr ? parseTixrEvent(email.subject) : parseEvent(combined),
+    venue: axs ? parseAxsVenue(combined) : intl ? parseIntlVenue(effectiveFrom, combined) : eventimDe ? parseEventimDeVenue(combined) : seeGigs ? parseSeeGigsVenue(combined) : rah ? "Royal Albert Hall" : dice ? parseDiceVenue(combined) : tixr ? parseTixrVenue(combined) : parseVenue(email.body),
+    event_date: axs ? parseAxsDate(combined) : intl ? parseIntlDate(effectiveFrom, combined) : eventimDe ? parseEventimDeDate(combined) : seeGigs ? parseSeeGigsDate(combined) : rah ? parseRahDate(combined) : dice ? parseDiceDate(combined) : tixr ? parseTixrDate(combined) : parseDate(combined),
     purchased_at: parsePurchasedAt(email.headers, combined),
     account_email: accountEmail,
     section,
@@ -719,11 +732,15 @@ function isAccountEmail(email: string) {
     "gigsandtours",
     "eventim",
     "viagogo",
+    "tixr.com",
+    "dice.fm",
+    "mandrillapp",
     "noreply",
     "no-reply",
     "do-not-reply",
     "bounces+",
     "bounce+",
+    "bounce-",
     "mailer-daemon",
     "inbound.tixtracker.app", // forwarding scan addresses are never the buyer account
   ];
@@ -1907,6 +1924,64 @@ function parseDiceTotal(combined: string): string {
   return (
     combined.match(/\bTotal\s+\$?([\d,]+\.\d{2})/i)?.[1]?.replace(/,/g, "") ||
     combined.match(/\$([\d,]+\.\d{2})/)?.[1]?.replace(/,/g, "") ||
+    ""
+  );
+}
+
+// ── Tixr ──────────────────────────────────────────────────────────────────────
+
+function isTixrEmail(from: string, subject: string, text: string = ""): boolean {
+  if (from.toLowerCase().includes("tixr.com")) return true;
+  const cleanSubject = subject.replace(/^(?:fwd?|fw)\s*:\s*/i, "").toLowerCase();
+  if (cleanSubject.startsWith("order confirmation:")) return true;
+  const t = text.toLowerCase();
+  return t.includes("tixr.com") && (t.includes("order confirmation") || t.includes("order id:"));
+}
+
+function parseTixrBookingRef(combined: string): string {
+  // "Order ID: S4C07JGZBJ"
+  return combined.match(/Order\s+ID:\s*([A-Z0-9]+)/i)?.[1] || "";
+}
+
+function parseTixrEvent(subject: string): string {
+  return subject.replace(/^(?:fwd?|fw)\s*:\s*/i, "").replace(/^order confirmation:\s*/i, "").trim();
+}
+
+function parseTixrVenue(combined: string): string {
+  // Venue appears on the line immediately before the date line (Mon/Tue/... Mmm DD)
+  const lines = combined.split(/\n/).map((l) => l.trim()).filter(Boolean);
+  for (let i = 1; i < lines.length; i++) {
+    if (/^(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d/i.test(lines[i])) {
+      return lines[i - 1] || "";
+    }
+  }
+  return "";
+}
+
+function parseTixrDate(combined: string): string {
+  // "Fri Sep 11 - Sat Sep 12" or single day
+  return (
+    combined.match(/(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2}(?:\s*[-–]\s*(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2})?/i)?.[0] || ""
+  );
+}
+
+function parseTixrSection(combined: string): string {
+  // Ticket tier name appears on the line after "Nx" in the ticket listing
+  return (
+    combined.match(/\d+x\s*\n\s*([^\n]+?)(?:\s*\n|E-Ticket)/i)?.[1]?.trim() ||
+    combined.match(/([^\n]*(?:GA|VIP|Tier\s*\d+|General\s+Admission)[^\n]*)/i)?.[1]?.trim() ||
+    ""
+  );
+}
+
+function parseTixrQty(combined: string): string {
+  return combined.match(/(\d+)x\b/)?.[1] || combined.match(/(\d+)\s+Items?/i)?.[1] || "";
+}
+
+function parseTixrTotal(combined: string): string {
+  // "Total Including Fees: $ 532.72" — always USD on Tixr
+  return (
+    combined.match(/Total\s+Including\s+Fees?[^$\d]*\$?\s*([\d,]+\.\d{2})/i)?.[1]?.replace(/,/g, "") ||
     ""
   );
 }
