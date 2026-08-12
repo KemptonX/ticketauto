@@ -1901,10 +1901,16 @@ function parseDiceVenue(combined: string): string {
 }
 
 function parseDiceDate(combined: string): string {
-  const m =
-    combined.match(/Date\s*(?:&|and)\s*time\s+(.+?)(?:\s{2,}|\n|Doors)/i) ||
-    combined.match(/(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+\d{1,2}\s+\w{3,}[^\n]*(?:PM|AM)[^\n]*/i);
-  return m?.[1]?.trim() || m?.[0]?.trim() || "";
+  // "Date & time Sat 31 Oct,10:00 PM GMT-4" — &amp; variant for un-decoded HTML entities
+  const label = combined.match(
+    /Date\s*(?:&(?:amp;)?|and)\s*time[^\n]*?((?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[^\n]*?)(?:\s{2,}|\n|Doors|$)/i
+  );
+  if (label?.[1]) return label[1].trim();
+  // Fallback: any weekday + day + month (no PM/AM required)
+  const m = combined.match(
+    /(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[^\n]*/i
+  );
+  return m?.[0]?.trim() || "";
 }
 
 function parseDiceSection(combined: string): string {
