@@ -126,7 +126,7 @@ export async function processNormalisedEmail(
   const eventimDe = !axs && !intl && isEventimDeEmail(email.from, email.subject, combined);
   const seeGigs = !axs && !intl && !eventimDe && isSeeGigsEmail(email.from, email.subject, combined);
   const rah = !axs && !intl && !eventimDe && !seeGigs && isRahEmail(email.from, combined);
-  const dice = !axs && !intl && !eventimDe && !seeGigs && !rah && isDiceEmail(email.from, email.subject);
+  const dice = !axs && !intl && !eventimDe && !seeGigs && !rah && isDiceEmail(email.from, email.subject, combined);
   const effectiveFrom = intl ? getEffectiveFrom(email.from, email.subject, combined) : email.from;
 
   const bookingRef = axs
@@ -1854,8 +1854,14 @@ function parseRahTotal(text: string): string {
 
 // ── DICE ──────────────────────────────────────────────────────────────────────
 
-function isDiceEmail(from: string, subject: string): boolean {
-  return from.toLowerCase().includes("dice.fm") || subject.toLowerCase().startsWith("your tickets:");
+function isDiceEmail(from: string, subject: string, text: string = ""): boolean {
+  if (from.toLowerCase().includes("dice.fm")) return true;
+  // Strip Fwd:/Fw: prefix before checking subject
+  const cleanSubject = subject.replace(/^(?:fwd?|fw)\s*:\s*/i, "").toLowerCase();
+  if (cleanSubject.startsWith("your tickets:")) return true;
+  // Forwarded email: original sender shows up in body (e.g. "From: DICE <noreply@dice.fm>")
+  const t = text.toLowerCase();
+  return t.includes("dice.fm") && (t.includes("your tickets") || t.includes("view tickets in the app"));
 }
 
 function parseDiceBookingRef(combined: string): string {
