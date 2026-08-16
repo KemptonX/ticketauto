@@ -158,6 +158,7 @@ function fmtSourceType(source: string | null | undefined): string {
     axs_us: "AXS US",
     dice: "DICE",
     tixr: "Tixr",
+    seatgeek: "SeatGeek",
   };
   return map[source ?? ""] ?? source ?? "Unknown";
 }
