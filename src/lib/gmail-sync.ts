@@ -898,6 +898,12 @@ function parseDate(text: string) {
   // Abbreviated day without time: "Sun 26 Apr 2026"
   const p4 = text.match(/\b(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+\d{1,2}\s+[A-Z][a-z]{2,8}\s+\d{4}\b/i)?.[0];
   if (p4) return p4;
+  // US month-first with day name: "Saturday, July 12, 2026 at 7:00 PM"
+  const p5 = text.match(/\b(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday),?\s+(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+\d{4}\b(?:[^\n]{0,30}?\d{1,2}:\d{2}\s*[AP]M)?/i)?.[0];
+  if (p5) return p5;
+  // US month-first without day name: "July 12, 2026" or "July 12 2026"
+  const p6 = text.match(/\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+\d{4}\b(?:[^\n]{0,30}?\d{1,2}:\d{2}\s*[AP]M)?/i)?.[0];
+  if (p6) return p6;
   return "";
 }
 
@@ -1195,7 +1201,10 @@ function getEffectiveFrom(from: string, subject: string, text: string = ""): str
   if (s.includes("your ticketmaster order")) {
     // Body of a forwarded IE email will contain ticketmaster.ie links/text
     if (t.includes("ticketmaster.ie")) return "noreply@ticketmaster.ie";
-    return "noreply@ticketmaster.de";
+    // Body of a forwarded DE email will contain ticketmaster.de links/text
+    if (t.includes("ticketmaster.de")) return "noreply@ticketmaster.de";
+    // Otherwise assume US — fall through so parseIntlDate uses the US branch
+    return from;
   }
   return from;
 }
@@ -1250,7 +1259,7 @@ function getIntlSourceType(from: string, subject: string): string {
   if (f.includes("ticketmaster.ie")) return "ticketmaster_ie";
   if (f.includes("ticketmaster.fr")) return "ticketmaster_fr";
   if (f.includes("ticketmaster.dk")) return "ticketmaster_dk";
-  if (s.includes("you got tickets") || f.includes("email.ticketmaster.com")) return "ticketmaster_us";
+  if (s.includes("you got tickets") || s.includes("your ticketmaster order") || f.includes("email.ticketmaster.com")) return "ticketmaster_us";
   return "ticketmaster_direct";
 }
 
@@ -1588,12 +1597,23 @@ function parseIntlDate(from: string, text: string): string {
   const usAnchor = text.search(/Order\s*#/i);
   const usText = usAnchor >= 0 ? text.slice(usAnchor) : text;
 
+  // Convert "May 02, 2026 · 8:00 PM" → ISO "2026-05-02" for consistent storage
+  const US_MONTH_NUM: Record<string, number> = {
+    jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,oct:10,nov:11,dec:12,
+  };
+  const toUsISO = (raw: string): string => {
+    const m = raw.match(/(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+0?(\d{1,2}),?\s+(\d{4})/i);
+    if (!m) return raw;
+    const mo = US_MONTH_NUM[m[1].slice(0, 3).toLowerCase()];
+    return mo ? `${m[3]}-${String(mo).padStart(2, "0")}-${m[2].padStart(2, "0")}` : raw;
+  };
+
   // "Sat · May 02, 2026 · 8:00 PM" or "Sat, May 02, 2026"
   const usM = usText.match(/(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)[a-z]*\s*[·,\s]+\s*((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{1,2},?\s+\d{4}(?:\s*[·,]?\s*\d{1,2}:\d{2}\s*(?:AM|PM)?)?)/i);
-  if (usM) return usM[1].trim();
+  if (usM) return toUsISO(usM[1].trim());
 
   const usDate = usText.match(/((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{1,2},?\s+\d{4})/i)?.[1];
-  if (usDate) return usDate;
+  if (usDate) return toUsISO(usDate);
 
   return "";
 }

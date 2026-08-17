@@ -1495,6 +1495,18 @@ export default function OrdersClient() {
                           <div className="title-chips">
                             {group.hasNew && <span className="new-badge">New</span>}
                             {(() => { const d = formatDaysAway(group.dateValue); return d ? <span className={`days-chip ${d.tone}`}>{d.label}</span> : null; })()}
+                            {group.dateValue === null && (
+                              <span
+                                className="warning-badge"
+                                title={
+                                  group.eventDate === "Date missing"
+                                    ? "No event date — click to edit this ticket"
+                                    : "Date format not recognised — won't count in profit stats by month/year"
+                                }
+                              >
+                                !
+                              </span>
+                            )}
                             <span
                               className="group-id-chip"
                               onClick={(e) => {
@@ -2287,14 +2299,27 @@ function formatDaysAway(date: Date | null): { label: string; tone: string } | nu
 
 function parseOrderDate(value: string | null): Date | null {
   if (!value) return null;
+  // Parse ISO dates as local midnight to avoid UTC timezone offset
+  if (/^\d{4}-\d{2}-\d{2}/.test(value)) {
+    const [y, m, d] = value.slice(0, 10).split("-").map(Number);
+    return new Date(y, m - 1, d);
+  }
   const parsed = new Date(value);
   if (!Number.isNaN(parsed.getTime())) return parsed;
-  const match = value.match(/(\d{1,2})\s+([A-Za-z]{3,9})\s+(\d{4})/);
-  if (!match) return null;
-  const [, day, monthName, year] = match;
-  const monthIndex = ["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"].indexOf(monthName.slice(0,3).toLowerCase());
-  if (monthIndex === -1) return null;
-  return new Date(Number(year), monthIndex, Number(day));
+  const MONTHS = ["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"];
+  // Day-first: "14 Apr 2026"
+  const dayFirst = value.match(/(\d{1,2})\s+([A-Za-z]{3,9})\s+(\d{4})/);
+  if (dayFirst) {
+    const mi = MONTHS.indexOf(dayFirst[2].slice(0,3).toLowerCase());
+    if (mi !== -1) return new Date(Number(dayFirst[3]), mi, Number(dayFirst[1]));
+  }
+  // Month-first: "July 12, 2026" or "Saturday, July 12, 2026 at 7:00 PM"
+  const monthFirst = value.match(/([A-Za-z]{3,9})\s+(\d{1,2})[,\s]+(\d{4})/);
+  if (monthFirst) {
+    const mi = MONTHS.indexOf(monthFirst[1].slice(0,3).toLowerCase());
+    if (mi !== -1) return new Date(Number(monthFirst[3]), mi, Number(monthFirst[2]));
+  }
+  return null;
 }
 
 const UK_CITIES = ["london","manchester","birmingham","glasgow","edinburgh","liverpool","leeds","sheffield","bristol","cardiff","newcastle","nottingham","brighton","leicester","wolverhampton","coventry","reading","belfast","southampton","exeter","york","bath","oxford","cambridge","hull","stoke","sunderland","middlesbrough"];

@@ -964,6 +964,11 @@ function parseEventDate(value: string | null): Date | null {
     const [y, m, d] = value.slice(0, 10).split("-").map(Number);
     return new Date(y, m - 1, d);
   }
+  // MM/DD/YYYY or M/DD/YYYY (AXS US: "8/29/2026 3:00 PM")
+  const numericUs = value.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (numericUs) {
+    return new Date(Number(numericUs[3]), Number(numericUs[1]) - 1, Number(numericUs[2]));
+  }
   // "Friday 29 May 2026 18:30" or "29 May 2026" — day first
   const dayFirst = value.match(/(\d{1,2})\s+([A-Za-z]{3,9})\s+(\d{4})/);
   if (dayFirst) {
