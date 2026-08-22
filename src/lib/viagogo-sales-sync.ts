@@ -765,7 +765,7 @@ async function recomputeOrderStatus(
   ]);
 
   const linked = (salesData || []) as { sale_total?: number | null; payout_total?: number | null; qty_sold?: number | null }[];
-  const soldTotal = linked.reduce((s, r) => s + (r.sale_total ?? r.payout_total ?? 0), 0);
+  const soldTotal = linked.reduce((s, r) => s + (r.payout_total ?? r.sale_total ?? 0), 0);
   const qtySold = linked.reduce((s, r) => s + (r.qty_sold ?? 0), 0);
   const qtyBought = (orderData as { qty_bought?: number | null } | null)?.qty_bought ?? 0;
 
