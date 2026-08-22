@@ -3591,9 +3591,27 @@ export async function processSingleSaleEmail({
     loadOrderUsage(supabase, userId),
   ]);
 
-  const match = existingSale?.inventory_order_id
+  let match = existingSale?.inventory_order_id
     ? null
     : findBestInventoryMatch({ orders: candidateOrders, orderUsage, sale: parsed });
+
+  // Real-time capacity guard: prevent race condition when two concurrent inbound emails
+  // both load orderUsage=0 and both get matched to the same first-ranked order.
+  if (match && !existingSale && match.order.qty_bought != null) {
+    const { data: currentLinked } = await supabase
+      .from("sales")
+      .select("qty_sold")
+      .eq("inventory_order_id", match.order.id)
+      .eq("user_id", userId)
+      .neq("sale_status", "Deleted");
+    const currentUsed = ((currentLinked ?? []) as Array<{ qty_sold: number | null }>)
+      .reduce((s, r) => s + (r.qty_sold ?? 0), 0);
+    if (currentUsed + (parsed.qtySold ?? 1) > match.order.qty_bought) {
+      const correctedUsage = new Map(orderUsage);
+      correctedUsage.set(match.order.id, currentUsed);
+      match = findBestInventoryMatch({ orders: candidateOrders, orderUsage: correctedUsage, sale: parsed });
+    }
+  }
 
   const isSoldConf = isViagogo && lowerSubject.includes("you sold your ticket for");
   const saleData: SaleInsert = {
