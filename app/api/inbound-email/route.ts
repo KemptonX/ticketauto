@@ -672,15 +672,17 @@ export async function POST(request: Request) {
       });
 
       // Self-heal over-matched orders (race condition: concurrent emails both matched to
-      // same order before either committed). Runs fire-and-forget after the 200 response.
-      void fixOverMatchedSales(supabase, userId).then(async (fixed) => {
+      // same order before either committed). Awaited so it completes before response —
+      // fire-and-forget is unreliable in Vercel serverless (function terminates on response).
+      try {
+        const fixed = await fixOverMatchedSales(supabase, userId);
         if (fixed > 0) {
           console.log(`[inbound] fixOverMatchedSales unlinked ${fixed} excess sale(s), rematching`);
           await rematchViagogoSales({ supabase, userId });
         }
-      }).catch((e: unknown) => {
+      } catch (e: unknown) {
         console.error("[inbound] fixOverMatchedSales error:", e instanceof Error ? e.message : e);
-      });
+      }
 
       return NextResponse.json({ ok: true, status: saleResult.inserted ? "imported" : "updated" });
     }
