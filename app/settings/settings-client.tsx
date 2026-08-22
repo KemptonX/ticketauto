@@ -97,6 +97,13 @@ const IMPORT_FIELDS: ImportField[] = [
     label: "Event Date",
     aliases: ["date", "event date", "show date", "match date", "game date", "when", "event_date", "event date time", "date time", "datetime"],
     dataType: "date",
+    required: true,
+  },
+  {
+    key: "purchased_at", group: "Ticket / Inventory",
+    label: "Date Bought",
+    aliases: ["date bought", "purchase date", "purchased", "bought date", "bought on", "purchased at", "date purchased", "order date", "buy date"],
+    dataType: "date",
   },
   {
     key: "section", group: "Ticket / Inventory",
@@ -133,24 +140,14 @@ const IMPORT_FIELDS: ImportField[] = [
     label: "Qty Bought",
     aliases: ["qty", "quantity", "tickets", "count", "num tickets", "number", "qty bought", "quantity bought", "no of tickets", "num", "ticket count", "no tickets"],
     dataType: "number",
-  },
-  {
-    key: "qty_sold", group: "Ticket / Inventory",
-    label: "Qty Sold",
-    aliases: ["qty sold", "quantity sold", "sold qty", "sold quantity", "tickets sold", "qty_sold", "sold count", "no sold", "number sold"],
-    dataType: "number",
+    required: true,
   },
   {
     key: "total_cost", group: "Ticket / Inventory",
     label: "Total Cost",
     aliases: ["cost", "total cost", "price", "amount paid", "paid", "purchase price", "buying price", "face value", "total paid", "cost price", "buy price", "purchase total", "amount", "total amount"],
     dataType: "number",
-  },
-  {
-    key: "sold_total", group: "Ticket / Inventory",
-    label: "Sold For (order)",
-    aliases: ["sold total", "sold_total"],
-    dataType: "number",
+    required: true,
   },
   {
     key: "listing_status", group: "Ticket / Inventory",
@@ -284,9 +281,9 @@ const FIELD_GROUPS = [
 // ── Column sets ───────────────────────────────────────────────────────────────
 
 const ORDER_COLUMNS = new Set([
-  "booking_ref", "event_name", "venue", "event_date", "account_email",
+  "booking_ref", "event_name", "venue", "event_date", "purchased_at", "account_email",
   "section", "row", "seat_from", "seat_to",
-  "qty_bought", "total_cost", "sold_total", "listing_status", "source_type",
+  "qty_bought", "total_cost", "listing_status", "source_type",
 ]);
 
 const SALE_COLUMNS = new Set([
@@ -294,7 +291,6 @@ const SALE_COLUMNS = new Set([
   "marketplace", "buyer_email", "external_sale_id", "notes",
   "transfer_status", "transfer_date", "transfer_deadline",
   "payment_status", "expected_payout_date", "payout_date",
-  "qty_sold",
 ]);
 
 // ─── Auto-mapping ─────────────────────────────────────────────────────────────
@@ -2265,7 +2261,7 @@ export default function SettingsClient() {
                           {FIELD_GROUPS.map(({ group, fields }) => (
                             <optgroup key={group} label={group}>
                               {fields.map((f) => (
-                                <option key={f.key} value={f.key}>{f.label}</option>
+                                <option key={f.key} value={f.key}>{f.label}{f.required ? " (Mandatory)" : ""}</option>
                               ))}
                             </optgroup>
                           ))}

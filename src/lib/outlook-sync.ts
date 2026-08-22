@@ -375,7 +375,13 @@ async function findExistingOrder(
 
 // ── Account email extraction ──────────────────────────────────────────────────
 
-const IGNORED_FRAGMENTS = ["ticketmaster", "amazon", "ebay", "stubhub", "noreply", "no-reply", "do-not-reply"];
+const IGNORED_FRAGMENTS = [
+  "ticketmaster", "amazon", "ebay", "stubhub", "axs.com", "axs.co.uk",
+  "seetickets", "gigsandtours", "eventim", "viagogo", "tixr.com",
+  "dice.fm", "seatgeek.com", "mandrillapp", "noreply", "no-reply",
+  "do-not-reply", "bounces+", "bounce+", "bounce-", "mailer-daemon",
+  "inbound.tixtracker.app", "vortexmail.space",
+];
 
 function isAccountEmail(email: string) {
   if (!email) return false;
@@ -388,31 +394,44 @@ function extractEmailAddress(header: string) {
 }
 
 function extractAccountFromMessage(msg: GraphMessage, text: string): string {
-  // Check forwarding/original-recipient headers first (same priority as Gmail)
-  const headerPriority = [
-    "X-Original-To",
-    "Delivered-To",
-    "X-Forwarded-To",
-    "X-Forwarded-For",
-    "Return-Path",
-  ];
+  const allHeaders = msg.internetMessageHeaders ?? [];
 
-  for (const name of headerPriority) {
-    const header = msg.internetMessageHeaders?.find(
-      (h) => h.name.toLowerCase() === name.toLowerCase(),
-    );
+  // X-Forwarded-For: Gmail stamps one per hop in newest-first order.
+  // The LAST header (innermost hop) has the original recipient first.
+  const xffHeaders = allHeaders
+    .filter((h) => h.name.toLowerCase() === "x-forwarded-for")
+    .map((h) => h.value);
+  for (let i = xffHeaders.length - 1; i >= 0; i--) {
+    const m = xffHeaders[i].match(/([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})/i);
+    const addr = m?.[1]?.toLowerCase() ?? "";
+    if (isAccountEmail(addr)) return addr;
+  }
+
+  // Delivered-To / X-Original-To: headers arrive newest-first.
+  // Try from LAST (innermost = original recipient) to first (outermost = relay).
+  for (const multiHeader of ["delivered-to", "x-original-to"]) {
+    const vals = allHeaders
+      .filter((h) => h.name.toLowerCase() === multiHeader)
+      .map((h) => extractEmailAddress(h.value));
+    for (let i = vals.length - 1; i >= 0; i--) {
+      if (isAccountEmail(vals[i])) return vals[i];
+    }
+  }
+
+  // Single-value routing headers
+  for (const name of ["X-Forwarded-To", "Return-Path"]) {
+    const header = allHeaders.find((h) => h.name.toLowerCase() === name.toLowerCase());
     if (header) {
       const email = extractEmailAddress(header.value);
       if (isAccountEmail(email)) return email;
     }
   }
 
-  // Fall back to To/From on the message envelope
+  // Envelope To/From fallback
   const candidates = [
     msg.toRecipients?.[0]?.emailAddress?.address,
     msg.from?.emailAddress?.address,
   ];
-
   for (const c of candidates) {
     const email = (c || "").toLowerCase();
     if (isAccountEmail(email)) return email;

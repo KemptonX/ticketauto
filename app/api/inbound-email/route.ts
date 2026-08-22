@@ -388,7 +388,8 @@ export async function POST(request: Request) {
       !l.includes("inbound.tixtracker.app") &&
       !l.includes("noreply") &&
       !l.includes("no-reply") &&
-      !l.includes("@reply.github.com");
+      !l.includes("@reply.github.com") &&
+      !l.includes("vortexmail.space");
   };
   // X-Forwarded-For: Gmail stamps this on every auto-forward hop.
   // Multi-hop chains produce multiple headers (newest = outermost = first in array).
@@ -406,10 +407,14 @@ export async function POST(request: Request) {
   const xForwardedTo =
     xffEmail ||
     // X-Original-To: set by the MTA on delivery — may be a relay in multi-hop chains.
-    allHeaders
-      .filter((h) => h.Name.toLowerCase() === "x-original-to")
-      .map((h) => h.Value?.trim() ?? "")
-      .find(isUserAddress) ||
+    // Take the LAST valid entry (innermost hop = original recipient), not the first.
+    (() => {
+      const addrs = allHeaders
+        .filter((h) => h.Name.toLowerCase() === "x-original-to")
+        .map((h) => h.Value?.trim() ?? "")
+        .filter(isUserAddress);
+      return addrs[addrs.length - 1] ?? "";
+    })() ||
     // Delivered-To: take the LAST valid entry (outermost = scan address, innermost = original).
     (() => {
       const addrs = allHeaders

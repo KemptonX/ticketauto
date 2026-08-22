@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/src/lib/supabase-server";
-import { rematchViagogoSales, syncViagogoSalesImapInbox, syncViagogoSalesInbox, syncViagogoSalesOutlookInbox, syncStubHubSalesInbox, syncStubHubSalesOutlookInbox, syncStubHubSalesImapInbox, syncTicomboSalesInbox, syncTicomboSalesOutlookInbox, syncTicomboSalesImapInbox, syncLystedSalesInbox, syncLystedSalesOutlookInbox, syncLystedSalesImapInbox } from "@/src/lib/viagogo-sales-sync";
+import { rematchViagogoSales, fixOverMatchedSales, syncViagogoSalesImapInbox, syncViagogoSalesInbox, syncViagogoSalesOutlookInbox, syncStubHubSalesInbox, syncStubHubSalesOutlookInbox, syncStubHubSalesImapInbox, syncTicomboSalesInbox, syncTicomboSalesOutlookInbox, syncTicomboSalesImapInbox, syncLystedSalesInbox, syncLystedSalesOutlookInbox, syncLystedSalesImapInbox } from "@/src/lib/viagogo-sales-sync";
 
 export const runtime = "nodejs";
 
@@ -116,6 +116,11 @@ export async function POST() {
       totals.inserted += ly.inserted;
       totals.matched += ly.matched;
     }
+
+    // Fix any over-matched orders caused by concurrent scans (race condition where two
+    // requests both read orderUsage=0 and both match to the same first-ranked order).
+    // Unlinks excess sales first, then rematch puts them on the correct order.
+    await fixOverMatchedSales(supabase, user.id);
 
     totals.matched += await rematchViagogoSales({
       supabase,

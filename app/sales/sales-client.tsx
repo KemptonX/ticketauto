@@ -1383,9 +1383,12 @@ export default function SalesClient() {
             </button>
             {!showArchived && !showDeleted && (
               <>
-                <button className="secondary-button" onClick={() => void scanSalesNow()} disabled={scanning} type="button">
-                  {scanning ? "Scanning..." : "Scan Sales"}
-                </button>
+                {/* Scan Sales button hidden — inbound forwarding is used instead */}
+                {false && (
+                  <button className="secondary-button" onClick={() => void scanSalesNow()} disabled={scanning} type="button">
+                    {scanning ? "Scanning..." : "Scan Sales"}
+                  </button>
+                )}
                 <button
                   className="secondary-button"
                   type="button"

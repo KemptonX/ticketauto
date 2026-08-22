@@ -25,6 +25,7 @@ const GMAIL_QUERY = [
   '(from:dice.fm subject:"Your tickets:")',
   '(from:tixr.com "Order Confirmation:")',
   '(from:seatgeek.com "Your tickets are available")',
+  '(from:seetickets.us "Here Are Your Tickets for")',
 ].join(' OR ');
 const GMAIL_QUERY_FILTERED = `is:unread newer_than:14d (${GMAIL_QUERY})`;
 const PROCESSED_LABEL = "My Tickets";
@@ -131,6 +132,7 @@ export async function processNormalisedEmail(
   const dice = !axs && !intl && !eventimDe && !seeGigs && !rah && isDiceEmail(email.from, email.subject, combined);
   const tixr = !axs && !intl && !eventimDe && !seeGigs && !rah && !dice && isTixrEmail(email.from, email.subject, combined);
   const seatGeek = !axs && !intl && !eventimDe && !seeGigs && !rah && !dice && !tixr && isSeatGeekEmail(email.from, email.subject, combined);
+  const seeTicketsUs = !axs && !intl && !eventimDe && !seeGigs && !rah && !dice && !tixr && !seatGeek && isSeeTicketsUsEmail(email.from, email.subject, combined);
   const effectiveFrom = intl ? getEffectiveFrom(email.from, email.subject, combined) : email.from;
 
   const bookingRef = axs
@@ -149,7 +151,9 @@ export async function processNormalisedEmail(
                 ? parseTixrBookingRef(combined)
                 : seatGeek
                   ? parseSeatGeekBookingRef(combined)
-                  : parseBookingRef(email.subject, combined);
+                  : seeTicketsUs
+                    ? parseSeeTicketsUsBookingRef(combined)
+                    : parseBookingRef(email.subject, combined);
 
   if (!bookingRef) {
     return { action: "no_ref", bookingRef: null };
@@ -243,6 +247,15 @@ export async function processNormalisedEmail(
     sourceType = "seatgeek";
     const rawSgTotal = parseSeatGeekTotal(combined);
     total = rawSgTotal ? await convertToGbp(rawSgTotal, "USD") : rawSgTotal;
+  } else if (seeTicketsUs) {
+    section = parseSeeTicketsUsSection(combined);
+    row = "";
+    seatFrom = "";
+    seatTo = "";
+    qty = parseSeeTicketsUsQty(combined);
+    sourceType = "seetickets_us";
+    const rawStUsTotal = parseSeeTicketsUsTotal(combined);
+    total = rawStUsTotal ? await convertToGbp(rawStUsTotal, "USD") : rawStUsTotal;
   } else {
     section = parseSection(combined);
     row = parseRow(combined);
@@ -254,9 +267,9 @@ export async function processNormalisedEmail(
 
   const orderData: OrderInsert = {
     booking_ref: bookingRef,
-    event_name: axs ? parseAxsEvent(email.subject) : intl ? parseIntlEvent(effectiveFrom, email.subject, combined) : eventimDe ? parseEventimDeEvent(email.subject) : seeGigs ? parseSeeGigsEvent(email.subject, combined) : rah ? parseRahEvent(combined) : dice ? parseDiceEvent(email.subject) : tixr ? parseTixrEvent(email.subject) : seatGeek ? parseSeatGeekEvent(combined) : parseEvent(combined),
-    venue: axs ? parseAxsVenue(combined) : intl ? parseIntlVenue(effectiveFrom, combined) : eventimDe ? parseEventimDeVenue(combined) : seeGigs ? parseSeeGigsVenue(combined) : rah ? "Royal Albert Hall" : dice ? parseDiceVenue(combined) : tixr ? parseTixrVenue(combined) : seatGeek ? parseSeatGeekVenue(combined) : parseVenue(email.body),
-    event_date: axs ? parseAxsDate(combined) : intl ? parseIntlDate(effectiveFrom, combined) : eventimDe ? parseEventimDeDate(combined) : seeGigs ? parseSeeGigsDate(combined) : rah ? parseRahDate(combined) : dice ? parseDiceDate(combined) : tixr ? parseTixrDate(combined) : seatGeek ? parseSeatGeekDate(combined) : parseDate(combined),
+    event_name: axs ? parseAxsEvent(email.subject) : intl ? parseIntlEvent(effectiveFrom, email.subject, combined) : eventimDe ? parseEventimDeEvent(email.subject) : seeGigs ? parseSeeGigsEvent(email.subject, combined) : rah ? parseRahEvent(combined) : dice ? parseDiceEvent(email.subject) : tixr ? parseTixrEvent(email.subject) : seatGeek ? parseSeatGeekEvent(combined) : seeTicketsUs ? parseSeeTicketsUsEvent(email.subject, combined) : parseEvent(combined),
+    venue: axs ? parseAxsVenue(combined) : intl ? parseIntlVenue(effectiveFrom, combined) : eventimDe ? parseEventimDeVenue(combined) : seeGigs ? parseSeeGigsVenue(combined) : rah ? "Royal Albert Hall" : dice ? parseDiceVenue(combined) : tixr ? parseTixrVenue(combined) : seatGeek ? parseSeatGeekVenue(combined) : seeTicketsUs ? parseSeeTicketsUsVenue(combined) : parseVenue(email.body),
+    event_date: axs ? parseAxsDate(combined) : intl ? parseIntlDate(effectiveFrom, combined) : eventimDe ? parseEventimDeDate(combined) : seeGigs ? parseSeeGigsDate(combined) : rah ? parseRahDate(combined) : dice ? parseDiceDate(combined) : tixr ? parseTixrDate(combined) : seatGeek ? parseSeatGeekDate(combined) : seeTicketsUs ? parseSeeTicketsUsDate(combined) : parseDate(combined),
     purchased_at: parsePurchasedAt(email.headers, combined),
     account_email: accountEmail,
     section,
@@ -756,6 +769,7 @@ function isAccountEmail(email: string) {
     "bounce-",
     "mailer-daemon",
     "inbound.tixtracker.app", // forwarding scan addresses are never the buyer account
+    "vortexmail.space", // mail relay/forwarding service, not the real account
   ];
 
   return email !== FORWARD_TO_ACCOUNT && !ignoredFragments.some((fragment) => email.includes(fragment));
@@ -774,14 +788,24 @@ function extractAccount(headers: GmailHeader[], text: string) {
     if (isAccountEmail(addr)) return addr;
   }
 
+  // Delivered-To / X-Original-To: each MTA hop prepends a new header, so headers
+  // arrive in newest-first order. Try from LAST (innermost = original recipient)
+  // to first (outermost = scan/relay address) to find the real account email.
+  for (const multiHeader of ["delivered-to", "x-original-to"]) {
+    const vals = headers
+      .filter((h) => h.name.toLowerCase() === multiHeader)
+      .map((h) => extractEmail(h.value ?? ""));
+    for (let i = vals.length - 1; i >= 0; i--) {
+      if (isAccountEmail(vals[i])) return vals[i];
+    }
+  }
+
   const headerCandidates = [
-    "X-Original-To",
     "To",
     "Reply-To",
     "Return-Path",
     "Sender",
     "From",
-    "Delivered-To",
     "X-Forwarded-To",
   ];
 
@@ -1842,6 +1866,76 @@ function parseSeeGigsSection(text: string): string {
 
 function parseSeeGigsQty(text: string): string {
   return text.match(/(\d+)\s*x\s*Seats?/i)?.[1] || "";
+}
+
+// ── See Tickets US (Eventim USA) ──────────────────────────────────────────────
+// From: info@seetickets.us · Subject: "Here Are Your Tickets for <event>"
+// Order Number is alphanumeric (e.g. gnMCCX25F5FULU); total in USD.
+
+function isSeeTicketsUsEmail(from: string, subject: string = "", text: string = ""): boolean {
+  if (from.toLowerCase().includes("seetickets.us")) return true;
+  const s = subject.toLowerCase().replace(/^(?:(?:fwd?|fw)\s*:\s*)*/i, "");
+  const t = text.toLowerCase();
+  return s.startsWith("here are your tickets for") && t.includes("seetickets.us");
+}
+
+function parseSeeTicketsUsBookingRef(text: string): string {
+  return text.match(/Order\s+Number\s*\n?\s*([A-Za-z0-9]{8,})/i)?.[1] || "";
+}
+
+function parseSeeTicketsUsEvent(subject: string, text: string): string {
+  const clean = subject.replace(/^(?:(?:fwd?|fw)\s*:\s*)*/i, "").trim();
+  const fromSubject = clean.match(/^Here Are Your Tickets for\s+(.+)/i)?.[1];
+  if (fromSubject) return fromSubject.trim();
+  // Body: event name in *bold* on its own line
+  const fromBody = text.match(/^\*([^*\n]+)\*/m)?.[1];
+  if (fromBody) return fromBody.trim();
+  return "";
+}
+
+function parseSeeTicketsUsDate(text: string): string {
+  const MONTH_NUM: Record<string, number> = {
+    january:1, february:2, march:3, april:4, may:5, june:6,
+    july:7, august:8, september:9, october:10, november:11, december:12,
+  };
+  const m = text.match(/(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday),\s+(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2}),?\s+(\d{4})/i);
+  if (!m) return "";
+  const mo = MONTH_NUM[m[1].toLowerCase()];
+  return mo ? `${m[3]}-${String(mo).padStart(2, "0")}-${m[2].padStart(2, "0")}` : "";
+}
+
+function parseSeeTicketsUsVenue(text: string): string {
+  // Venue is the line immediately after the date line (DayOfWeek, Month DD, YYYY)
+  const lines = text.split(/\n/).map((l) => l.trim()).filter(Boolean);
+  for (let i = 0; i < lines.length - 1; i++) {
+    if (/^(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday),\s+\w+\s+\d{1,2},?\s+\d{4}$/i.test(lines[i])) {
+      return lines[i + 1] || "";
+    }
+  }
+  return "";
+}
+
+function parseSeeTicketsUsTotal(text: string): string {
+  // "*Total*\n\n*$150.52*" in plain text
+  return (
+    text.match(/\*?Total\*?\s*\n\s*\*?\$\s*([\d,]+\.\d{2})\*?/i)?.[1]?.replace(/,/g, "") ||
+    text.match(/\bTotal\b[^$\n]{0,10}\$\s*([\d,]+\.\d{2})/i)?.[1]?.replace(/,/g, "") ||
+    ""
+  );
+}
+
+function parseSeeTicketsUsQty(text: string): string {
+  // "4 x Advance General Admission Ticket (@ $37.63)"
+  return text.match(/(\d+)\s+x\s+[A-Za-z]/)?.[1] || "";
+}
+
+function parseSeeTicketsUsSection(text: string): string {
+  // "4 x Advance General Admission Ticket (@ $37.63)" → "Advance General Admission Ticket"
+  return (
+    text.match(/\d+\s+x\s+([^(@\n]+?)\s+\(@/i)?.[1]?.trim() ||
+    text.match(/([A-Za-z][A-Za-z ]+Ticket)\s*\|/i)?.[1]?.trim() ||
+    ""
+  );
 }
 
 // ── Royal Albert Hall ─────────────────────────────────────────────────────────

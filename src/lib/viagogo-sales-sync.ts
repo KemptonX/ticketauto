@@ -507,6 +507,61 @@ export async function rematchViagogoSales({
   return matched;
 }
 
+// Detect and unlink over-matched sales caused by concurrent scans or race conditions.
+// When two scan requests run simultaneously they both read orderUsage=0 and can both
+// match to the same first-ranked order, producing e.g. 12 qty_sold against a 6-ticket
+// order. This function unlinks the newest excess sales so rematchViagogoSales can then
+// assign them to the correct (other) order.
+export async function fixOverMatchedSales(supabase: SupabaseClient, userId: string): Promise<number> {
+  const { data: orders, error: ordersError } = await supabase
+    .from("orders")
+    .select("id, qty_bought")
+    .eq("user_id", userId)
+    .not("qty_bought", "is", null);
+
+  if (ordersError) throw new Error(ordersError.message);
+
+  let fixed = 0;
+
+  for (const order of (orders ?? []) as Array<{ id: number; qty_bought: number | null }>) {
+    const qtyBought = order.qty_bought ?? 0;
+    if (qtyBought <= 0) continue;
+
+    const { data: linked, error: linkedError } = await supabase
+      .from("sales")
+      .select("id, qty_sold")
+      .eq("inventory_order_id", order.id)
+      .eq("user_id", userId)
+      .neq("sale_status", "Deleted")
+      .order("created_at", { ascending: true }); // oldest first → keep these
+
+    if (linkedError) throw new Error(linkedError.message);
+
+    const rows = (linked ?? []) as Array<{ id: number; qty_sold: number | null }>;
+    const total = rows.reduce((s, r) => s + (r.qty_sold ?? 0), 0);
+    if (total <= qtyBought) continue;
+
+    // Unlink the newest sales that push us over capacity
+    let excess = total - qtyBought;
+    for (const sale of [...rows].reverse()) {
+      if (excess <= 0) break;
+      const { error: unlinkError } = await supabase
+        .from("sales")
+        .update({ inventory_order_id: null, match_confidence: null })
+        .eq("id", sale.id)
+        .eq("user_id", userId);
+      if (unlinkError) throw new Error(unlinkError.message);
+      excess -= sale.qty_sold ?? 0;
+      fixed++;
+    }
+
+    // Recompute this order's status now that excess sales have been removed
+    await recomputeOrderStatus(supabase, { userId, orderId: order.id });
+  }
+
+  return fixed;
+}
+
 export async function syncViagogoSalesOutlookInbox({
   supabase,
   outlookAccount,

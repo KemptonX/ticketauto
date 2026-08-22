@@ -43,10 +43,11 @@ const SUBJECT_KEYWORDS = [
   "ticket order confirmation",        // See Tickets / Gigs and Tours
   "eventim-bestellung",
   "eventim order",
+  "here are your tickets for",           // See Tickets US (Eventim USA)
 ];
 
 // From-domain keywords — always download these regardless of subject
-const FROM_KEYWORDS = ["ticketmaster", "axs.com", "axs.co.uk", "seetickets.com", "gigsandtours.com", "eventim.de", "eventim.co.uk", "royalalberthall.com"];
+const FROM_KEYWORDS = ["ticketmaster", "axs.com", "axs.co.uk", "seetickets.com", "gigsandtours.com", "eventim.de", "eventim.co.uk", "royalalberthall.com", "seetickets.us"];
 
 const BATCH_SIZE = 10;
 
