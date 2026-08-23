@@ -246,15 +246,16 @@ export default function OrdersClient() {
     // Fetch matched sales to get actual qty_sold and sale_total per order
     const { data: salesData } = await supabase
       .from("sales")
-      .select("inventory_order_id, qty_sold, sale_total")
+      .select("inventory_order_id, qty_sold, sale_total, payout_total")
       .not("inventory_order_id", "is", null)
       .neq("sale_status", "Deleted");
     const qtyMap = new Map<number, number>();
     const saleMap = new Map<number, number>();
-    for (const s of (salesData ?? []) as { inventory_order_id: number; qty_sold: number | null; sale_total: number | null }[]) {
+    for (const s of (salesData ?? []) as { inventory_order_id: number; qty_sold: number | null; sale_total: number | null; payout_total: number | null }[]) {
       qtyMap.set(s.inventory_order_id, (qtyMap.get(s.inventory_order_id) ?? 0) + (s.qty_sold ?? 0));
-      if (s.sale_total != null) {
-        saleMap.set(s.inventory_order_id, (saleMap.get(s.inventory_order_id) ?? 0) + s.sale_total);
+      const revenue = s.payout_total ?? s.sale_total;
+      if (revenue != null) {
+        saleMap.set(s.inventory_order_id, (saleMap.get(s.inventory_order_id) ?? 0) + revenue);
       }
     }
     setSoldQtyByOrderId(qtyMap);
