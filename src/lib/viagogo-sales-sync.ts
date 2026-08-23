@@ -3170,7 +3170,7 @@ export async function syncLystedSalesInbox({
       buyer_email: "",
       qty_sold: lystedRaw.qtySold,
       price_per_ticket: lystedRaw.pricePerTicket,  // original USD per-ticket price
-      sale_total: gbpSaleTotal,
+      sale_total: gbpPayoutTotal,
       payout_total: gbpPayoutTotal,
       currency: "USD",
       section: lystedRaw.section,
@@ -3281,7 +3281,7 @@ export async function syncLystedSalesOutlookInbox({
       buyer_email: "",
       qty_sold: lystedRaw.qtySold,
       price_per_ticket: lystedRaw.pricePerTicket,
-      sale_total: gbpSaleTotal,
+      sale_total: gbpPayoutTotal,
       payout_total: gbpPayoutTotal,
       currency: "USD",
       section: lystedRaw.section,
@@ -3442,7 +3442,7 @@ export async function syncLystedSalesImapInbox({
               buyer_email: "",
               qty_sold: lystedRaw.qtySold,
               price_per_ticket: lystedRaw.pricePerTicket,
-              sale_total: gbpSaleTotal,
+              sale_total: gbpPayoutTotal,
               payout_total: gbpPayoutTotal,
               currency: "USD",
               section: lystedRaw.section,
@@ -3582,7 +3582,7 @@ export async function processSingleSaleEmail({
     existingSale = await findExistingLystedSale(supabase, { userId, externalSaleId: lystedRaw.externalSaleId, sourceMessageId });
     const gbpSaleTotal = await convertToGbpAmount(lystedRaw.saleTotal, "USD");
     const gbpPayoutTotal = await convertToGbpAmount(lystedRaw.payoutTotal, "USD");
-    parsed = { ...lystedRaw, saleTotal: gbpSaleTotal, payoutTotal: gbpPayoutTotal };
+    parsed = { ...lystedRaw, saleTotal: gbpPayoutTotal, payoutTotal: gbpPayoutTotal };
     saleCurrency = "USD";
   }
 
