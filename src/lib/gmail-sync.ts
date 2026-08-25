@@ -2217,29 +2217,24 @@ function parseAtgBookingRef(subject: string, text: string): string {
 }
 
 function parseAtgEvent(text: string): string {
-  // Event name is a bold heading near the top of the stripped HTML — first line
-  // that looks like an artist/show name (before "Kings Theatre" / venue line).
+  // ATG email structure (after HTML strip): ... [Event Name] \n [Venue] \n [Date • Time] ...
+  // Anchor on the date line and go back 2 lines — robust against Gmail forwarding headers.
   const lines = text.split(/\n/).map((l) => l.trim()).filter(Boolean);
-  for (let i = 0; i < lines.length; i++) {
-    const l = lines[i];
-    if (/^Order\s+\d+/i.test(l)) continue;
-    if (/you'?re\s+in/i.test(l)) continue;
-    if (/eTickets?|PDF|attachment|phone|arrival/i.test(l)) continue;
-    if (/hotel|accommodation|book\s+your\s+stay/i.test(l)) continue;
-    if (/service\s+fee|order\s+total|billing|payments?/i.test(l)) continue;
-    if (/^[$£€][\d,]+\.\d{2}$/.test(l)) continue;
-    if (l.length > 5 && l.length < 80) return l;
-  }
+  const dateIdx = lines.findIndex((l) =>
+    /(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday),\s+\w+\s+\d{1,2},?\s+\d{4}/i.test(l),
+  );
+  if (dateIdx >= 2) return lines[dateIdx - 2];
+  if (dateIdx === 1) return lines[dateIdx - 1];
   return "";
 }
 
 function parseAtgVenue(text: string): string {
-  // Venue appears immediately after the event name line in the ticket block
+  // Venue is always the line immediately before the date line.
   const lines = text.split(/\n/).map((l) => l.trim()).filter(Boolean);
-  const eventName = parseAtgEvent(text);
-  if (!eventName) return "";
-  const idx = lines.findIndex((l) => l === eventName);
-  if (idx >= 0 && idx < lines.length - 1) return lines[idx + 1];
+  const dateIdx = lines.findIndex((l) =>
+    /(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday),\s+\w+\s+\d{1,2},?\s+\d{4}/i.test(l),
+  );
+  if (dateIdx >= 1) return lines[dateIdx - 1];
   return "";
 }
 
@@ -2282,13 +2277,13 @@ function parseAtgSeats(text: string): [string, string] {
 }
 
 function parseAtgQty(text: string): string {
-  // Count how many ticket price lines appear (each ticket = one "$XX.XX" in ticket block)
-  // before the "Service Fee" line — more reliable than regex on GA repeated rows.
+  // Count ticket price lines before "Service Fee" — each ticket = one "$XX.XX".
+  // Exclude $0.00 (eTicket delivery fee line).
   const serviceFeeIdx = text.search(/Service\s+Fee/i);
   const block = serviceFeeIdx > 0 ? text.slice(0, serviceFeeIdx) : text;
-  const matches = block.match(/\$[\d,]+\.\d{2}/g);
-  if (matches && matches.length > 0) return String(matches.length);
-  return "";
+  const matches = (block.match(/\$[\d,]+\.\d{2}/g) ?? [])
+    .filter((m) => parseFloat(m.replace(/[$,]/g, "")) > 0);
+  return matches.length > 0 ? String(matches.length) : "";
 }
 
 function parseAtgTotal(text: string): string {
