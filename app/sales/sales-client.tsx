@@ -1324,9 +1324,46 @@ export default function SalesClient() {
     if (error) {
       setMessage("Bulk update failed: " + error.message);
     } else {
-      setSales(prev => prev.map(s => ids.includes(s.id) ? { ...s, ...updates } : s));
       setSelectedSaleIds(new Set());
       setMessage(`${ids.length} sale${ids.length === 1 ? "" : "s"} updated`);
+      await loadSales(false, showArchived, showDeleted);
+    }
+    setMassUpdating(false);
+  }
+
+  async function applyPaidAndTransferred() {
+    if (selectedSaleIds.size === 0 || massUpdating) return;
+    setMassUpdating(true);
+    const now = new Date();
+    const paidDate = now.toISOString().slice(0, 10);
+    const pastIds: number[] = [];
+    const activeIds: number[] = [];
+    for (const id of [...selectedSaleIds]) {
+      const sale = sales.find((s) => s.id === id);
+      const evDate = sale?.event_date ? new Date(sale.event_date) : null;
+      if (evDate && evDate < now) pastIds.push(id);
+      else activeIds.push(id);
+    }
+    const base = { payment_status: "Paid", transfer_status: "Transfer Completed", payout_date: paidDate };
+    const errs: string[] = [];
+    if (pastIds.length > 0) {
+      const { error } = await supabase.from("sales").update({ ...base, sale_status: "Archived" }).in("id", pastIds);
+      if (error) errs.push(error.message);
+      else setSales((prev) => prev.map((s) => pastIds.includes(s.id) ? { ...s, ...base, sale_status: "Archived" } : s));
+    }
+    if (activeIds.length > 0) {
+      const { error } = await supabase.from("sales").update({ ...base, sale_status: "Paid" }).in("id", activeIds);
+      if (error) errs.push(error.message);
+      else setSales((prev) => prev.map((s) => activeIds.includes(s.id) ? { ...s, ...base, sale_status: "Paid" } : s));
+    }
+    const total = pastIds.length + activeIds.length;
+    if (errs.length > 0) {
+      setMessage("Error: " + errs.join(", "));
+    } else {
+      setSelectedSaleIds(new Set());
+      const archived = pastIds.length > 0 ? ` — ${pastIds.length} archived` : "";
+      setMessage(`${total} sale${total === 1 ? "" : "s"} paid out & transferred${archived}`);
+      await loadSales(false, showArchived, showDeleted);
     }
     setMassUpdating(false);
   }
@@ -1381,6 +1418,30 @@ export default function SalesClient() {
             <button className="secondary-button" onClick={() => void exportSalesCSV()} type="button">
               Export CSV
             </button>
+            <button
+              type="button"
+              onClick={() => {
+                const allIds = new Set(filteredSales.map(s => s.id));
+                const allSelected = filteredSales.length > 0 && filteredSales.every(s => selectedSaleIds.has(s.id));
+                setSelectedSaleIds(allSelected ? new Set() : allIds);
+              }}
+              style={{
+                display: "flex", alignItems: "center", gap: 6,
+                background: filteredSales.length > 0 && filteredSales.every(s => selectedSaleIds.has(s.id))
+                  ? "rgba(155,92,255,0.25)" : "rgba(155,92,255,0.1)",
+                border: "1px solid rgba(155,92,255,0.4)",
+                borderRadius: 8,
+                padding: "6px 13px",
+                cursor: "pointer",
+                color: "#c084fc",
+                fontSize: 12, fontWeight: 700,
+                letterSpacing: "0.01em",
+              }}
+            >
+              {filteredSales.length > 0 && filteredSales.every(s => selectedSaleIds.has(s.id))
+                ? "✓ Deselect All"
+                : `☐ Select All (${filteredSales.length})`}
+            </button>
             {!showArchived && !showDeleted && (
               <>
                 {/* Scan Sales button hidden — inbound forwarding is used instead */}
@@ -1389,19 +1450,6 @@ export default function SalesClient() {
                     {scanning ? "Scanning..." : "Scan Sales"}
                   </button>
                 )}
-                <button
-                  className="secondary-button"
-                  type="button"
-                  onClick={() => {
-                    const allIds = new Set(filteredSales.map(s => s.id));
-                    const allSelected = filteredSales.length > 0 && filteredSales.every(s => selectedSaleIds.has(s.id));
-                    setSelectedSaleIds(allSelected ? new Set() : allIds);
-                  }}
-                >
-                  {filteredSales.length > 0 && filteredSales.every(s => selectedSaleIds.has(s.id))
-                    ? "Deselect All"
-                    : `Select All (${filteredSales.length})`}
-                </button>
                 <button className="secondary-button" onClick={() => setShowImportModal(true)} type="button">
                   Import CSV
                 </button>
@@ -1710,13 +1758,27 @@ export default function SalesClient() {
                       <div className="inventory-ticket-stack sales-ticket-grid">
                         <div className="inventory-ticket-header">
                           <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                            <input
-                              type="checkbox"
-                              checked={group.sales.length > 0 && group.sales.every(s => selectedSaleIds.has(s.id))}
-                              onChange={() => toggleGroupSelection(group.sales, group.sales.every(s => selectedSaleIds.has(s.id)))}
-                              onClick={e => e.stopPropagation()}
-                              style={{ width: 15, height: 15, cursor: "pointer", accentColor: "#9b5cff", flexShrink: 0 }}
-                            />
+                            {(() => {
+                              const groupChecked = group.sales.length > 0 && group.sales.every(s => selectedSaleIds.has(s.id));
+                              return (
+                                <button
+                                  type="button"
+                                  onClick={(e) => { e.stopPropagation(); toggleGroupSelection(group.sales, groupChecked); }}
+                                  style={{
+                                    width: 22, height: 22, flexShrink: 0,
+                                    borderRadius: 6,
+                                    border: groupChecked ? "2px solid #9b5cff" : "2px solid rgba(255,255,255,0.2)",
+                                    background: groupChecked ? "rgba(155,92,255,0.3)" : "rgba(255,255,255,0.04)",
+                                    cursor: "pointer",
+                                    display: "flex", alignItems: "center", justifyContent: "center",
+                                    transition: "all 150ms",
+                                    color: "#c084fc", fontSize: 13, fontWeight: 700, lineHeight: 1,
+                                  }}
+                                >
+                                  {groupChecked ? "✓" : ""}
+                                </button>
+                              );
+                            })()}
                             Seat
                           </span>
                           <span>Platform</span>
@@ -1747,13 +1809,22 @@ export default function SalesClient() {
                                 style={{ cursor: "pointer", background: isChecked ? "rgba(155,92,255,0.07)" : undefined }}
                               >
                                 <div style={{ display: "flex", flexDirection: "row", alignItems: "center", gap: 8 }}>
-                                  <input
-                                    type="checkbox"
-                                    checked={isChecked}
-                                    onChange={() => toggleSaleSelection(sale.id)}
-                                    onClick={e => e.stopPropagation()}
-                                    style={{ width: 15, height: 15, cursor: "pointer", accentColor: "#9b5cff", flexShrink: 0 }}
-                                  />
+                                  <button
+                                    type="button"
+                                    onClick={(e) => { e.stopPropagation(); toggleSaleSelection(sale.id); }}
+                                    style={{
+                                      width: 22, height: 22, flexShrink: 0,
+                                      borderRadius: 6,
+                                      border: isChecked ? "2px solid #9b5cff" : "2px solid rgba(255,255,255,0.2)",
+                                      background: isChecked ? "rgba(155,92,255,0.3)" : "rgba(255,255,255,0.04)",
+                                      cursor: "pointer",
+                                      display: "flex", alignItems: "center", justifyContent: "center",
+                                      transition: "all 150ms",
+                                      color: "#c084fc", fontSize: 13, fontWeight: 700, lineHeight: 1,
+                                    }}
+                                  >
+                                    {isChecked ? "✓" : ""}
+                                  </button>
                                   <div className="inventory-ticket-seat">
                                     <strong>{formatFullSeatLabel(sale.section, sale.row, sale.seat_from, sale.seat_to)}</strong>
                                     <span className="sale-qty-badge">{sale.qty_sold ?? 1} ticket{(sale.qty_sold ?? 1) !== 1 ? "s" : ""}</span>
@@ -1974,21 +2045,62 @@ export default function SalesClient() {
             <button
               type="button"
               disabled={massUpdating}
-              onClick={() => void applyMassUpdate({ sale_status: "Archived" })}
+              onClick={() => void applyPaidAndTransferred()}
               style={{
                 display: "flex", alignItems: "center", gap: 5,
-                background: "rgba(255,255,255,0.06)",
-                border: "1px solid rgba(255,255,255,0.15)",
+                background: "rgba(74,222,128,0.3)",
+                border: "1px solid rgba(74,222,128,0.6)",
                 borderRadius: 999,
-                padding: "6px 12px",
+                padding: "6px 14px",
                 cursor: massUpdating ? "not-allowed" : "pointer",
-                color: "rgba(255,255,255,0.5)",
-                fontSize: 12, fontWeight: 600,
+                color: "#86efac",
+                fontSize: 12, fontWeight: 700,
                 opacity: massUpdating ? 0.5 : 1,
               }}
             >
-              Archive
+              ✓£ Paid Out &amp; Transferred
             </button>
+
+            {!showArchived && (
+              <button
+                type="button"
+                disabled={massUpdating}
+                onClick={() => void applyMassUpdate({ sale_status: "Archived" })}
+                style={{
+                  display: "flex", alignItems: "center", gap: 5,
+                  background: "rgba(255,255,255,0.06)",
+                  border: "1px solid rgba(255,255,255,0.15)",
+                  borderRadius: 999,
+                  padding: "6px 12px",
+                  cursor: massUpdating ? "not-allowed" : "pointer",
+                  color: "rgba(255,255,255,0.5)",
+                  fontSize: 12, fontWeight: 600,
+                  opacity: massUpdating ? 0.5 : 1,
+                }}
+              >
+                ↓ Archive
+              </button>
+            )}
+            {showArchived && (
+              <button
+                type="button"
+                disabled={massUpdating}
+                onClick={() => void applyMassUpdate({ sale_status: "Sold – Awaiting Transfer" })}
+                style={{
+                  display: "flex", alignItems: "center", gap: 5,
+                  background: "rgba(99,179,237,0.1)",
+                  border: "1px solid rgba(99,179,237,0.3)",
+                  borderRadius: 999,
+                  padding: "6px 12px",
+                  cursor: massUpdating ? "not-allowed" : "pointer",
+                  color: "#63b3ed",
+                  fontSize: 12, fontWeight: 600,
+                  opacity: massUpdating ? 0.5 : 1,
+                }}
+              >
+                ↑ Unarchive
+              </button>
+            )}
 
             <div style={{ width: 1, height: 20, background: "rgba(255,255,255,0.12)" }} />
 

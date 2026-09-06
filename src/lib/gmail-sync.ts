@@ -119,9 +119,13 @@ export async function processNormalisedEmail(
   // HTML-only emails (e.g. AXS US) have an empty text body — fall back to
   // stripped HTML so parsers can find confirmation numbers and other fields.
   const strippedHtml = email.htmlBody ? stripHtml(email.htmlBody) : "";
-  const bodyText = (email.body || "").trim().length >= strippedHtml.trim().length
+  const rawBodyText = (email.body || "").trim().length >= strippedHtml.trim().length
     ? email.body
     : strippedHtml;
+  // When a user forwards their confirmation email to the inbound address, Gmail
+  // prepends "---------- Forwarded message ---------\nFrom: ...\nDate: ..." which
+  // confuses all parsers. Strip it so they see the original email content only.
+  const bodyText = extractForwardedContent(rawBodyText);
   const combined = cleanText(`${email.subject}\n${bodyText}`);
 
   const axs = isAxsEmail(email.from, email.subject);
@@ -683,6 +687,21 @@ export function cleanText(text: string) {
     .trim();
 }
 
+// If the body contains a Gmail/Outlook forwarding header block, return the
+// content that follows it (the original email). Returns text unchanged if no
+// header is found. This lets ALL parsers see the original email content rather
+// than the forwarding wrapper.
+function extractForwardedContent(text: string): string {
+  // Gmail:   "---------- Forwarded message ---------\nFrom: ...\nDate: ...\nSubject: ...\nTo: ...\n\n[content]"
+  // Outlook: "-----Original Message-----\nFrom: ...\nSent: ...\nTo: ...\nSubject: ...\n\n[content]"
+  const m = text.match(
+    /-{3,}\s*(?:Forwarded message|Original Message)\s*-{3,}[\s\S]*?(?:\n\n|\r\n\r\n)([\s\S]*)/i,
+  );
+  if (!m) return text;
+  const extracted = (m[1] || "").trim();
+  return extracted.length > 50 ? extracted : text;
+}
+
 function getPartCte(part: GmailPayload): string {
   return part.headers?.find(
     (h) => h.name.toLowerCase() === "content-transfer-encoding"
@@ -1094,6 +1113,9 @@ function parseAxsBookingRef(text: string) {
   return (
     text.match(/confirmation\s+number\s+is\s+\*?(\d+)\*?/i)?.[1] ||
     text.match(/order\s+number\s+\*?(\d+)\*?/i)?.[1] ||
+    // "Order #1150295712" or "# 1150295712" (newer AXS email template)
+    text.match(/order\s*#\s*(\d{6,})/i)?.[1] ||
+    text.match(/#\s+(\d{7,})/)?.[1] ||
     ""
   );
 }
@@ -1108,13 +1130,16 @@ function parseAxsEvent(subject: string) {
 }
 
 function parseAxsDate(text: string) {
+  const fullDay = "(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)";
+  const shortDay = "(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)";
+  const anyDay = `(?:${fullDay}|${shortDay})`;
   return (
-    // UK/EU format: "Saturday, 29 Aug 2026, 15:00"
+    // UK/EU format: "Saturday, 29 Aug 2026, 15:00" or "Tue 24 November, 2026 - 18:00"
     text.match(
-      /((?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)[,\s]+\d{1,2}\s+[A-Z][a-z]+\s+\d{4}[^A-Z\n]{0,10}\d{1,2}:\d{2})/i,
+      new RegExp(`(${anyDay}[,\\s]+\\d{1,2}\\s+[A-Z][a-z]+[,\\s]+\\d{4}[^A-Z\\n]{0,15}\\d{1,2}:\\d{2})`, "i"),
     )?.[1]?.trim() ||
     text.match(
-      /((?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)[,\s]+\d{1,2}\s+[A-Z][a-z]+\s+\d{4})/i,
+      new RegExp(`(${anyDay}[,\\s]+\\d{1,2}\\s+[A-Z][a-z]+\\s+\\d{4})`, "i"),
     )?.[1]?.trim() ||
     // US format: "scheduled on 8/29/2026 3:00 PM"
     text.match(/scheduled\s+on\s+(\d{1,2}\/\d{1,2}\/\d{4}\s+\d{1,2}:\d{2}(?::\d{2})?\s*[AP]M)/i)?.[1]?.trim() ||
@@ -1135,13 +1160,11 @@ function isVenueNoise(s: string): boolean {
 }
 
 function parseAxsVenue(text: string) {
+  const datePattern =
+    /(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday|Mon|Tue|Wed|Thu|Fri|Sat|Sun)[,\s]+\d{1,2}\s+[A-Z][a-z]+[,\s]+\d{4}/i;
   const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   for (let i = 0; i < lines.length; i++) {
-    if (
-      /(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)[,\s]+\d{1,2}\s+[A-Z][a-z]+\s+\d{4}/i.test(
-        lines[i],
-      )
-    ) {
+    if (datePattern.test(lines[i])) {
       // Look ahead up to 3 lines; skip noise (image URLs, empty lines) to find real venue text
       for (let j = i + 1; j < Math.min(i + 4, lines.length); j++) {
         const candidate = lines[j]
@@ -1150,11 +1173,15 @@ function parseAxsVenue(text: string) {
           .trim();
         if (!candidate) continue;
         if (/^\d+\s+Ticket/i.test(candidate)) break;  // hit ticket-qty line — stop
+        if (/^(?:Floor|GA|Block|Sec|Row|Seat|AXS|£|\$)/i.test(candidate)) break; // ticket detail — stop
         if (isVenueNoise(candidate)) continue;          // pure noise line — skip
         return candidate;
       }
     }
   }
+  // Fallback: AXS template data dump "VenueName:First Direct Bank Arena]]"
+  const venueDump = text.match(/VenueName:(.+?)\]\]/i)?.[1]?.trim();
+  if (venueDump) return venueDump;
   return "";
 }
 
@@ -1164,6 +1191,11 @@ function parseAxsQty(text: string) {
     text.match(/(\d+)\s+Tickets?\b/i)?.[1] ||
     // US table format: "2 Artist Presale" / "2 General Admission"
     text.match(/(\d+)\s+(?:Artist|VIP|Standard|Floor|Premium|General)\s+(?:Presale|Admission|Ticket)/i)?.[1] ||
+    // Template dump: "Seats:GA x 4" or HTML: "(£61.00 x4)"
+    text.match(/Seats:[A-Z]+\s+x\s+(\d+)/i)?.[1] ||
+    text.match(/£[\d.]+\s+x\s*(\d+)/i)?.[1] ||
+    // Template dump: "TotalTickets:%!s(float64=3D4)"
+    text.match(/TotalTickets[^=]*=3D(\d+)/i)?.[1] ||
     ""
   );
 }
@@ -1181,7 +1213,13 @@ function parseAxsSection(text: string) {
   // US GA format: "General Admission 4"
   const ga = text.match(/General\s+Admission(?:\s+\d+)?/i)?.[0]?.trim();
   if (ga) return ga;
-  // Plain text: "Block 110" / "Section A2"
+  // "Sec Floor Standing" label in email body (multi-word)
+  const secLabel = text.match(/\bSec\s+([A-Za-z][A-Za-z0-9 ]+?)(?:\n|$|\s{2})/i)?.[1]?.trim();
+  if (secLabel) return secLabel;
+  // Template dump: "Section:Floor Standing" (multi-word section names)
+  const dumpSection = text.match(/\bSection:([A-Za-z][A-Za-z0-9 ]+?)(?:\s+(?:Taxes|Total|Type|Ticket|IsGA|Neighbor|Offer|\[))/i)?.[1]?.trim();
+  if (dumpSection) return dumpSection;
+  // Plain text: "Block 110" / "Section A2" — single word only as last resort
   return text.match(/\b(?:Block|Section|Stand|Floor)\s+([A-Z0-9]+)\b/i)?.[1]?.trim() || "";
 }
 
@@ -1887,7 +1925,7 @@ function isSeeTicketsUsEmail(from: string, subject: string = "", text: string = 
   if (from.toLowerCase().includes("seetickets.us")) return true;
   const s = subject.toLowerCase().replace(/^(?:(?:fwd?|fw)\s*:\s*)*/i, "");
   const t = text.toLowerCase();
-  return s.startsWith("here are your tickets for") && t.includes("seetickets.us");
+  return s.startsWith("here are your tickets for") && (t.includes("seetickets.us") || t.includes("eventim usa"));
 }
 
 function parseSeeTicketsUsBookingRef(text: string): string {
@@ -1965,9 +2003,17 @@ function parseRahEvent(text: string): string {
   const anchor = text.search(/Item\(s\)\s+Quantity\s+Price/i);
   const haystack = anchor >= 0 ? text.slice(anchor) : text;
   const lines = haystack.split(/\n/).map((l) => l.trim()).filter(Boolean);
-  for (const line of lines) {
-    const m = line.match(/^(.+?)(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\s+\d{1,2}\s+/i);
+  const dayPat = /^(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\s+\d{1,2}\s+/i;
+  const skipPat = /^(?:Item|Qty|Quantity|Price|Dear|Thank|Order|Add to|View|Forward|Standard|Restoration|Your)/i;
+  for (let i = 0; i < lines.length; i++) {
+    // Same line: "Attack On Titan Saturday 17 October..."
+    const m = lines[i].match(/^(.+?)\s+(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\s+\d{1,2}\s+/i);
     if (m) return m[1].trim();
+    // Separate lines: event name line followed by date line (h3 block → own line)
+    if (dayPat.test(lines[i]) && i > 0) {
+      const prev = lines[i - 1];
+      if (prev && prev.length > 1 && !skipPat.test(prev)) return prev;
+    }
   }
   return "";
 }
@@ -1983,10 +2029,13 @@ function parseRahDate(text: string): string {
 function parseRahSection(text: string): string {
   const lines = text.split(/\n/).map((l) => l.trim()).filter(Boolean);
   for (let i = 0; i < lines.length; i++) {
-    const m = lines[i].match(/^([A-Za-z][^\n]*?)\s+Row\s+\d+\s+Seat\s+\d+/i);
-    if (m) {
-      const suffix = m[1].trim();
-      // Look back for a tier name; strip URL prefix (e.g. "https://...>Rausing" → "Rausing")
+    // New RAH format: "Second Tier 34 Row   Seats 1, 2" — Row number may be absent
+    const mNew = lines[i].match(/^([A-Za-z][^\n]*?)\s+Row\s+(?:\d+\s+)?Seats?\s+\d/i);
+    if (mNew) return mNew[1].trim();
+    // Old RAH format: "Stalls A Row 5 Seat 12" — Row number present, singular Seat
+    const mOld = lines[i].match(/^([A-Za-z][^\n]*?)\s+Row\s+\d+\s+Seat\s+\d+/i);
+    if (mOld) {
+      const suffix = mOld[1].trim();
       for (let j = i - 1; j >= Math.max(0, i - 3); j--) {
         const cleanPrev = lines[j].replace(/^.*?>\s*/, "").trim();
         if (cleanPrev && /^[A-Za-z]/.test(cleanPrev) && cleanPrev.length < 40 && !/^(?:Dear|Thank|Your|Order|Item|Add|View|Forward|ticket)/i.test(cleanPrev)) {

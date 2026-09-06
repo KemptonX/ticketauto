@@ -838,6 +838,9 @@ export default function OrdersClient() {
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [bulkStatus, setBulkStatus] = useState("Listed");
   const [merging, setMerging] = useState(false);
+  const [showBulkEdit, setShowBulkEdit] = useState(false);
+  const [bulkEditValues, setBulkEditValues] = useState({ event_name: "", venue: "", section: "", row: "", seat_from: "", seat_to: "", event_date: "" });
+  const [bulkEditing, setBulkEditing] = useState(false);
   const [copiedGroupId, setCopiedGroupId] = useState<string | null>(null);
 
   const multiShareStats = useMemo((): MultiSaleStats | null => {
@@ -935,6 +938,24 @@ export default function OrdersClient() {
     setOrders((current) => current.map((o) => selectedIds.has(o.id) ? { ...o, listing_status: "Personal" } : o));
     clearSelection();
     setMessage(`${ids.length} ticket${ids.length !== 1 ? "s" : ""} marked personal`);
+  }
+
+  async function bulkApplyFieldEdits() {
+    const ids = [...selectedIds];
+    if (ids.length === 0 || bulkEditing) return;
+    const updates: Record<string, string> = {};
+    for (const [key, val] of Object.entries(bulkEditValues)) {
+      if (val.trim()) updates[key] = key === "event_date" ? new Date(val).toISOString() : val.trim();
+    }
+    if (Object.keys(updates).length === 0) { setShowBulkEdit(false); return; }
+    setBulkEditing(true);
+    const { error } = await supabase.from("orders").update(updates).in("id", ids);
+    if (error) { setMessage(error.message); setBulkEditing(false); return; }
+    setOrders((prev) => prev.map((o) => selectedIds.has(o.id) ? { ...o, ...updates } : o));
+    setBulkEditValues({ event_name: "", venue: "", section: "", row: "", seat_from: "", seat_to: "", event_date: "" });
+    setShowBulkEdit(false);
+    setBulkEditing(false);
+    setMessage(`${ids.length} ticket${ids.length !== 1 ? "s" : ""} updated`);
   }
 
   async function bulkIgnore() {
@@ -1381,6 +1402,13 @@ export default function OrdersClient() {
                 <button className="secondary-button" type="button" onClick={selectAll}>
                   Select all ({filteredOrders.length})
                 </button>
+                <button
+                  className="secondary-button"
+                  type="button"
+                  onClick={() => { setBulkEditValues({ event_name: "", venue: "", section: "", row: "", seat_from: "", seat_to: "", event_date: "" }); setShowBulkEdit(true); }}
+                >
+                  ✏️ Edit Fields
+                </button>
                 {(viewMode === "archived" || viewMode === "personal") && (
                   <button className="secondary-button" type="button" onClick={() => void bulkRestore()}>
                     Restore selected
@@ -1612,7 +1640,7 @@ export default function OrdersClient() {
                               <th>Ref</th>
                               <th>Seats</th>
                               <th>Account</th>
-                              <th>Qty</th>
+                              <th>Sold/Qty</th>
                               <th>Cost</th>
                               <th>Sold For</th>
                               <th>Profit</th>
@@ -1661,7 +1689,9 @@ export default function OrdersClient() {
                                       {order.account_email || "—"}
                                     </span>
                                   </td>
-                                  <td>{order.qty_bought ?? "—"}</td>
+                                  <td>
+                                    <span className="mono-text">{soldQtyByOrderId.get(order.id) ?? 0}/{order.qty_bought ?? "—"}</span>
+                                  </td>
                                   <td>{formatCurrency(order.total_cost)}</td>
                                   <td onClick={(e) => e.stopPropagation()}>
                                     <input
@@ -1869,7 +1899,7 @@ export default function OrdersClient() {
                 <input className="field" type="number" min="1" value={newTicket.qty_bought} onChange={(e) => setNewTicket((t) => ({ ...t, qty_bought: Number(e.target.value) }))} />
               </label>
               <label>
-                <span>Buy cost (£)</span>
+                <span>Total cost (£)</span>
                 <input className="field" type="number" step="0.01" min="0" placeholder="0.00" value={newTicket.total_cost} onChange={(e) => setNewTicket((t) => ({ ...t, total_cost: e.target.value }))} />
               </label>
               <label>
@@ -2101,7 +2131,7 @@ export default function OrdersClient() {
                 />
               </label>
               <label>
-                <span>Buy cost</span>
+                <span>Total cost</span>
                 <input
                   className="field"
                   type="number"
@@ -2256,6 +2286,49 @@ export default function OrdersClient() {
 
       {shareMultiOpen && multiShareStats && (
         <ShareMultiBannerModal stats={multiShareStats} onClose={() => setShareMultiOpen(false)} />
+      )}
+
+      {showBulkEdit && (
+        <div
+          style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center" }}
+          onClick={() => setShowBulkEdit(false)}
+        >
+          <div
+            style={{ background: "#1a1a2e", border: "1px solid rgba(155,92,255,0.35)", borderRadius: 16, padding: 28, width: 420, maxWidth: "calc(100vw - 32px)" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h4 style={{ margin: "0 0 6px", fontSize: 16, fontWeight: 700 }}>Edit {selectedIds.size} ticket{selectedIds.size !== 1 ? "s" : ""}</h4>
+            <p style={{ margin: "0 0 20px", fontSize: 12, color: "rgba(255,255,255,0.45)" }}>Leave fields blank to keep their current values.</p>
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              {([
+                { key: "event_name", label: "Event Name", type: "text" },
+                { key: "venue",      label: "Venue",      type: "text" },
+                { key: "section",    label: "Section",    type: "text" },
+                { key: "row",        label: "Row",        type: "text" },
+                { key: "seat_from",  label: "Seat From",  type: "text" },
+                { key: "seat_to",    label: "Seat To",    type: "text" },
+                { key: "event_date", label: "Event Date", type: "datetime-local" },
+              ] as { key: keyof typeof bulkEditValues; label: string; type: string }[]).map(({ key, label, type }) => (
+                <label key={key} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                  <span style={{ fontSize: 11, fontWeight: 600, color: "rgba(255,255,255,0.5)", textTransform: "uppercase", letterSpacing: "0.06em" }}>{label}</span>
+                  <input
+                    className="field"
+                    type={type}
+                    value={bulkEditValues[key]}
+                    onChange={(e) => setBulkEditValues((prev) => ({ ...prev, [key]: e.target.value }))}
+                    placeholder={`Leave blank to keep current`}
+                  />
+                </label>
+              ))}
+            </div>
+            <div style={{ display: "flex", gap: 10, marginTop: 24, justifyContent: "flex-end" }}>
+              <button className="secondary-button" type="button" onClick={() => setShowBulkEdit(false)}>Cancel</button>
+              <button className="primary-button" type="button" disabled={bulkEditing} onClick={() => void bulkApplyFieldEdits()}>
+                {bulkEditing ? "Saving…" : `Apply to ${selectedIds.size} ticket${selectedIds.size !== 1 ? "s" : ""}`}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {shareGroupKey != null && (() => {

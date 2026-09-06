@@ -176,6 +176,12 @@ const IMPORT_FIELDS: ImportField[] = [
 
   // ── Sale Details ──
   {
+    key: "qty_sold", group: "Sale Details",
+    label: "Qty Sold",
+    aliases: ["qty sold", "quantity sold", "tickets sold", "qty_sold", "units sold", "sold qty"],
+    dataType: "number",
+  },
+  {
     key: "sale_status", group: "Sale Details",
     label: "Sale Status",
     aliases: ["sale status", "sale state", "order status"],
@@ -287,7 +293,7 @@ const ORDER_COLUMNS = new Set([
 ]);
 
 const SALE_COLUMNS = new Set([
-  "sale_status", "sold_at", "sale_total", "payout_total", "buyer_name",
+  "qty_sold", "sale_status", "sold_at", "sale_total", "payout_total", "buyer_name",
   "marketplace", "buyer_email", "external_sale_id", "notes",
   "transfer_status", "transfer_date", "transfer_deadline",
   "payment_status", "expected_payout_date", "payout_date",
@@ -1329,130 +1335,131 @@ export default function SettingsClient() {
       }
     }
 
-    let inserted = 0;
-    let updated = 0;
-    let skipped = 0;
-    let salesCreated = 0;
+    let inserted = 0, updated = 0, skipped = 0, salesCreated = 0;
 
-    for (const { rowNum, data } of toInsert) {
-      // Split into order-level and sale-level fields
-      const orderData: Record<string, unknown> = {};
-      const saleData: Record<string, unknown> = {};
-      for (const [key, value] of Object.entries(data)) {
-        if (ORDER_COLUMNS.has(key)) orderData[key] = value;
-        else if (SALE_COLUMNS.has(key)) saleData[key] = value;
-      }
+    // Process rows in parallel batches — ~10x faster than sequential
+    const BATCH = 10;
+    for (let b = 0; b < toInsert.length; b += BATCH) {
+      const batchResults = await Promise.all(
+        toInsert.slice(b, b + BATCH).map(async ({ rowNum, data }) => {
+          let rIns = 0, rUpd = 0, rSkip = 0, rSales = 0;
+          const rErrors: string[] = [];
+          const rFailed: FailedRow[] = [];
 
-      if (!orderData.booking_ref) orderData.booking_ref = crypto.randomUUID();
-      const rowType = getRowType({ ...saleData, ...data });
-      if (!orderData.listing_status) {
-        orderData.listing_status = (rowType !== "inventory_only" && rowType !== "skip") ? "Sold" : "Unlisted";
-      }
+          const orderData: Record<string, unknown> = {};
+          const saleData: Record<string, unknown> = {};
+          for (const [key, value] of Object.entries(data)) {
+            if (ORDER_COLUMNS.has(key)) orderData[key] = value;
+            else if (SALE_COLUMNS.has(key)) saleData[key] = value;
+          }
+          if (!orderData.booking_ref) orderData.booking_ref = crypto.randomUUID();
+          const rowType = getRowType({ ...saleData, ...data });
+          if (!orderData.listing_status) {
+            orderData.listing_status = (rowType !== "inventory_only" && rowType !== "skip") ? "Sold" : "Unlisted";
+          }
 
-      let orderId: string | null = null;
+          let orderId: string | null = null;
+          const { data: insertedOrder, error: orderError } = await supabase
+            .from("orders").insert(orderData).select("id").single();
 
-      // Insert order (or update on duplicate booking_ref)
-      const { data: insertedOrder, error: orderError } = await supabase
-        .from("orders")
-        .insert(orderData)
-        .select("id")
-        .single();
-
-      if (orderError) {
-        if (orderError.message.includes("duplicate") && orderData.booking_ref) {
-          const { booking_ref, ...updateData } = orderData as Record<string, unknown>;
-          const { data: updatedOrder, error: updateError } = await supabase
-            .from("orders")
-            .update(updateData)
-            .eq("booking_ref", booking_ref as string)
-            .select("id")
-            .single();
-          if (updateError) {
-            errors.push(`Row ${rowNum}: ${updateError.message}`);
-            skipped++;
+          if (orderError) {
+            if (orderError.message.includes("duplicate") && orderData.booking_ref) {
+              const { booking_ref, ...updateData } = orderData as Record<string, unknown>;
+              const { data: updatedOrder, error: updateError } = await supabase
+                .from("orders").update(updateData)
+                .eq("booking_ref", booking_ref as string).select("id").single();
+              if (updateError) {
+                rErrors.push(`Row ${rowNum}: ${updateError.message}`);
+                rFailed.push({ rowNum, reason: updateError.message, data });
+                rSkip++;
+              } else {
+                orderId = (updatedOrder as { id: string }).id;
+                rUpd++;
+              }
+            } else {
+              rErrors.push(`Row ${rowNum}: ${orderError.message}`);
+              rFailed.push({ rowNum, reason: orderError.message, data });
+              rSkip++;
+            }
           } else {
-            orderId = (updatedOrder as { id: string }).id;
-            updated++;
+            orderId = (insertedOrder as { id: string }).id;
+            rIns++;
           }
-        } else {
-          errors.push(`Row ${rowNum}: ${orderError.message}`);
-          failedRows.push({ rowNum, reason: orderError.message, data });
-          skipped++;
-        }
-      } else {
-        orderId = (insertedOrder as { id: string }).id;
-        inserted++;
-      }
 
-      // Create sale record if we have sale data and an actionable row type
-      if (orderId && rowType !== "inventory_only" && rowType !== "skip") {
-        let transferStatus = (saleData.transfer_status as string) ??
-          (saleData.transfer_date ? "Transfer Completed" : "Awaiting Transfer");
-        let paymentStatus = (saleData.payment_status as string) ??
-          (saleData.payout_date ? "Paid" : "Awaiting Payment");
+          if (orderId && rowType !== "inventory_only" && rowType !== "skip") {
+            let transferStatus = (saleData.transfer_status as string) ??
+              (saleData.transfer_date ? "Transfer Completed" : "Awaiting Transfer");
+            let paymentStatus = (saleData.payment_status as string) ??
+              (saleData.payout_date ? "Paid" : "Awaiting Payment");
+            let saleStatus = saleData.sale_status as string;
+            if (!saleStatus || saleStatus === "_skip") {
+              if (paymentStatus === "Paid") saleStatus = "Paid";
+              else if (transferStatus === "Transfer Completed") saleStatus = "Sold – Transfer Completed";
+              else saleStatus = "Sold – Awaiting Transfer";
+            }
 
-        let saleStatus = saleData.sale_status as string;
-        if (!saleStatus || saleStatus === "_skip") {
-          if (paymentStatus === "Paid") saleStatus = "Paid";
-          else if (transferStatus === "Transfer Completed") saleStatus = "Sold – Transfer Completed";
-          else saleStatus = "Sold – Awaiting Transfer";
-        }
+            const isFullySettled =
+              orderData.listing_status === "Archived" ||
+              saleStatus === "Paid" ||
+              (saleData.sale_status as string) === "Archived";
+            if (isFullySettled) {
+              saleStatus = "Paid";
+              transferStatus = "Transfer Completed";
+              paymentStatus = "Paid";
+            }
 
-        // Archived tickets or paid/archived sales → treat as fully settled
-        const isFullySettled =
-          orderData.listing_status === "Archived" ||
-          saleStatus === "Paid" ||
-          (saleData.sale_status as string) === "Archived";
-        if (isFullySettled) {
-          saleStatus = "Paid";
-          transferStatus = "Transfer Completed";
-          paymentStatus = "Paid";
-        }
+            const saleTotal = (saleData.sale_total as number) ?? (orderData.sold_total as number) ?? null;
+            const qtySold = (saleData.qty_sold as number) ?? (orderData.qty_bought as number) ?? 1;
+            const payoutTotal = (saleData.payout_total as number) ??
+              (paymentStatus === "Paid" ? saleTotal : null);
 
-        const saleTotal = (saleData.sale_total as number) ?? (orderData.sold_total as number) ?? null;
-        const qtySold = (saleData.qty_sold as number) ?? (orderData.qty_bought as number) ?? 1;
-        const payoutTotal = (saleData.payout_total as number) ??
-          (paymentStatus === "Paid" ? saleTotal : null);
+            const saleInsert: Record<string, unknown> = {
+              source: "import",
+              source_message_id: `import-${crypto.randomUUID()}`,
+              inventory_order_id: orderId,
+              event_name: orderData.event_name,
+              ...(orderData.event_date ? { event_date: orderData.event_date } : {}),
+              ...(orderData.venue ? { venue: orderData.venue } : {}),
+              ...(orderData.section ? { section: orderData.section } : {}),
+              ...(orderData.row ? { row: orderData.row } : {}),
+              ...(orderData.seat_from ? { seat_from: orderData.seat_from } : {}),
+              ...(orderData.seat_to ? { seat_to: orderData.seat_to } : {}),
+              qty_sold: qtySold,
+              sale_status: saleStatus,
+              ...(saleData.sold_at ? { sold_at: saleData.sold_at } : {}),
+              ...(saleTotal !== null ? { sale_total: saleTotal } : {}),
+              ...(payoutTotal !== null ? { payout_total: payoutTotal } : {}),
+              ...(saleData.buyer_name ? { buyer_name: saleData.buyer_name } : {}),
+              ...(saleData.marketplace ? { marketplace: saleData.marketplace } : {}),
+              ...(saleData.buyer_email ? { buyer_email: saleData.buyer_email } : {}),
+              ...(saleData.external_sale_id ? { external_sale_id: saleData.external_sale_id } : {}),
+              transfer_status: transferStatus,
+              ...(saleData.transfer_date ? { transfer_date: saleData.transfer_date } : {}),
+              ...(saleData.transfer_deadline ? { transfer_deadline: saleData.transfer_deadline } : {}),
+              payment_status: paymentStatus,
+              ...(saleData.expected_payout_date ? { expected_payout_date: saleData.expected_payout_date } : {}),
+              ...(saleData.payout_date ? { payout_date: saleData.payout_date } : {}),
+              ...(saleData.notes ? { notes: saleData.notes } : {}),
+            };
 
-        const saleInsert: Record<string, unknown> = {
-          source: "import",
-          source_message_id: `import-${crypto.randomUUID()}`,
-          inventory_order_id: orderId,
-          event_name: orderData.event_name,
-          ...(orderData.event_date ? { event_date: orderData.event_date } : {}),
-          ...(orderData.venue ? { venue: orderData.venue } : {}),
-          ...(orderData.section ? { section: orderData.section } : {}),
-          ...(orderData.row ? { row: orderData.row } : {}),
-          ...(orderData.seat_from ? { seat_from: orderData.seat_from } : {}),
-          ...(orderData.seat_to ? { seat_to: orderData.seat_to } : {}),
-          qty_sold: qtySold,
-          sale_status: saleStatus,
-          ...(saleData.sold_at ? { sold_at: saleData.sold_at } : {}),
-          ...(saleTotal !== null ? { sale_total: saleTotal } : {}),
-          ...(payoutTotal !== null ? { payout_total: payoutTotal } : {}),
-          ...(saleData.buyer_name ? { buyer_name: saleData.buyer_name } : {}),
-          ...(saleData.marketplace ? { marketplace: saleData.marketplace } : {}),
-          ...(saleData.buyer_email ? { buyer_email: saleData.buyer_email } : {}),
-          ...(saleData.external_sale_id ? { external_sale_id: saleData.external_sale_id } : {}),
-          transfer_status: transferStatus,
-          ...(saleData.transfer_date ? { transfer_date: saleData.transfer_date } : {}),
-          ...(saleData.transfer_deadline ? { transfer_deadline: saleData.transfer_deadline } : {}),
-          payment_status: paymentStatus,
-          ...(saleData.expected_payout_date ? { expected_payout_date: saleData.expected_payout_date } : {}),
-          ...(saleData.payout_date ? { payout_date: saleData.payout_date } : {}),
-          ...(saleData.notes ? { notes: saleData.notes } : {}),
-        };
-
-        const { error: saleError } = await supabase.from("sales").insert(saleInsert);
-        if (saleError) {
-          errors.push(`Row ${rowNum} (sale): ${saleError.message}`);
-        } else {
-          salesCreated++;
-          // Keep orders.sold_total in sync so dashboard profit is correct
-          if (!orderData.sold_total && saleTotal !== null) {
-            await supabase.from("orders").update({ sold_total: saleTotal }).eq("id", orderId);
+            const { error: saleError } = await supabase.from("sales").insert(saleInsert);
+            if (saleError) {
+              rErrors.push(`Row ${rowNum} (sale): ${saleError.message}`);
+            } else {
+              rSales++;
+              if (!orderData.sold_total && saleTotal !== null) {
+                await supabase.from("orders").update({ sold_total: saleTotal }).eq("id", orderId);
+              }
+            }
           }
-        }
+
+          return { inserted: rIns, updated: rUpd, skipped: rSkip, salesCreated: rSales, errors: rErrors, failedRows: rFailed };
+        })
+      );
+      for (const r of batchResults) {
+        inserted += r.inserted; updated += r.updated;
+        skipped += r.skipped; salesCreated += r.salesCreated;
+        errors.push(...r.errors); failedRows.push(...r.failedRows);
       }
     }
 
@@ -1483,104 +1490,116 @@ export default function SettingsClient() {
     let skipped = 0;
     const remainingFailed: FailedRow[] = [];
 
-    for (const row of failedEdits) {
-      const data = { ...row.data };
-      for (const [key, value] of Object.entries(fixedValues)) {
-        if (value && !(key in data)) data[key] = value;
-      }
+    const RBATCH = 10;
+    for (let b = 0; b < failedEdits.length; b += RBATCH) {
+      const batchResults = await Promise.all(
+        failedEdits.slice(b, b + RBATCH).map(async (row) => {
+          let rIns = 0, rUpd = 0, rSkip = 0, rSales = 0;
+          const rFailed: FailedRow[] = [];
+          const data = { ...row.data };
+          for (const [key, value] of Object.entries(fixedValues)) {
+            if (value && !(key in data)) data[key] = value;
+          }
 
-      const orderData: Record<string, unknown> = {};
-      const saleData: Record<string, unknown> = {};
-      for (const [key, value] of Object.entries(data)) {
-        if (ORDER_COLUMNS.has(key)) orderData[key] = value;
-        else if (SALE_COLUMNS.has(key)) saleData[key] = value;
-      }
-      if (!orderData.booking_ref) orderData.booking_ref = crypto.randomUUID();
-      const rowType = getRowType({ ...saleData, ...data });
-      if (!orderData.listing_status) {
-        orderData.listing_status = (rowType !== "inventory_only" && rowType !== "skip") ? "Sold" : "Unlisted";
-      }
+          const orderData: Record<string, unknown> = {};
+          const saleData: Record<string, unknown> = {};
+          for (const [key, value] of Object.entries(data)) {
+            if (ORDER_COLUMNS.has(key)) orderData[key] = value;
+            else if (SALE_COLUMNS.has(key)) saleData[key] = value;
+          }
+          if (!orderData.booking_ref) orderData.booking_ref = crypto.randomUUID();
+          const rowType = getRowType({ ...saleData, ...data });
+          if (!orderData.listing_status) {
+            orderData.listing_status = (rowType !== "inventory_only" && rowType !== "skip") ? "Sold" : "Unlisted";
+          }
 
-      let orderId: string | null = null;
-
-      const { data: insertedOrder, error } = await supabase.from("orders").insert(orderData).select("id").single();
-      if (error) {
-        if (error.message.includes("duplicate") && orderData.booking_ref) {
-          const { booking_ref, ...updateData } = orderData as Record<string, unknown>;
-          const { data: updatedOrder, error: updateError } = await supabase
-            .from("orders").update(updateData).eq("booking_ref", booking_ref as string).select("id").single();
-          if (updateError) {
-            remainingFailed.push({ ...row, reason: updateError.message, data });
-            skipped++;
+          let orderId: string | null = null;
+          const { data: insertedOrder, error } = await supabase.from("orders").insert(orderData).select("id").single();
+          if (error) {
+            if (error.message.includes("duplicate") && orderData.booking_ref) {
+              const { booking_ref, ...updateData } = orderData as Record<string, unknown>;
+              const { data: updatedOrder, error: updateError } = await supabase
+                .from("orders").update(updateData).eq("booking_ref", booking_ref as string).select("id").single();
+              if (updateError) {
+                rFailed.push({ ...row, reason: updateError.message, data });
+                rSkip++;
+              } else {
+                orderId = (updatedOrder as { id: string }).id;
+                rUpd++;
+              }
+            } else {
+              rFailed.push({ ...row, reason: error.message, data });
+              rSkip++;
+            }
           } else {
-            orderId = (updatedOrder as { id: string }).id;
-            updated++;
+            orderId = (insertedOrder as { id: string }).id;
+            rIns++;
           }
-        } else {
-          remainingFailed.push({ ...row, reason: error.message, data });
-          skipped++;
-        }
-      } else {
-        orderId = (insertedOrder as { id: string }).id;
-        inserted++;
-      }
 
-      if (orderId && rowType !== "inventory_only" && rowType !== "skip") {
-        let transferStatus = (saleData.transfer_status as string) ?? (saleData.transfer_date ? "Transfer Completed" : "Awaiting Transfer");
-        let paymentStatus = (saleData.payment_status as string) ?? (saleData.payout_date ? "Paid" : "Awaiting Payment");
-        let saleStatus = saleData.sale_status as string;
-        if (!saleStatus || saleStatus === "_skip") {
-          if (paymentStatus === "Paid") saleStatus = "Paid";
-          else if (transferStatus === "Transfer Completed") saleStatus = "Sold – Transfer Completed";
-          else saleStatus = "Sold – Awaiting Transfer";
-        }
-        const isFullySettled =
-          orderData.listing_status === "Archived" ||
-          saleStatus === "Paid" ||
-          (saleData.sale_status as string) === "Archived";
-        if (isFullySettled) {
-          saleStatus = "Paid";
-          transferStatus = "Transfer Completed";
-          paymentStatus = "Paid";
-        }
-        const saleTotal = (saleData.sale_total as number) ?? (orderData.sold_total as number) ?? null;
-        const qtySold = (saleData.qty_sold as number) ?? (orderData.qty_bought as number) ?? 1;
-        const payoutTotal = (saleData.payout_total as number) ?? (paymentStatus === "Paid" ? saleTotal : null);
-        const { error: saleError } = await supabase.from("sales").insert({
-          source: "import",
-          source_message_id: `import-${crypto.randomUUID()}`,
-          inventory_order_id: orderId,
-          event_name: orderData.event_name,
-          ...(orderData.event_date ? { event_date: orderData.event_date } : {}),
-          ...(orderData.venue ? { venue: orderData.venue } : {}),
-          ...(orderData.section ? { section: orderData.section } : {}),
-          ...(orderData.row ? { row: orderData.row } : {}),
-          ...(orderData.seat_from ? { seat_from: orderData.seat_from } : {}),
-          ...(orderData.seat_to ? { seat_to: orderData.seat_to } : {}),
-          qty_sold: qtySold,
-          sale_status: saleStatus,
-          ...(saleData.sold_at ? { sold_at: saleData.sold_at } : {}),
-          ...(saleTotal !== null ? { sale_total: saleTotal } : {}),
-          ...(payoutTotal !== null ? { payout_total: payoutTotal } : {}),
-          ...(saleData.buyer_name ? { buyer_name: saleData.buyer_name } : {}),
-          ...(saleData.marketplace ? { marketplace: saleData.marketplace } : {}),
-          ...(saleData.buyer_email ? { buyer_email: saleData.buyer_email } : {}),
-          ...(saleData.external_sale_id ? { external_sale_id: saleData.external_sale_id } : {}),
-          transfer_status: transferStatus,
-          ...(saleData.transfer_date ? { transfer_date: saleData.transfer_date } : {}),
-          ...(saleData.transfer_deadline ? { transfer_deadline: saleData.transfer_deadline } : {}),
-          payment_status: paymentStatus,
-          ...(saleData.expected_payout_date ? { expected_payout_date: saleData.expected_payout_date } : {}),
-          ...(saleData.payout_date ? { payout_date: saleData.payout_date } : {}),
-          ...(saleData.notes ? { notes: saleData.notes } : {}),
-        });
-        if (!saleError) {
-          salesCreated++;
-          // Keep orders.sold_total in sync so dashboard profit is correct
-          if (!orderData.sold_total && saleTotal !== null) {
-            await supabase.from("orders").update({ sold_total: saleTotal }).eq("id", orderId);
+          if (orderId && rowType !== "inventory_only" && rowType !== "skip") {
+            let transferStatus = (saleData.transfer_status as string) ?? (saleData.transfer_date ? "Transfer Completed" : "Awaiting Transfer");
+            let paymentStatus = (saleData.payment_status as string) ?? (saleData.payout_date ? "Paid" : "Awaiting Payment");
+            let saleStatus = saleData.sale_status as string;
+            if (!saleStatus || saleStatus === "_skip") {
+              if (paymentStatus === "Paid") saleStatus = "Paid";
+              else if (transferStatus === "Transfer Completed") saleStatus = "Sold – Transfer Completed";
+              else saleStatus = "Sold – Awaiting Transfer";
+            }
+            const isFullySettled =
+              orderData.listing_status === "Archived" ||
+              saleStatus === "Paid" ||
+              (saleData.sale_status as string) === "Archived";
+            if (isFullySettled) {
+              saleStatus = "Paid";
+              transferStatus = "Transfer Completed";
+              paymentStatus = "Paid";
+            }
+            const saleTotal = (saleData.sale_total as number) ?? (orderData.sold_total as number) ?? null;
+            const qtySold = (saleData.qty_sold as number) ?? (orderData.qty_bought as number) ?? 1;
+            const payoutTotal = (saleData.payout_total as number) ?? (paymentStatus === "Paid" ? saleTotal : null);
+            const { error: saleError } = await supabase.from("sales").insert({
+              source: "import",
+              source_message_id: `import-${crypto.randomUUID()}`,
+              inventory_order_id: orderId,
+              event_name: orderData.event_name,
+              ...(orderData.event_date ? { event_date: orderData.event_date } : {}),
+              ...(orderData.venue ? { venue: orderData.venue } : {}),
+              ...(orderData.section ? { section: orderData.section } : {}),
+              ...(orderData.row ? { row: orderData.row } : {}),
+              ...(orderData.seat_from ? { seat_from: orderData.seat_from } : {}),
+              ...(orderData.seat_to ? { seat_to: orderData.seat_to } : {}),
+              qty_sold: qtySold,
+              sale_status: saleStatus,
+              ...(saleData.sold_at ? { sold_at: saleData.sold_at } : {}),
+              ...(saleTotal !== null ? { sale_total: saleTotal } : {}),
+              ...(payoutTotal !== null ? { payout_total: payoutTotal } : {}),
+              ...(saleData.buyer_name ? { buyer_name: saleData.buyer_name } : {}),
+              ...(saleData.marketplace ? { marketplace: saleData.marketplace } : {}),
+              ...(saleData.buyer_email ? { buyer_email: saleData.buyer_email } : {}),
+              ...(saleData.external_sale_id ? { external_sale_id: saleData.external_sale_id } : {}),
+              transfer_status: transferStatus,
+              ...(saleData.transfer_date ? { transfer_date: saleData.transfer_date } : {}),
+              ...(saleData.transfer_deadline ? { transfer_deadline: saleData.transfer_deadline } : {}),
+              payment_status: paymentStatus,
+              ...(saleData.expected_payout_date ? { expected_payout_date: saleData.expected_payout_date } : {}),
+              ...(saleData.payout_date ? { payout_date: saleData.payout_date } : {}),
+              ...(saleData.notes ? { notes: saleData.notes } : {}),
+            });
+            if (!saleError) {
+              rSales++;
+              if (!orderData.sold_total && saleTotal !== null) {
+                await supabase.from("orders").update({ sold_total: saleTotal }).eq("id", orderId);
+              }
+            }
           }
-        }
+
+          return { inserted: rIns, updated: rUpd, skipped: rSkip, salesCreated: rSales, failed: rFailed };
+        })
+      );
+      for (const r of batchResults) {
+        inserted += r.inserted; updated += r.updated;
+        skipped += r.skipped; salesCreated += r.salesCreated;
+        remainingFailed.push(...r.failed);
       }
     }
 
