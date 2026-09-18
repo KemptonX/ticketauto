@@ -127,6 +127,11 @@ export async function processNormalisedEmail(
   // confuses all parsers. Strip it so they see the original email content only.
   const bodyText = extractForwardedContent(rawBodyText);
   const combined = cleanText(`${email.subject}\n${bodyText}`);
+  // Account extraction needs the RAW (unstripped) text — the forwarded-message header
+  // block that extractForwardedContent removes is exactly where a manual forward's
+  // "To: <original recipient>" line lives, which is the strongest signal of the real
+  // buyer account when the SMTP From/To headers just show the forwarder and the scan address.
+  const accountSearchText = cleanText(`${email.subject}\n${rawBodyText}`);
 
   const axs = isAxsEmail(email.from, email.subject);
   const intl = !axs && isIntlTmEmail(email.from, email.subject);
@@ -166,7 +171,7 @@ export async function processNormalisedEmail(
     return { action: "no_ref", bookingRef: null };
   }
 
-  const accountEmail = extractAccount(email.headers, combined) || fallbackAccountEmail;
+  const accountEmail = extractAccount(email.headers, accountSearchText) || fallbackAccountEmail;
   const existingOrder = await findExistingOrder(supabase, { bookingRef, userId });
 
   let section: string;
