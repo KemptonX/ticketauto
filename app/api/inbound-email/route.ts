@@ -161,6 +161,7 @@ function fmtSourceType(source: string | null | undefined): string {
     seatgeek: "SeatGeek",
     atg: "ATG Tickets",
     seetickets_us: "See Tickets",
+    pdc_ballot: "PDC Ballot",
   };
   return map[source ?? ""] ?? source ?? "Unknown";
 }

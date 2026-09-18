@@ -232,7 +232,7 @@ export async function processNormalisedEmail(
         qty = String(st - sf + 1);
       }
     }
-    sourceType = getSeeGigsSourceType(email.from, combined);
+    sourceType = isPdcBallotSubject(email.subject) ? "pdc_ballot" : getSeeGigsSourceType(email.from, combined);
     total = parseSeeGigsTotal(combined);
   } else if (rah) {
     section = parseRahSection(combined);
@@ -346,6 +346,9 @@ export async function processNormalisedEmail(
     if (error) {
       throw new Error(error.message);
     }
+    if (sourceType === "pdc_ballot") {
+      await ensurePdcMembershipCost(supabase, userId, orderData.account_email);
+    }
     return { action: "updated", bookingRef };
   }
 
@@ -356,6 +359,9 @@ export async function processNormalisedEmail(
   if (error) {
     if (error.code === "23505") return { action: "ignored", bookingRef };
     throw new Error(error.message);
+  }
+  if (sourceType === "pdc_ballot") {
+    await ensurePdcMembershipCost(supabase, userId, orderData.account_email);
   }
   return { action: "inserted", bookingRef };
 }
@@ -1844,6 +1850,49 @@ function isSeeGigsEmail(from: string, subject: string = "", text: string = ""): 
     // Ballot-allocation emails: "You've got 26/27 World Darts Championship tickets 129771432"
     /^you(?:'|’)ve got\s+.+\s+tickets\s+\d{6,}/i.test(s);
   return subjectMatches && (t.includes("gigsandtours.com") || t.includes("seetickets.com"));
+}
+
+// Ballot-allocation emails (PDC World Darts Championship etc.) require a paid membership
+// per account to enter, separate from the ticket price itself — flagged with its own
+// source_type so the membership-cost logic (see ensurePdcMembershipCost) can target
+// only these, not regular See Tickets/Gigs and Tours orders.
+function isPdcBallotSubject(subject: string): boolean {
+  const clean = subject.replace(/^(?:(?:fwd?|fw)\s*:\s*)*/i, "").trim();
+  return /^you(?:'|’)ve got\s+.+\s+tickets\s+\d{6,}/i.test(clean);
+}
+
+const PDC_MEMBERSHIP_COST = 60;
+const PDC_MEMBERSHIP_CATEGORY = "PDC Membership";
+
+// Membership is paid once per account regardless of how many tickets that account wins
+// (up to 2, each arriving as a separate email with its own booking ref) — so this logs a
+// one-off cost to the Costs page the first time we see a win from a given account, and
+// is a no-op on any subsequent win from that same account.
+async function ensurePdcMembershipCost(
+  supabase: SupabaseClient,
+  userId: string,
+  accountEmail: string,
+): Promise<void> {
+  if (!accountEmail) return;
+  const { data: existing } = await supabase
+    .from("overheads")
+    .select("id")
+    .eq("user_id", userId)
+    .eq("category", PDC_MEMBERSHIP_CATEGORY)
+    .eq("notes", accountEmail)
+    .limit(1)
+    .maybeSingle();
+  if (existing) return;
+
+  await supabase.from("overheads").insert({
+    user_id: userId,
+    name: `PDC Membership — ${accountEmail}`,
+    amount: PDC_MEMBERSHIP_COST,
+    billing_cycle: "one-off",
+    category: PDC_MEMBERSHIP_CATEGORY,
+    notes: accountEmail,
+    created_at: new Date().toISOString().slice(0, 10),
+  });
 }
 
 function getSeeGigsSourceType(from: string, text: string = ""): string {
