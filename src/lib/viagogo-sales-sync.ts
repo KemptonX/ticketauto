@@ -589,6 +589,7 @@ export async function syncViagogoSalesOutlookInbox({
       !lowerSubject.includes("please transfer the tickets for sale") &&
       !lowerSubject.includes("please send your tickets") &&
       !lowerSubject.includes("please upload your e-tickets") &&
+      !lowerSubject.includes("your tickets have sold") &&
       !isSoldConfirmation
     ) {
       continue;
@@ -1650,6 +1651,9 @@ const SALE_SUBJECT_KEYWORDS = [
   "please send your tickets",
   "you sold your ticket for",
   "please upload your e-tickets",
+  // Pre-uploaded e-tickets that sell instantly skip the transfer step and get
+  // this subject instead (e.g. "Congratulations your tickets have sold 653641270").
+  "your tickets have sold",
 ];
 
 // ─── StubHub Sales Sync ───────────────────────────────────────────────────────

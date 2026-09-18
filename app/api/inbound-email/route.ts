@@ -592,17 +592,26 @@ export async function POST(request: Request) {
         }
         const result = await processTransferEmail(supabase, userId, data, null);
         console.log("[inbound] processTransferEmail result:", JSON.stringify(result));
-        void supabase.from("email_forwarding_settings")
-          .update({ last_successful_import_at: new Date().toISOString(), updated_at: new Date().toISOString() })
-          .eq("id", settingId);
+        // Only a real match/update counts as a successful import — "unmatched" means
+        // we couldn't find the sale this transfer refers to (e.g. the original sale
+        // notification email was never forwarded), so nothing was actually recorded.
+        const transferStatus =
+          result.matchStatus === "matched" ? "imported" :
+          result.matchStatus === "already_processed" ? "duplicate" :
+          "failed";
+        if (transferStatus !== "failed") {
+          void supabase.from("email_forwarding_settings")
+            .update({ last_successful_import_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+            .eq("id", settingId);
+        }
         if (result.matchStatus === "matched") {
           void (async () => {
             const ws = await getWebhookSettings(supabase, userId);
             if (ws.url) void postDiscord(ws.url, buildTransferEmbed(data, ws.fields.transfer));
           })();
         }
-        await logEvent("imported", userId, settingId, { error_message: `matchStatus=${result.matchStatus} action=${result.actionTaken}` });
-        return NextResponse.json({ ok: true, status: "imported" });
+        await logEvent(transferStatus, userId, settingId, { error_message: `matchStatus=${result.matchStatus} action=${result.actionTaken}` });
+        return NextResponse.json({ ok: true, status: transferStatus });
       } else {
         const data = parsePayoutEmail(subject, textBody, htmlBody ?? "", rawHeaders, receivedAt);
         console.log("[inbound] parsePayoutEmail result:", data ? JSON.stringify({ ref: data.paymentReference, lines: data.orderLines.length }) : "null");
@@ -611,20 +620,29 @@ export async function POST(request: Request) {
           return NextResponse.json({ ok: true, status: "failed" });
         }
         const payoutResults: PayoutLineResult[] = [];
+        let anyMatched = false;
+        let anyUnmatched = false;
         for (const line of data.orderLines) {
           const result = await processPayoutOrderLine(supabase, userId, line, data.paymentDate, null);
           console.log("[inbound] processPayoutOrderLine:", JSON.stringify(result));
           payoutResults.push({ eventName: result.eventName, amount: line.amount, orderId: line.orderId });
+          if (result.matchStatus === "matched" || result.matchStatus === "already_processed") anyMatched = true;
+          else anyUnmatched = true;
         }
-        void supabase.from("email_forwarding_settings")
-          .update({ last_successful_import_at: new Date().toISOString(), updated_at: new Date().toISOString() })
-          .eq("id", settingId);
-        void (async () => {
-          const ws = await getWebhookSettings(supabase, userId);
-          if (ws.url && ws.payoutEnabled) void postDiscord(ws.url, buildPayoutEmbed(data, payoutResults, ws.fields.payout));
-        })();
-        await logEvent("imported", userId, settingId);
-        return NextResponse.json({ ok: true, status: "imported" });
+        // Same principle as the transfer branch — only report success if at least
+        // one order line was actually matched to a sale; otherwise nothing happened.
+        const payoutStatus = anyMatched ? "imported" : "failed";
+        if (payoutStatus === "imported") {
+          void supabase.from("email_forwarding_settings")
+            .update({ last_successful_import_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+            .eq("id", settingId);
+          void (async () => {
+            const ws = await getWebhookSettings(supabase, userId);
+            if (ws.url && ws.payoutEnabled) void postDiscord(ws.url, buildPayoutEmbed(data, payoutResults, ws.fields.payout));
+          })();
+        }
+        await logEvent(payoutStatus, userId, settingId, anyUnmatched ? { error_message: "one or more order lines had no matching sale" } : {});
+        return NextResponse.json({ ok: true, status: payoutStatus });
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : "sales processing error";

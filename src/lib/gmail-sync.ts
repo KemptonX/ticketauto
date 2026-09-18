@@ -219,6 +219,14 @@ export async function processNormalisedEmail(
     row = parseRow(combined);
     [seatFrom, seatTo] = parseSeats(combined);
     qty = parseSeeGigsQty(combined);
+    // Ballot-allocation emails give a seat range but no explicit "Nx Seats" count.
+    if (!qty && seatFrom && seatTo) {
+      const sf = parseInt(seatFrom, 10);
+      const st = parseInt(seatTo, 10);
+      if (!isNaN(sf) && !isNaN(st) && st >= sf && st - sf < 20) {
+        qty = String(st - sf + 1);
+      }
+    }
     sourceType = getSeeGigsSourceType(email.from, combined);
     total = parseSeeGigsTotal(combined);
   } else if (rah) {
@@ -661,6 +669,8 @@ export function stripHtml(text: string) {
     .replace(/&nbsp;/g, " ")
     .replace(/&euro;/gi, "€")
     .replace(/&#8364;/g, "€")
+    .replace(/&pound;/gi, "£")
+    .replace(/&#163;/g, "£")
     .replace(/&amp;/gi, "&")
     .replace(/&lt;/gi, "<")
     .replace(/&gt;/gi, ">")
@@ -1839,6 +1849,9 @@ function parseSeeGigsBookingRef(subject: string, text: string): string {
   return (
     text.match(/BOOKING REFERENCE\s+(\d+)/i)?.[1] ||
     subject.match(/Ticket Order Confirmation\s+(\d+)/i)?.[1] ||
+    // Ballot-allocation emails (e.g. "You've got ... tickets 129771432") have
+    // no "BOOKING REFERENCE" text — fall back to the trailing order number in the subject.
+    subject.match(/(\d{6,})\s*$/)?.[1] ||
     ""
   );
 }
@@ -1855,12 +1868,17 @@ function parseSeeGigsEvent(subject: string, text: string): string {
   // Page title fallback: "Booking confirmation for EVENT at VENUE"
   const titleM = text.match(/Booking confirmation for\s+(.+?)\s+at\s+/i)?.[1];
   if (titleM) return titleM.trim();
+  // Ballot-allocation subjects: "You've got 26/27 World Darts Championship tickets 129771432"
+  const ballotM = cleanSubject.match(/^You(?:'|’)ve got\s+(.+?)\s+tickets\s+\d{6,}\s*$/i)?.[1];
+  if (ballotM) return ballotM.trim();
   return "";
 }
 
 function parseSeeGigsDate(text: string): string {
   return (
     text.match(/(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday),\s+\d{1,2}\s+\w{3,}\s+\d{4}\s+at\s+[\d.]+/i)?.[0] ||
+    // Ballot-allocation emails: "Session: Wednesday 23 December 2026, 12:30pm" — no comma after the day name.
+    text.match(/(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\s+\d{1,2}\s+\w{3,}\s+\d{4}(?:,\s*\d{1,2}[:.]\d{2}\s*(?:am|pm)?)?/i)?.[0] ||
     ""
   );
 }
@@ -1877,6 +1895,10 @@ function parseSeeGigsVenue(text: string): string {
       }
     }
   }
+  // Ballot-allocation emails mention the venue inline, e.g.
+  // "You have secured tickets for this year's tournament at Alexandra Palace."
+  const inline = text.match(/\bat\s+([A-Z][A-Za-z0-9'&.\- ]{2,40}?)\.(?:\s|$)/);
+  if (inline) return inline[1].trim();
   return "";
 }
 
@@ -1887,18 +1909,24 @@ function parseSeeGigsTotal(text: string): string {
   // Fallback: "Total £165.30" in a summary row
   const t = text.match(/\bTotal\b[^£\n]{0,20}£\s*([\d,.]+)/i);
   if (t) return t[1].replace(/,/g, "");
+  // Ballot-allocation emails: "You have been charged £ 403.50" (no "total of")
+  const c = text.match(/charged\s*£\s*([\d,]+\.\d{2})/i);
+  if (c) return c[1].replace(/,/g, "");
   return "";
 }
 
 function parseSeeGigsSection(text: string): string {
   // After HTML stripping, the section block is typically on one line:
   // "Upper Tier Block: 406 - Row: R - Seats: 583 To 585"
-  const inlineM = text.match(/([A-Za-z][A-Za-z ]+)\s+Block:\s*\w+\s*-\s*Row:/i);
+  // Ballot-allocation emails use a comma instead of a dash: "Block: TSC, Row: V, Seats: 210 - 215"
+  // Whitespace before "Block:" must stay on the same line — otherwise an unrelated
+  // label a few lines above (e.g. "Tickets: Tier Seat") gets mistaken for the section name.
+  const inlineM = text.match(/([A-Za-z][A-Za-z ]+)[ \t]+Block:\s*\w+\s*[,\-]\s*Row:/i);
   if (inlineM) return inlineM[1].trim();
   // Fallback: section name on line immediately before the "Block: ..." line
   const lines = text.split(/\n/).map((l) => l.trim()).filter(Boolean);
   for (let i = 1; i < lines.length; i++) {
-    if (/Block:\s*\w+\s*-\s*Row:/i.test(lines[i])) {
+    if (/Block:\s*\w+\s*[,\-]\s*Row:/i.test(lines[i])) {
       const prev = lines[i - 1];
       if (
         prev &&
@@ -1910,6 +1938,9 @@ function parseSeeGigsSection(text: string): string {
       }
     }
   }
+  // Last resort: no section name at all (ballot allocations) — use the block code itself.
+  const blockOnly = text.match(/\bBlock:\s*(\w+)/i)?.[1];
+  if (blockOnly) return `Block ${blockOnly}`;
   return "";
 }
 
