@@ -1829,13 +1829,16 @@ function parseEventimDeTotal(text: string): string {
 function isSeeGigsEmail(from: string, subject: string = "", text: string = ""): boolean {
   const f = from.toLowerCase();
   if (f.includes("seetickets.com") || f.includes("gigsandtours.com")) return true;
-  // Forwarded: sender is the user, but body/subject still identify the original platform
-  const s = subject.toLowerCase();
+  // Forwarded: sender is the user, but body/subject still identify the original platform.
+  // A manual Gmail forward also prefixes "Fwd:" and drops the original From header, so
+  // strip that before matching subject-shape patterns.
+  const s = subject.toLowerCase().replace(/^(?:(?:fwd?|fw)\s*:\s*)*/i, "");
   const t = text.toLowerCase();
-  return (
-    s.includes("ticket order confirmation") &&
-    (t.includes("gigsandtours.com") || t.includes("seetickets.com"))
-  );
+  const subjectMatches =
+    s.includes("ticket order confirmation") ||
+    // Ballot-allocation emails: "You've got 26/27 World Darts Championship tickets 129771432"
+    /^you(?:'|’)ve got\s+.+\s+tickets\s+\d{6,}/i.test(s);
+  return subjectMatches && (t.includes("gigsandtours.com") || t.includes("seetickets.com"));
 }
 
 function getSeeGigsSourceType(from: string, text: string = ""): string {
