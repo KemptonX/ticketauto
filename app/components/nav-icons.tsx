@@ -158,6 +158,18 @@ export function IconPresale(p: IconProps) {
   );
 }
 
+export function IconTaxAccounts(p: IconProps) {
+  return (
+    <Icon {...p}>
+      <path d="M6 2h9l3 3v15a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z" />
+      <path d="M15 2v3h3" />
+      <line x1="7.5" y1="9" x2="14" y2="9" />
+      <line x1="7.5" y1="12.5" x2="14" y2="12.5" />
+      <path d="M8 16.5c0 .8.9 1.5 2 1.5s2-.6 2-1.3-.9-1.1-2-1.4-2-.6-2-1.4.9-1.3 2-1.3 2 .6 2 1.3" />
+    </Icon>
+  );
+}
+
 export function IconCashFlow(p: IconProps) {
   return (
     <Icon {...p}>
@@ -198,6 +210,7 @@ const ICON_MAP: Record<string, (p: IconProps) => React.JSX.Element> = {
   "/analytics": IconAnalytics,
   "/cash-flow": IconCashFlow,
   "/costs": IconCosts,
+  "/tax-accounts": IconTaxAccounts,
   "/viagogo-calculator": IconCalculator,
   "/scans": IconScans,
   "/presale": IconPresale,

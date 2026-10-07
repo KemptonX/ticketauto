@@ -7,6 +7,7 @@ import {
   IconDashboard, IconTickets, IconSales, IconAnalytics,
   IconCashFlow, IconCosts, IconCalculator, IconScans,
   IconInventory, IconGuides, IconMail, IconSettings, IconLogout, IconPresale,
+  IconTaxAccounts,
 } from "./nav-icons";
 
 const MAIN_TABS = [
@@ -19,6 +20,7 @@ const MAIN_TABS = [
 const MORE_ITEMS = [
   { href: "/cash-flow",           label: "Cash Flow",   icon: () => <IconCashFlow /> },
   { href: "/costs",               label: "Costs",       icon: () => <IconCosts /> },
+  { href: "/tax-accounts",        label: "Tax & Accounts", icon: () => <IconTaxAccounts /> },
   { href: "/viagogo-calculator",  label: "Calculator",  icon: () => <IconCalculator /> },
   { href: "/scans",               label: "Scans",       icon: () => <IconScans /> },
   { href: "/presale",             label: "Presale & Codes", icon: () => <IconPresale /> },

@@ -33,6 +33,7 @@ const navItems = [
   { label: "Analytics", href: "/analytics", active: false },
   { label: "Cash Flow", href: "/cash-flow", active: false },
   { label: "Costs", href: "/costs", active: false },
+  { label: "Tax & Accounts", href: "/tax-accounts", active: false },
   { label: "Calculator", href: "/viagogo-calculator", active: false },
   { label: "Scans", href: "/scans", active: false },
   { label: "Presale & Codes", href: "/presale", active: false },
