@@ -48,7 +48,10 @@ export async function POST(request: Request) {
   const body = (await request.json()) as Record<string, unknown>;
   const update: Record<string, unknown> = { user_id: user.id, updated_at: new Date().toISOString() };
   for (const [key, value] of Object.entries(body)) {
-    if (ALLOWED_FIELDS.has(key)) update[key] = value;
+    if (!ALLOWED_FIELDS.has(key)) continue;
+    // Empty-string form fields (date/number inputs left blank) must become
+    // null, not "" — Postgres rejects "" for date/numeric columns.
+    update[key] = value === "" ? null : value;
   }
 
   const { data, error } = await supabase
