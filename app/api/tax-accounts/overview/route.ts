@@ -2,14 +2,16 @@ import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/src/lib/supabase-server";
 import {
   computeOverview,
-  computeReadiness,
+  computeDataQuality,
   resolveUkTaxYear,
   resolveCompanyFinancialYear,
   resolvePresetPeriod,
   resolveCustomPeriod,
-  resolvePrimaryPeriod,
-  resolveYearToDate,
+  resolveYearToDatePreset,
+  selfAssessmentDeadline,
   type PeriodRange,
+  type BusinessStructure,
+  type AccountingBasis,
 } from "@/src/lib/accounting";
 
 export const runtime = "nodejs";
@@ -27,12 +29,15 @@ export async function GET(request: Request) {
 
   const { data: profile } = await supabase
     .from("accounting_profiles")
-    .select("business_structure, company_year_end")
+    .select("business_structure, company_year_end, accounting_basis")
     .eq("user_id", user.id)
     .maybeSingle();
 
-  const businessStructure = (profile?.business_structure as "sole_trader" | "limited_company") ?? "sole_trader";
+  const businessStructure = (profile?.business_structure as BusinessStructure) ?? "sole_trader";
   const companyYearEnd = (profile?.company_year_end as string | null) ?? null;
+  // Limited companies don't get UK cash basis — treat as accrual/traditional.
+  const accountingBasis: AccountingBasis =
+    businessStructure === "limited_company" ? "traditional" : ((profile?.accounting_basis as AccountingBasis) ?? "cash");
   const now = new Date();
 
   let period: PeriodRange;
@@ -55,10 +60,7 @@ export async function GET(request: Request) {
       period = resolvePresetPeriod(kind, now);
       break;
     case "year_to_date":
-      period = resolveYearToDate(businessStructure, companyYearEnd, now);
-      break;
-    case "previous_accounting_year":
-      period = resolvePrimaryPeriod(businessStructure, companyYearEnd, now, 1);
+      period = resolveYearToDatePreset(businessStructure, companyYearEnd, now);
       break;
     case "custom":
       if (!start || !end) {
@@ -70,9 +72,17 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: `Unknown period kind: ${kind}` }, { status: 400 });
   }
 
-  const [figures, readiness] = await Promise.all([
-    computeOverview(supabase, user.id, period),
-    computeReadiness(supabase, user.id, period),
+  const [figures, dataQuality] = await Promise.all([
+    computeOverview(supabase, user.id, period, accountingBasis),
+    computeDataQuality(supabase, user.id, period),
   ]);
-  return NextResponse.json({ period, figures, readiness });
+
+  return NextResponse.json({
+    period,
+    figures,
+    dataQuality,
+    accountingBasis,
+    businessStructure,
+    selfAssessmentDeadline: selfAssessmentDeadline(period),
+  });
 }

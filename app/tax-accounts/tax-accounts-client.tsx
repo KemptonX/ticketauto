@@ -68,39 +68,49 @@ const EMPTY_PROFILE: Profile = {
   setup_completed: false,
 };
 
-type PeriodKind =
-  | "uk_tax_year" | "company_fy" | "this_month" | "last_month"
-  | "this_quarter" | "year_to_date" | "previous_accounting_year" | "custom";
-
-type PeriodRange = { kind: PeriodKind; label: string; start: string; end: string };
+type PeriodRange = { kind: string; label: string; shortLabel: string; start: string; end: string };
 
 type OverviewFigures = {
-  grossSales: number;
+  income: number;
   costOfSales: number;
+  ticketPurchases: number;
   marketplaceFees: number;
-  otherExpenses: number;
+  runningCosts: number;
   refunds: number;
-  netTradingProfit: number;
+  estimatedProfit: number;
   unsoldInventoryCost: number;
+  expiredUnsoldStockCost: number;
   cashReceived: number;
+  pendingPayoutCount: number;
   salesWithUnknownFees: number;
+  recordCounts: { sales: number; purchases: number; expenses: number; payouts: number };
   refundsTrackedNote: string;
 };
 
-type Readiness = { score: number; issues: { label: string; count: number }[]; totalChecked: number };
+type DataQualityIssue = { severity: "critical" | "review" | "evidence"; label: string; count: number; orderIds: number[] };
+type DataQualityResult = { score: number; critical: DataQualityIssue[]; review: DataQualityIssue[]; evidence: DataQualityIssue[]; totalChecked: number };
 
-type Tab = "overview" | "transactions" | "expenses" | "reconciliation" | "vat" | "documents" | "accountant-pack" | "settings";
+type YearCard = {
+  period: PeriodRange;
+  isCurrent: boolean;
+  ended: boolean;
+  status: string;
+  readinessScore: number;
+  criticalCount: number;
+  income: number;
+  estimatedProfit: number;
+  selfAssessmentDeadline: string | null;
+};
 
-const TABS: { id: Tab; label: string }[] = [
-  { id: "overview", label: "Overview" },
-  { id: "transactions", label: "Transactions" },
-  { id: "expenses", label: "Expenses" },
-  { id: "reconciliation", label: "Reconciliation" },
-  { id: "vat", label: "VAT" },
-  { id: "documents", label: "Documents" },
-  { id: "accountant-pack", label: "Accountant Pack" },
-  { id: "settings", label: "Settings" },
-];
+type Tab = "overview" | "review" | "transactions" | "accountant-pack" | "settings";
+
+const STATUS_LABEL: Record<string, string> = {
+  in_progress: "In Progress",
+  needs_review: "Needs Review",
+  ready_for_accountant: "Ready for Accountant",
+  sent_to_accountant: "Sent to Accountant",
+  filed: "Filed",
+};
 
 function Info({ text }: { text: string }) {
   return (
@@ -117,6 +127,14 @@ function Info({ text }: { text: string }) {
   );
 }
 
+function fmtDate(iso: string) {
+  return new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+}
+
+function daysUntil(iso: string) {
+  return Math.ceil((new Date(iso).getTime() - Date.now()) / 86400000);
+}
+
 export default function TaxAccountsClient() {
   useRatesReady();
   const [loading, setLoading] = useState(true);
@@ -126,23 +144,42 @@ export default function TaxAccountsClient() {
   const [message, setMessage] = useState("");
   const [activeTab, setActiveTab] = useState<Tab>("overview");
 
-  const [periodKind, setPeriodKind] = useState<PeriodKind>("uk_tax_year");
-  const [periodOffset, setPeriodOffset] = useState(0);
-  const [customStart, setCustomStart] = useState("");
-  const [customEnd, setCustomEnd] = useState("");
+  const [years, setYears] = useState<YearCard[]>([]);
+  const [yearsLoading, setYearsLoading] = useState(false);
+  const [selectedOffset, setSelectedOffset] = useState<number | null>(null);
 
-  const [period, setPeriod] = useState<PeriodRange | null>(null);
   const [figures, setFigures] = useState<OverviewFigures | null>(null);
-  const [readiness, setReadiness] = useState<Readiness | null>(null);
+  const [dataQuality, setDataQuality] = useState<DataQualityResult | null>(null);
+  const [accountingBasis, setAccountingBasis] = useState<AccountingBasis>("cash");
   const [overviewLoading, setOverviewLoading] = useState(false);
   const [overviewError, setOverviewError] = useState("");
 
   useEffect(() => { void loadProfile(); }, []);
 
   useEffect(() => {
-    if (profile?.setup_completed) void loadOverview();
+    if (profile?.setup_completed) void loadYears();
+     
+  }, [profile?.setup_completed]);
+
+  // Default to the most urgent year: a previous year that's ended and not
+  // yet finished, if its deadline is within the next ~10 months (filing
+  // season); otherwise the current year.
+  useEffect(() => {
+    if (years.length === 0 || selectedOffset != null) return;
+    const urgentPrevious = years.find(
+      (y) => !y.isCurrent && y.ended && !["sent_to_accountant", "filed"].includes(y.status) && y.selfAssessmentDeadline && daysUntil(y.selfAssessmentDeadline) < 300,
+    );
+    const target = urgentPrevious ?? years.find((y) => y.isCurrent) ?? years[0];
+    if (target) setSelectedOffset(years.indexOf(target));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [profile?.setup_completed, periodKind, periodOffset, customStart, customEnd]);
+  }, [years]);
+
+  useEffect(() => {
+    if (selectedOffset == null || years.length === 0) return;
+    const y = years[selectedOffset];
+    if (y) void loadOverview(y.period);
+     
+  }, [selectedOffset, years]);
 
   async function handleLogout() {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -157,9 +194,6 @@ export default function TaxAccountsClient() {
       if (data.profile) {
         setProfile(data.profile);
         setForm({ ...EMPTY_PROFILE, ...data.profile });
-        if (!data.profile.setup_completed) {
-          setForm((f) => ({ ...f, ...data.profile }));
-        }
       } else {
         setProfile(null);
       }
@@ -191,41 +225,61 @@ export default function TaxAccountsClient() {
     }
   }
 
-  async function loadOverview() {
+  async function loadYears() {
+    setYearsLoading(true);
+    try {
+      const res = await fetch("/api/tax-accounts/years");
+      const data = await res.json();
+      if (data.years) setYears(data.years);
+    } finally {
+      setYearsLoading(false);
+    }
+  }
+
+  async function loadOverview(p: PeriodRange) {
     setOverviewLoading(true);
     setOverviewError("");
     try {
-      const params = new URLSearchParams({ kind: periodKind, offset: String(periodOffset) });
-      if (periodKind === "custom") {
-        if (!customStart || !customEnd) { setOverviewLoading(false); return; }
-        params.set("start", customStart);
-        params.set("end", customEnd);
-      }
+      const params = new URLSearchParams({ kind: p.kind, start: p.start, end: p.end });
+      // uk_tax_year / company_fy are resolved server-side by offset; since we
+      // already know the exact dates, ask via custom to avoid re-deriving offset.
+      const useKind = p.kind === "uk_tax_year" || p.kind === "company_fy" ? "custom" : p.kind;
+      params.set("kind", useKind);
       const res = await fetch(`/api/tax-accounts/overview?${params.toString()}`);
       const data = await res.json();
       if (data.error) {
         setOverviewError(data.error);
         setFigures(null);
-        setReadiness(null);
-        setPeriod(null);
+        setDataQuality(null);
       } else {
         setFigures(data.figures);
-        setReadiness(data.readiness);
-        setPeriod(data.period);
+        setDataQuality(data.dataQuality);
+        setAccountingBasis(data.accountingBasis);
       }
     } finally {
       setOverviewLoading(false);
     }
   }
 
-  const isLimitedCompany = form.business_structure === "limited_company";
+  async function setYearStatus(y: YearCard, status: string) {
+    await fetch("/api/tax-accounts/year-status", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ periodKind: y.period.kind, periodStart: y.period.start, periodEnd: y.period.end, status }),
+    });
+    void loadYears();
+  }
 
-  const readinessTone = useMemo(() => {
-    if (!readiness) return "default";
-    if (readiness.score >= 90) return "profit";
-    if (readiness.score >= 70) return "default";
-    return "risk";
-  }, [readiness]);
+  const isLimitedCompany = form.business_structure === "limited_company";
+  const yearNoun = isLimitedCompany ? "Accounting Year" : "Tax Year";
+
+  const selectedYear = selectedOffset != null ? years[selectedOffset] : null;
+
+  const filingBanner = useMemo(() => {
+    return years.find(
+      (y) => !y.isCurrent && y.ended && !["sent_to_accountant", "filed"].includes(y.status) && y.selfAssessmentDeadline && daysUntil(y.selfAssessmentDeadline) < 300 && daysUntil(y.selfAssessmentDeadline) > -60,
+    );
+  }, [years]);
 
   if (loading) {
     return (
@@ -276,96 +330,117 @@ export default function TaxAccountsClient() {
         {message && <div className="feedback-banner">{message}</div>}
 
         {needsSetup ? (
-          <SetupForm
-            form={form}
-            setForm={setForm}
-            isLimitedCompany={isLimitedCompany}
-            saving={saving}
-            onSave={() => void saveProfile(true)}
-          />
+          <SetupForm form={form} setForm={setForm} isLimitedCompany={isLimitedCompany} saving={saving} onSave={() => void saveProfile(true)} />
         ) : (
           <>
+            {filingBanner && filingBanner.period.shortLabel !== selectedYear?.period.shortLabel && (
+              <section className="feedback-banner" style={{ cursor: "pointer" }} onClick={() => setSelectedOffset(years.indexOf(filingBanner))}>
+                <strong>{filingBanner.period.shortLabel} Self Assessment</strong> — deadline {filingBanner.selfAssessmentDeadline ? fmtDate(filingBanner.selfAssessmentDeadline) : ""}.
+                Your records are {filingBanner.readinessScore}% ready. <span style={{ textDecoration: "underline" }}>Finish {filingBanner.period.shortLabel}</span>
+              </section>
+            )}
+
+            <section className="hero-card">
+              <div style={{ width: "100%" }}>
+                <p className="section-tag">{yearNoun}</p>
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+                  <select
+                    className="field"
+                    style={{ fontSize: 18, fontWeight: 600, maxWidth: 260 }}
+                    value={selectedOffset ?? ""}
+                    onChange={(e) => setSelectedOffset(Number(e.target.value))}
+                  >
+                    {years.map((y, i) => (
+                      <option key={y.period.shortLabel} value={i}>
+                        {y.period.shortLabel}{y.isCurrent ? " — In Progress" : ""}
+                      </option>
+                    ))}
+                  </select>
+                  {selectedYear && (
+                    <span style={{ color: "var(--text-secondary)" }}>
+                      {fmtDate(selectedYear.period.start)} – {fmtDate(selectedYear.period.end)}
+                    </span>
+                  )}
+                  {selectedYear && (
+                    <span
+                      className="kpi-trend"
+                      style={{
+                        padding: "2px 10px", borderRadius: 999,
+                        background: selectedYear.status === "filed" || selectedYear.status === "sent_to_accountant" ? "rgba(103,240,165,0.15)" : selectedYear.status === "ready_for_accountant" ? "rgba(79,195,255,0.15)" : "rgba(255,255,255,0.08)",
+                      }}
+                    >
+                      {STATUS_LABEL[selectedYear.status] ?? selectedYear.status}
+                    </span>
+                  )}
+                </div>
+                {selectedYear?.selfAssessmentDeadline && (
+                  <p style={{ color: "var(--text-secondary)", marginTop: 8 }}>
+                    Self Assessment deadline <strong>{fmtDate(selectedYear.selfAssessmentDeadline)}</strong>
+                  </p>
+                )}
+                <p style={{ color: "var(--text-muted)", marginTop: 8, fontSize: 13 }}>
+                  Accounting method: <strong>{accountingBasis === "cash" ? "Cash Basis" : "Traditional Accounting"}</strong>
+                  <Info text={accountingBasis === "cash"
+                    ? "Income is included when payment was actually received and expenses when they were actually paid. Event dates never determine the tax year."
+                    : "Income and expenses are recognised at the transaction/invoice date, following standard accounting treatment. Event dates never determine the tax year."} />
+                  {" · "}
+                  <Link href="#settings" onClick={() => setActiveTab("settings")} style={{ textDecoration: "underline" }}>Change</Link>
+                </p>
+              </div>
+            </section>
+
+            {years.length > 1 && (
+              <section className="kpi-grid" style={{ gridTemplateColumns: `repeat(${Math.min(years.length, 4)}, 1fr)` }}>
+                {years.slice(0, 4).map((y, i) => (
+                  <article
+                    key={y.period.shortLabel}
+                    className="kpi-card"
+                    style={{ cursor: "pointer", outline: i === selectedOffset ? "2px solid var(--accent-pink)" : "none" }}
+                    onClick={() => setSelectedOffset(i)}
+                  >
+                    <p className="kpi-label">{y.period.shortLabel}{y.isCurrent ? " (current)" : ""}</p>
+                    <strong className="kpi-value">{y.readinessScore}% ready</strong>
+                    <span className="kpi-trend">{formatCurrency(y.income)} income{y.criticalCount > 0 ? ` · ${y.criticalCount} issue${y.criticalCount === 1 ? "" : "s"}` : ""}</span>
+                  </article>
+                ))}
+              </section>
+            )}
+
             <section className="table-card" style={{ display: "flex", gap: 8, flexWrap: "wrap", padding: "12px 16px" }}>
-              {TABS.map((t) => (
-                <button
-                  key={t.id}
-                  type="button"
-                  className={t.id === activeTab ? "primary-button" : "secondary-button"}
-                  onClick={() => setActiveTab(t.id)}
-                >
+              {([
+                { id: "overview", label: "Overview" },
+                { id: "review", label: `Review${dataQuality ? ` (${dataQuality.critical.length + dataQuality.review.length})` : ""}` },
+                { id: "transactions", label: "Transactions" },
+                { id: "accountant-pack", label: "Accountant Pack" },
+                { id: "settings", label: "Settings" },
+              ] as { id: Tab; label: string }[]).map((t) => (
+                <button key={t.id} type="button" className={t.id === activeTab ? "primary-button" : "secondary-button"} onClick={() => setActiveTab(t.id)}>
                   {t.label}
                 </button>
               ))}
             </section>
 
-            {activeTab === "overview" && (
-              <OverviewTab
-                isLimitedCompany={isLimitedCompany}
-                hasCompanyYearEnd={!!form.company_year_end}
-                periodKind={periodKind}
-                setPeriodKind={setPeriodKind}
-                periodOffset={periodOffset}
-                setPeriodOffset={setPeriodOffset}
-                customStart={customStart}
-                setCustomStart={setCustomStart}
-                customEnd={customEnd}
-                setCustomEnd={setCustomEnd}
-                period={period}
-                figures={figures}
-                readiness={readiness}
-                readinessTone={readinessTone}
-                loading={overviewLoading}
-                error={overviewError}
-                taxReservePercent={form.tax_reserve_percent}
-              />
+            {overviewError && <div className="feedback-banner">{overviewError}</div>}
+            {(overviewLoading || yearsLoading) && <p style={{ padding: 16, color: "var(--text-secondary)" }}>Calculating…</p>}
+
+            {!overviewLoading && activeTab === "overview" && figures && dataQuality && selectedYear && (
+              <OverviewTab figures={figures} dataQuality={dataQuality} year={selectedYear} taxReservePercent={form.tax_reserve_percent} onReview={() => setActiveTab("review")} />
             )}
 
-            {activeTab === "settings" && (
-              <SetupForm
-                form={form}
-                setForm={setForm}
-                isLimitedCompany={isLimitedCompany}
-                saving={saving}
-                onSave={() => void saveProfile(false)}
-                isSettingsMode
-              />
+            {!overviewLoading && activeTab === "review" && dataQuality && (
+              <ReviewTab dataQuality={dataQuality} />
             )}
 
             {activeTab === "transactions" && (
-              <ComingSoon
-                title="Transactions"
-                body="A universal, filterable ledger across purchases, sales, expenses, payouts, refunds and director transactions. Coming in the next phase."
-              />
+              <ComingSoon title="Transactions" body="A universal, filterable ledger across purchases, sales, expenses, payouts, refunds and director transactions is coming in the next phase." />
             )}
-            {activeTab === "expenses" && (
-              <ComingSoon
-                title="Expenses"
-                body={<>Your existing <Link href="/costs" style={{ textDecoration: "underline" }}>Costs</Link> page already tracks overheads, and they&rsquo;re already included in the Overview&rsquo;s Other Business Expenses figure above. A dedicated categorisation and tax-treatment view for each expense is coming next.</>}
-              />
+
+            {!overviewLoading && activeTab === "accountant-pack" && figures && dataQuality && selectedYear && (
+              <AccountantPackTab figures={figures} dataQuality={dataQuality} year={selectedYear} onMarkSent={() => void setYearStatus(selectedYear, "sent_to_accountant")} onMarkFiled={() => void setYearStatus(selectedYear, "filed")} />
             )}
-            {activeTab === "reconciliation" && (
-              <ComingSoon
-                title="Reconciliation"
-                body="Matching sales against payouts — including one payout covering several sales — is next on the list."
-              />
-            )}
-            {activeTab === "vat" && (
-              <ComingSoon
-                title="VAT"
-                body="VAT registration status, the rolling 12-month threshold monitor, and per-sale VAT treatment classification are coming in a later phase."
-              />
-            )}
-            {activeTab === "documents" && (
-              <ComingSoon
-                title="Documents"
-                body="Attaching and tracking receipts/evidence against purchases, expenses and sales is coming in a later phase."
-              />
-            )}
-            {activeTab === "accountant-pack" && (
-              <ComingSoon
-                title="Accountant Pack"
-                body="The full Excel/ZIP export — P&L, sales ledger, purchases, expenses, inventory, VAT and more — is coming once the data underneath it (reconciliation, VAT, documents) is built."
-              />
+
+            {activeTab === "settings" && (
+              <SetupForm form={form} setForm={setForm} isLimitedCompany={isLimitedCompany} saving={saving} onSave={() => void saveProfile(false)} isSettingsMode />
             )}
           </>
         )}
@@ -379,6 +454,181 @@ function ComingSoon({ title, body }: { title: string; body: React.ReactNode }) {
     <section className="table-card" style={{ padding: 32, textAlign: "center" }}>
       <p className="section-tag">{title}</p>
       <p style={{ color: "var(--text-secondary)", maxWidth: 520, margin: "8px auto 0" }}>{body}</p>
+    </section>
+  );
+}
+
+function OverviewTab({
+  figures, dataQuality, year, taxReservePercent, onReview,
+}: {
+  figures: OverviewFigures;
+  dataQuality: DataQualityResult;
+  year: YearCard;
+  taxReservePercent: number;
+  onReview: () => void;
+}) {
+  const criticalCount = dataQuality.critical.reduce((s, i) => s + i.count, 0);
+  const taxReserve = Math.max(0, figures.estimatedProfit) * (taxReservePercent / 100);
+
+  return (
+    <>
+      <section className="table-card" style={{ padding: 20 }}>
+        <div className="table-card-header">
+          <div>
+            <p className="section-tag">Accountant Readiness</p>
+            <h4 style={{ color: dataQuality.score >= 90 ? "#67F0A5" : dataQuality.score >= 70 ? "inherit" : "#FF7D7D" }}>
+              {dataQuality.score}% Ready
+            </h4>
+          </div>
+          <button type="button" className="secondary-button" onClick={onReview}>
+            {criticalCount > 0 ? `Review ${criticalCount} Issue${criticalCount === 1 ? "" : "s"}` : "Review"}
+          </button>
+        </div>
+        {criticalCount === 0 ? (
+          <p style={{ color: "#67F0A5" }}>✓ No critical issues found for {year.period.shortLabel}.</p>
+        ) : (
+          <p style={{ color: "var(--text-secondary)" }}>{criticalCount} important issue{criticalCount === 1 ? "" : "s"} could affect your totals — see Review.</p>
+        )}
+        {dataQuality.evidence.length > 0 && (
+          <p style={{ color: "var(--text-muted)", fontSize: 13, marginTop: 6 }}>
+            {dataQuality.evidence.reduce((s, i) => s + i.count, 0)} records have no attached evidence — this barely affects readiness and is normal for historic/imported data.
+          </p>
+        )}
+      </section>
+
+      <section className="kpi-grid" style={{ gridTemplateColumns: "repeat(4, 1fr)" }}>
+        <article className="kpi-card">
+          <p className="kpi-label">Income<Info text="Money recognised as business income for this period, based on your configured accounting method." /></p>
+          <strong className="kpi-value">{formatCurrency(figures.income)}</strong>
+        </article>
+        <article className="kpi-card">
+          <p className="kpi-label">Business Costs<Info text="Ticket purchase costs for tickets sold, marketplace fees and running costs, all for this period." /></p>
+          <strong className="kpi-value">{formatCurrency(figures.costOfSales + figures.marketplaceFees + figures.runningCosts)}</strong>
+        </article>
+        <article className="kpi-card">
+          <p className="kpi-label">Estimated Profit<Info text="Income minus Business Costs and Refunds. An estimate — your accountant calculates the final figure." /></p>
+          <strong className="kpi-value" style={{ color: figures.estimatedProfit >= 0 ? "#67F0A5" : "#FF7D7D" }}>{formatCurrency(figures.estimatedProfit)}</strong>
+        </article>
+        <article className="kpi-card">
+          <p className="kpi-label">Suggested Tax Reserve<Info text="A cash-management guide only, based on your configured reserve percentage. Not a calculation of what you owe HMRC." /></p>
+          <strong className="kpi-value">{formatCurrency(taxReserve)}</strong>
+          <span className="kpi-trend">{taxReservePercent}% of estimated profit</span>
+        </article>
+      </section>
+
+      <section className="table-card" style={{ padding: 20 }}>
+        <p className="section-tag">Breakdown</p>
+        <div className="command-grid">
+          <Row label="Ticket purchases" value={figures.ticketPurchases} />
+          <Row label="Marketplace fees" value={figures.marketplaceFees} />
+          <Row label="Running costs" value={figures.runningCosts} />
+          <Row label="Refunds" value={figures.refunds} note={figures.refunds === 0 ? figures.refundsTrackedNote : undefined} />
+        </div>
+        {(figures.unsoldInventoryCost > 0 || figures.expiredUnsoldStockCost > 0) && (
+          <div className="command-grid" style={{ marginTop: 12 }}>
+            <Row label="Unsold ticket inventory (not yet past event)" value={figures.unsoldInventoryCost} />
+            {figures.expiredUnsoldStockCost > 0 && (
+              <Row label="Unresolved stock (event already passed, never sold)" value={figures.expiredUnsoldStockCost} tone="risk" />
+            )}
+          </div>
+        )}
+        {figures.pendingPayoutCount > 0 && (
+          <p style={{ color: "var(--text-muted)", fontSize: 13, marginTop: 10 }}>
+            {figures.pendingPayoutCount} sale{figures.pendingPayoutCount === 1 ? "" : "s"} awaiting payout — not yet counted as income under Cash Basis until the money actually arrives.
+          </p>
+        )}
+      </section>
+
+      <section className="table-card" style={{ padding: 20 }}>
+        <p className="section-tag">Records</p>
+        <p style={{ color: "var(--text-secondary)" }}>
+          {figures.recordCounts.sales} sale{figures.recordCounts.sales === 1 ? "" : "s"} · {figures.recordCounts.purchases} purchase{figures.recordCounts.purchases === 1 ? "" : "s"} · {figures.recordCounts.expenses} expense{figures.recordCounts.expenses === 1 ? "" : "s"} · {figures.recordCounts.payouts} payout{figures.recordCounts.payouts === 1 ? "" : "s"}
+        </p>
+      </section>
+    </>
+  );
+}
+
+function Row({ label, value, note, tone }: { label: string; value: number; note?: string; tone?: "risk" }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid var(--border)" }}>
+      <span style={{ color: "var(--text-secondary)" }}>{label}{note && <Info text={note} />}</span>
+      <strong style={{ color: tone === "risk" ? "#FF7D7D" : "inherit" }}>{formatCurrency(value)}</strong>
+    </div>
+  );
+}
+
+function IssueGroup({ title, issues, tone }: { title: string; issues: DataQualityIssue[]; tone: "risk" | "default" | "muted" }) {
+  if (issues.length === 0) return null;
+  const color = tone === "risk" ? "#FF7D7D" : tone === "muted" ? "var(--text-muted)" : "inherit";
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <p style={{ color, fontWeight: 600, marginBottom: 6 }}>{title}</p>
+      <ul style={{ paddingLeft: 18 }}>
+        {issues.map((issue) => (
+          <li key={issue.label} style={{ color: "var(--text-secondary)", marginBottom: 4 }}>{issue.label}</li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function ReviewTab({ dataQuality }: { dataQuality: DataQualityResult }) {
+  const noCritical = dataQuality.critical.length === 0;
+  const noReview = dataQuality.review.length === 0;
+
+  return (
+    <section className="table-card" style={{ padding: 20 }}>
+      <p className="section-tag">Records Check</p>
+      {noCritical && noReview ? (
+        <p style={{ color: "#67F0A5", marginBottom: 16 }}>✓ No critical or review issues found for this period.</p>
+      ) : (
+        <>
+          <IssueGroup title="Critical — these can change your totals" issues={dataQuality.critical} tone="risk" />
+          <IssueGroup title="Review — worth a second look" issues={dataQuality.review} tone="default" />
+        </>
+      )}
+      <IssueGroup title="Supporting evidence — minor, doesn't affect readiness much" issues={dataQuality.evidence} tone="muted" />
+
+      <p style={{ color: "var(--text-muted)", fontSize: 13, marginTop: 10 }}>
+        Jumping straight to the exact affected tickets/sales from each issue is coming in the next phase — for now, check the Tickets/Sales pages using the counts above as a guide.
+      </p>
+    </section>
+  );
+}
+
+function AccountantPackTab({
+  figures, dataQuality, year, onMarkSent, onMarkFiled,
+}: {
+  figures: OverviewFigures;
+  dataQuality: DataQualityResult;
+  year: YearCard;
+  onMarkSent: () => void;
+  onMarkFiled: () => void;
+}) {
+  const criticalCount = dataQuality.critical.reduce((s, i) => s + i.count, 0);
+  return (
+    <section className="table-card" style={{ padding: 24 }}>
+      <p className="section-tag">Ready to Create Accountant Pack</p>
+      <h3>Your {year.period.shortLabel} accounts</h3>
+      <div className="command-grid" style={{ marginTop: 16 }}>
+        <Row label="Income" value={figures.income} />
+        <Row label="Business Costs" value={figures.costOfSales + figures.marketplaceFees + figures.runningCosts} />
+        <Row label="Estimated Profit" value={figures.estimatedProfit} />
+      </div>
+      <p style={{ marginTop: 16, color: criticalCount > 0 ? "#FF7D7D" : "#67F0A5" }}>
+        {criticalCount > 0 ? `${criticalCount} critical issue${criticalCount === 1 ? "" : "s"} outstanding` : "No critical issues outstanding"}
+      </p>
+      <p style={{ color: "var(--text-secondary)", marginTop: 8 }}>
+        Period: {fmtDate(year.period.start)} – {fmtDate(year.period.end)}. Only transactions inside this exact range are included — nothing from another tax year leaks in.
+      </p>
+      <div style={{ display: "flex", gap: 10, marginTop: 20, flexWrap: "wrap" }}>
+        <button type="button" className="primary-button" disabled>
+          Export (Excel/ZIP) — coming in the next phase
+        </button>
+        <button type="button" className="secondary-button" onClick={onMarkSent}>Mark Sent to Accountant</button>
+        <button type="button" className="secondary-button" onClick={onMarkFiled}>Mark Filed</button>
+      </div>
     </section>
   );
 }
@@ -433,7 +683,7 @@ function SetupForm({
           <label className="filter-field">
             <span className="filter-label">
               Accounting basis
-              <Info text="Cash Basis: you record income/expenses when money actually moves. Traditional Accounting: you record them when invoiced/incurred, regardless of when cash moves. Most small sole traders use Cash Basis — confirm with your accountant." />
+              <Info text="Cash Basis: income/expenses recorded when money actually moves. Traditional Accounting: recorded when invoiced/incurred. Most small sole traders use Cash Basis — confirm with your accountant." />
             </span>
             <select className="field" value={form.accounting_basis ?? "cash"} onChange={(e) => set("accounting_basis", e.target.value as AccountingBasis)}>
               <option value="cash">Cash Basis</option>
@@ -533,173 +783,5 @@ function SetupForm({
         {saving ? "Saving…" : isSettingsMode ? "Save settings" : "Set up Tax & Accounts"}
       </button>
     </section>
-  );
-}
-
-function PeriodSelector({
-  isLimitedCompany, hasCompanyYearEnd, periodKind, setPeriodKind, periodOffset, setPeriodOffset,
-  customStart, setCustomStart, customEnd, setCustomEnd,
-}: {
-  isLimitedCompany: boolean;
-  hasCompanyYearEnd: boolean;
-  periodKind: PeriodKind;
-  setPeriodKind: (k: PeriodKind) => void;
-  periodOffset: number;
-  setPeriodOffset: (n: number) => void;
-  customStart: string;
-  setCustomStart: (v: string) => void;
-  customEnd: string;
-  setCustomEnd: (v: string) => void;
-}) {
-  const primaryKind: PeriodKind = isLimitedCompany && hasCompanyYearEnd ? "company_fy" : "uk_tax_year";
-
-  return (
-    <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-      <select
-        className="field"
-        value={periodKind}
-        onChange={(e) => { setPeriodKind(e.target.value as PeriodKind); setPeriodOffset(0); }}
-      >
-        <option value={primaryKind}>{isLimitedCompany ? "Company Financial Year" : "UK Tax Year"}</option>
-        <option value="this_month">This Month</option>
-        <option value="last_month">Last Month</option>
-        <option value="this_quarter">This Quarter</option>
-        <option value="year_to_date">Year to Date</option>
-        <option value="previous_accounting_year">Previous Accounting Year</option>
-        <option value="custom">Custom Range</option>
-      </select>
-
-      {(periodKind === "uk_tax_year" || periodKind === "company_fy") && (
-        <select className="field" value={periodOffset} onChange={(e) => setPeriodOffset(Number(e.target.value))}>
-          {Array.from({ length: 6 }, (_, i) => (
-            <option key={i} value={i}>{i === 0 ? "Current period" : `${i} period${i > 1 ? "s" : ""} ago`}</option>
-          ))}
-        </select>
-      )}
-
-      {periodKind === "custom" && (
-        <>
-          <input className="field" type="date" value={customStart} onChange={(e) => setCustomStart(e.target.value)} />
-          <span style={{ color: "var(--text-secondary)" }}>to</span>
-          <input className="field" type="date" value={customEnd} onChange={(e) => setCustomEnd(e.target.value)} />
-        </>
-      )}
-    </div>
-  );
-}
-
-function OverviewTab(props: {
-  isLimitedCompany: boolean;
-  hasCompanyYearEnd: boolean;
-  periodKind: PeriodKind;
-  setPeriodKind: (k: PeriodKind) => void;
-  periodOffset: number;
-  setPeriodOffset: (n: number) => void;
-  customStart: string;
-  setCustomStart: (v: string) => void;
-  customEnd: string;
-  setCustomEnd: (v: string) => void;
-  period: PeriodRange | null;
-  figures: OverviewFigures | null;
-  readiness: Readiness | null;
-  readinessTone: string;
-  loading: boolean;
-  error: string;
-  taxReservePercent: number;
-}) {
-  const { figures, readiness, period, loading, error } = props;
-
-  return (
-    <>
-      <section className="hero-card">
-        <div>
-          <p className="section-tag">Reporting period</p>
-          <PeriodSelector {...props} />
-          {period && (
-            <p style={{ color: "var(--text-secondary)", marginTop: 10 }}>
-              Showing <strong>{period.label}</strong> — {new Date(period.start).toLocaleDateString("en-GB")} to {new Date(period.end).toLocaleDateString("en-GB")}
-            </p>
-          )}
-        </div>
-      </section>
-
-      {error && <div className="feedback-banner">{error}</div>}
-
-      {loading && <p style={{ padding: 16, color: "var(--text-secondary)" }}>Calculating…</p>}
-
-      {!loading && readiness && (
-        <section className="table-card" style={{ padding: 20 }}>
-          <div className="table-card-header">
-            <div>
-              <p className="section-tag">Accountant Readiness</p>
-              <h4 style={{ color: readiness.score >= 90 ? "#67F0A5" : readiness.score >= 70 ? "inherit" : "#FF7D7D" }}>
-                {readiness.score}% Ready
-              </h4>
-            </div>
-          </div>
-          {readiness.issues.length === 0 ? (
-            <p style={{ color: "var(--text-secondary)" }}>
-              No issues found in the {readiness.totalChecked} purchase{readiness.totalChecked === 1 ? "" : "s"} checked for this period.
-            </p>
-          ) : (
-            <ul style={{ color: "var(--text-secondary)", paddingLeft: 18 }}>
-              {readiness.issues.map((issue) => (
-                <li key={issue.label}>{issue.label}</li>
-              ))}
-            </ul>
-          )}
-          <p style={{ color: "var(--text-muted)", fontSize: 13, marginTop: 10 }}>
-            This score currently checks cost and evidence coverage on purchases. It will check reconciliation, VAT classification and documents too as those are built — the score will get more thorough, never less honest.
-          </p>
-        </section>
-      )}
-
-      {!loading && figures && (
-        <section className="kpi-grid">
-          <article className="kpi-card">
-            <p className="kpi-label">Gross Sales<Info text="Total selling value before any costs or fees." /></p>
-            <strong className="kpi-value">{formatCurrency(figures.grossSales)}</strong>
-          </article>
-          <article className="kpi-card">
-            <p className="kpi-label">Ticket Cost of Sales<Info text="Ticket purchase costs associated with tickets sold during this period." /></p>
-            <strong className="kpi-value">{formatCurrency(figures.costOfSales)}</strong>
-          </article>
-          <article className="kpi-card">
-            <p className="kpi-label">Marketplace Fees<Info text="Fees deducted by marketplaces, derived from gross sale minus actual payout where both are known. Left out (not guessed) when only a net payout figure is available." /></p>
-            <strong className="kpi-value">{formatCurrency(figures.marketplaceFees)}</strong>
-            {figures.salesWithUnknownFees > 0 && (
-              <span className="kpi-trend">{figures.salesWithUnknownFees} sale{figures.salesWithUnknownFees === 1 ? "" : "s"} with fee unknown</span>
-            )}
-          </article>
-          <article className="kpi-card">
-            <p className="kpi-label">Other Business Expenses<Info text="From your Costs page — overheads logged within this period." /></p>
-            <strong className="kpi-value">{formatCurrency(figures.otherExpenses)}</strong>
-          </article>
-          <article className="kpi-card">
-            <p className="kpi-label">Refunds<Info text={figures.refundsTrackedNote} /></p>
-            <strong className="kpi-value">{formatCurrency(figures.refunds)}</strong>
-          </article>
-          <article className="kpi-card">
-            <p className="kpi-label">Net Trading Profit<Info text="Gross Sales minus Cost of Sales, Marketplace Fees, Other Expenses and Refunds." /></p>
-            <strong className={`kpi-value ${figures.netTradingProfit >= 0 ? "" : ""}`} style={{ color: figures.netTradingProfit >= 0 ? "#67F0A5" : "#FF7D7D" }}>
-              {formatCurrency(figures.netTradingProfit)}
-            </strong>
-          </article>
-          <article className="kpi-card">
-            <p className="kpi-label">Unsold Ticket Inventory<Info text="Purchase cost of tickets still unsold as of the period end — not an estimate of resale value." /></p>
-            <strong className="kpi-value">{formatCurrency(figures.unsoldInventoryCost)}</strong>
-          </article>
-          <article className="kpi-card">
-            <p className="kpi-label">Cash Received<Info text="Actual payouts/settlements received during this period — not the same as revenue earned in this period." /></p>
-            <strong className="kpi-value">{formatCurrency(figures.cashReceived)}</strong>
-          </article>
-          <article className="kpi-card">
-            <p className="kpi-label">Suggested Tax Reserve<Info text="A cash-management guide only, based on your configured reserve percentage. Not a calculation of what you owe HMRC." /></p>
-            <strong className="kpi-value">{formatCurrency(Math.max(0, figures.netTradingProfit) * (props.taxReservePercent / 100))}</strong>
-            <span className="kpi-trend">{props.taxReservePercent}% of net trading profit</span>
-          </article>
-        </section>
-      )}
-    </>
   );
 }
