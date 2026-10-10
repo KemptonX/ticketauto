@@ -819,6 +819,88 @@ export default function SettingsClient() {
     }
   }
 
+  // ── SMS verification code forwarding (SMSPass.io → Discord) ──
+  const [smsApiKeyInput, setSmsApiKeyInput] = useState("");
+  const [smsConfigured, setSmsConfigured] = useState(false);
+  const [smsDiscordWebhookUrl, setSmsDiscordWebhookUrl] = useState("");
+  const [smsIsActive, setSmsIsActive] = useState(true);
+  const [smsLastSeenAt, setSmsLastSeenAt] = useState<string | null>(null);
+  const [smsLastPolledAt, setSmsLastPolledAt] = useState<string | null>(null);
+  const [smsLastError, setSmsLastError] = useState<string | null>(null);
+  const [smsSaving, setSmsSaving] = useState(false);
+  const [smsSaved, setSmsSaved] = useState(false);
+  const [smsTesting, setSmsTesting] = useState(false);
+  const [smsMessage, setSmsMessage] = useState<{ ok: boolean; text: string } | null>(null);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const res = await fetch("/api/sms-pass/settings");
+        const data = await res.json() as {
+          configured?: boolean; discordWebhookUrl?: string; isActive?: boolean;
+          lastSeenAt?: string | null; lastPolledAt?: string | null; lastError?: string | null;
+        };
+        setSmsConfigured(!!data.configured);
+        setSmsDiscordWebhookUrl(data.discordWebhookUrl ?? "");
+        setSmsIsActive(data.isActive ?? true);
+        setSmsLastSeenAt(data.lastSeenAt ?? null);
+        setSmsLastPolledAt(data.lastPolledAt ?? null);
+        setSmsLastError(data.lastError ?? null);
+      } catch { /* non-fatal — section just shows as not-yet-configured */ }
+    })();
+  }, []);
+
+  async function saveSmsPassSettings() {
+    setSmsSaving(true);
+    setSmsMessage(null);
+    try {
+      const res = await fetch("/api/sms-pass/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          apiKey: smsApiKeyInput.trim(),
+          discordWebhookUrl: smsDiscordWebhookUrl.trim(),
+          isActive: smsIsActive,
+        }),
+      });
+      const data = await res.json() as { ok?: boolean; error?: string };
+      if (data.ok) {
+        setSmsSaved(true);
+        setSmsConfigured(smsConfigured || !!smsApiKeyInput.trim());
+        setSmsApiKeyInput(""); // never keep the raw key sitting in the input after a successful save
+        setSmsMessage({ ok: true, text: "Saved." });
+        setTimeout(() => setSmsSaved(false), 2500);
+      } else {
+        setSmsMessage({ ok: false, text: data.error ?? "Save failed" });
+      }
+    } catch {
+      setSmsMessage({ ok: false, text: "Network error — check your connection" });
+    } finally {
+      setSmsSaving(false);
+    }
+  }
+
+  async function testSmsPassConnection() {
+    setSmsTesting(true);
+    setSmsMessage(null);
+    try {
+      const res = await fetch("/api/sms-pass/test", { method: "POST" });
+      const data = await res.json() as { ok?: boolean; error?: string; warning?: string; numbersFound?: number };
+      if (data.ok) {
+        setSmsMessage({
+          ok: true,
+          text: data.warning ?? `Connected — monitoring ${data.numbersFound ?? 0} number${(data.numbersFound ?? 0) === 1 ? "" : "s"}. Check Discord for the test message.`,
+        });
+      } else {
+        setSmsMessage({ ok: false, text: data.error ?? "Test failed" });
+      }
+    } catch {
+      setSmsMessage({ ok: false, text: "Network error — check your connection" });
+    } finally {
+      setSmsTesting(false);
+    }
+  }
+
   // ── Email forwarding state ──
   type ForwardingSettings = {
     id: string;
@@ -2930,6 +3012,84 @@ export default function SettingsClient() {
                     To disable alerts, clear the field and save.
                   </p>
                 </div>
+              </div>
+            </section>
+
+            <section className="table-card">
+              <div className="table-card-header">
+                <div>
+                  <p className="section-tag">SMS verification codes</p>
+                  <h4>Forward SMSPass codes to Discord</h4>
+                </div>
+                {smsSaved && (
+                  <span className="status-badge status-static status-sold">Saved ✓</span>
+                )}
+              </div>
+              <div style={{ padding: "0 1.5rem 1.5rem", display: "flex", flexDirection: "column", gap: "1.25rem" }}>
+                <p style={{ color: "var(--text-2)", fontSize: "0.875rem", lineHeight: 1.6, margin: 0 }}>
+                  Paste your own <strong>SMSPass.io</strong> API key below. TixTracker will automatically check for new SMS (e.g. Ticketmaster verification codes) and post them to Discord — no more loading the SMSPass site to check manually. Everyone&apos;s key is different and stored encrypted, separate from your account.
+                </p>
+
+                <label className="filter-field">
+                  <span className="filter-label">SMSPass API key{smsConfigured ? " (saved — leave blank to keep it unchanged)" : ""}</span>
+                  <input
+                    className="field"
+                    type="password"
+                    placeholder={smsConfigured ? "•••••••••••••••••••••••••• (unchanged)" : "e.g. b64890e9-d68c-41ac-96e8-ce58782709d6"}
+                    value={smsApiKeyInput}
+                    onChange={(e) => { setSmsApiKeyInput(e.target.value); setSmsMessage(null); }}
+                    style={{ fontFamily: "var(--font-geist-mono, monospace)", fontSize: "0.8rem" }}
+                  />
+                </label>
+
+                <label className="filter-field">
+                  <span className="filter-label">Discord webhook for codes (optional — leave blank to use your main webhook above)</span>
+                  <input
+                    className="field"
+                    type="url"
+                    placeholder="https://discord.com/api/webhooks/... (optional)"
+                    value={smsDiscordWebhookUrl}
+                    onChange={(e) => { setSmsDiscordWebhookUrl(e.target.value); setSmsMessage(null); }}
+                    style={{ fontFamily: "var(--font-geist-mono, monospace)", fontSize: "0.8rem" }}
+                  />
+                </label>
+
+                <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "0.85rem", color: "var(--text-2)" }}>
+                  <input type="checkbox" checked={smsIsActive} onChange={(e) => setSmsIsActive(e.target.checked)} />
+                  Active — check for new codes automatically
+                </label>
+
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <button type="button" className="primary-button" disabled={smsSaving} onClick={() => void saveSmsPassSettings()}>
+                    {smsSaving ? "Saving…" : "Save"}
+                  </button>
+                  <button type="button" className="secondary-button" disabled={smsTesting || !smsConfigured} onClick={() => void testSmsPassConnection()}>
+                    {smsTesting ? "Testing…" : "Test connection"}
+                  </button>
+                </div>
+
+                {smsMessage && (
+                  <div style={{
+                    padding: "8px 14px",
+                    borderRadius: 8,
+                    fontSize: "0.82rem",
+                    background: smsMessage.ok ? "rgba(103,240,165,0.1)" : "rgba(255,80,80,0.1)",
+                    border: `1px solid ${smsMessage.ok ? "rgba(103,240,165,0.3)" : "rgba(255,80,80,0.3)"}`,
+                    color: smsMessage.ok ? "#67F0A5" : "#ff8080",
+                  }}>
+                    {smsMessage.ok ? "✓ " : "✗ "}{smsMessage.text}
+                  </div>
+                )}
+
+                {smsConfigured && (
+                  <div style={{ padding: "12px 14px", borderRadius: 8, background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)" }}>
+                    <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--text-muted)", lineHeight: 1.5 }}>
+                      {smsLastPolledAt ? `Last checked: ${new Date(smsLastPolledAt).toLocaleString("en-GB")}` : "Not checked yet"}
+                      {smsLastSeenAt ? ` · Last code seen: ${new Date(smsLastSeenAt).toLocaleString("en-GB")}` : ""}
+                      {smsLastError ? ` · Last issue: ${smsLastError}` : ""}
+                    </p>
+                  </div>
+                )}
               </div>
             </section>
 
