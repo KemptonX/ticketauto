@@ -38,7 +38,14 @@ export async function POST(request: Request) {
   }
 
   const body = (await request.json()) as { apiKey?: string; discordWebhookUrl?: string; isActive?: boolean };
-  const apiKey = body.apiKey?.trim();
+  // Defensive: SMSPass's own docs/UI show the key embedded in a full URL
+  // (https://api.smspass.io/getSMS?APIKEY=xxx), so pasting the whole URL
+  // instead of just the key is an easy, likely mistake — extract the bare
+  // value if that shape is detected, rather than silently storing (and
+  // later failing to authenticate with) a garbled key.
+  const rawApiKey = body.apiKey?.trim();
+  const urlMatch = rawApiKey?.match(/APIKEY=([^&\s]+)/i);
+  const apiKey = urlMatch ? decodeURIComponent(urlMatch[1]) : rawApiKey;
   const discordWebhookUrl = body.discordWebhookUrl?.trim() || null;
 
   if (discordWebhookUrl && !discordWebhookUrl.startsWith("https://discord.com/api/webhooks/")) {
