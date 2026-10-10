@@ -42,8 +42,24 @@ type SmsMessage = {
 // (SMSPass fetch + Discord posts), not match the poll interval.
 const CLAIM_WINDOW_SECONDS = 10;
 
+// Normalises a message's own timestamp string to a canonical ISO form.
+// Critical: Postgres round-trips timestamptz values with a "+00:00" suffix
+// (e.g. "2026-10-10T15:13:16+00:00"), while SMSPass's API returns its own
+// timestamps with a "Z" suffix (e.g. "2026-10-10T15:13:16Z") — the exact
+// same instant, different text. Comparing these as raw strings (as an
+// earlier version of this file did) silently fails even when the instants
+// are identical, which meant the dedup signature set could never actually
+// register a match at the exact boundary — the one case it exists to
+// catch — causing the same message to be re-forwarded to Discord on every
+// poll indefinitely. Always compare/store via this normalised form instead
+// of either side's raw string.
+function normaliseTimestamp(raw: string): string | null {
+  const t = new Date(raw).getTime();
+  return isNaN(t) ? null : new Date(t).toISOString();
+}
+
 function fingerprint(m: SmsMessage): string {
-  return `${m.from}|${m.to}|${m.message}|${m.timestamp}`;
+  return `${m.from}|${m.to}|${m.message}|${normaliseTimestamp(m.timestamp) ?? m.timestamp}`;
 }
 
 // Best-effort pull-out of the verification code itself (most of these
@@ -222,20 +238,29 @@ export async function GET(request: NextRequest) {
     // Advance the cursor to the newest message seen this cycle regardless
     // of whether forwarding succeeded, so a persistently-broken webhook
     // doesn't cause the same messages to be retried forever — the error is
-    // surfaced via last_error instead.
-    const maxTimestamp = messages.reduce<string | null>((max, m) => {
+    // surfaced via last_error instead. Compared/stored as normalised epoch
+    // ms throughout — never raw strings — so this never falls prey to the
+    // "Z" vs "+00:00" mismatch described above.
+    const priorMaxMs = account.last_seen_at ? new Date(account.last_seen_at).getTime() : null;
+    const maxMs = messages.reduce<number | null>((max, m) => {
       const t = new Date(m.timestamp).getTime();
       if (isNaN(t)) return max;
-      return !max || t > new Date(max).getTime() ? m.timestamp : max;
-    }, account.last_seen_at);
+      return max === null || t > max ? t : max;
+    }, priorMaxMs);
 
-    const newSignatures = messages
-      .filter((m) => m.timestamp === maxTimestamp)
-      .map(fingerprint)
-      .slice(0, 20);
+    const newSignatures = maxMs === null
+      ? []
+      : messages
+          .filter((m) => new Date(m.timestamp).getTime() === maxMs)
+          .map(fingerprint)
+          .slice(0, 20);
+
+    const newLastSeenAt = maxMs !== null
+      ? new Date(maxMs).toISOString()
+      : (isFirstPoll ? new Date().toISOString() : account.last_seen_at);
 
     await supabase.from("sms_pass_accounts").update({
-      last_seen_at: maxTimestamp ?? (isFirstPoll ? new Date().toISOString() : account.last_seen_at),
+      last_seen_at: newLastSeenAt,
       recent_signatures: newSignatures,
       last_polled_at: new Date().toISOString(),
       last_error: forwardError,
