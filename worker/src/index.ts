@@ -7,6 +7,50 @@ const SECRET = process.env.LISTING_WORKER_SECRET ?? "";
 const WORKER_ID = `railway-${Math.random().toString(36).slice(2, 10)}`;
 const POLL_MS = 12_000;
 
+// SMS verification code forwarding (SMSPass.io -> Discord) — a second,
+// fully independent loop on this same always-on process. SMSPass has no
+// webhook/push option, only a pull API, and a free external HTTP
+// scheduler (cron-job.org) can't go below 60s — nowhere near fast enough
+// for a code a user needs within seconds. This process is already running
+// continuously for the Playwright job queue, so polling our own
+// /api/cron/sms-codes endpoint every few seconds here costs nothing extra
+// and doesn't touch the job-loop logic above at all.
+const SMS_POLL_SECRET = process.env.SMS_POLL_SECRET ?? "";
+const SMS_POLL_MS = Number(process.env.SMS_POLL_INTERVAL_MS) || 3_000;
+
+async function pollSmsCodes(): Promise<void> {
+  if (!API_URL || !SMS_POLL_SECRET) return; // silently idle if not configured — never crashes the job loop
+  try {
+    const res = await fetch(`${API_URL}/api/cron/sms-codes?secret=${encodeURIComponent(SMS_POLL_SECRET)}`, { cache: "no-store" });
+    if (!res.ok) {
+      console.error(`[sms-poll] HTTP ${res.status}`);
+      return;
+    }
+    const data = (await res.json()) as { usersChecked?: number; totalForwarded?: number; errors?: string[] };
+    if ((data.totalForwarded ?? 0) > 0) {
+      console.log(`[sms-poll] forwarded ${data.totalForwarded} message(s)`);
+    }
+    if (data.errors && data.errors.length > 0) {
+      console.error(`[sms-poll] errors:`, data.errors);
+    }
+  } catch (err) {
+    console.error("[sms-poll] fetch failed:", err instanceof Error ? err.message : err);
+  }
+}
+
+function startSmsPollLoop(): void {
+  if (!SMS_POLL_SECRET) {
+    console.log("[sms-poll] SMS_POLL_SECRET not set — SMS forwarding loop disabled");
+    return;
+  }
+  console.log(`[sms-poll] Starting — polling every ${SMS_POLL_MS / 1000}s`);
+  const tick = async () => {
+    await pollSmsCodes();
+    setTimeout(tick, SMS_POLL_MS);
+  };
+  void tick();
+}
+
 async function pollForJob(): Promise<Job | null> {
   const res = await fetch(`${API_URL}/api/worker/jobs`, {
     headers: {
@@ -46,6 +90,8 @@ async function reportProgress(jobId: string, payload: JobUpdatePayload): Promise
 
 async function main(): Promise<void> {
   console.log(`[worker] Starting TixTracker Viagogo worker (id=${WORKER_ID})`);
+
+  startSmsPollLoop(); // independent of everything below — never blocks or is blocked by the job loop
 
   if (!API_URL || !SECRET) {
     console.error("[worker] TIXTRACKER_API_URL or LISTING_WORKER_SECRET not set — exiting");
