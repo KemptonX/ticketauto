@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { decryptCredential } from "@/src/lib/marketplace/encryption";
 
 export const runtime = "nodejs";
@@ -7,11 +7,15 @@ export const runtime = "nodejs";
 // This endpoint is deliberately NOT a Vercel cron entry — verification
 // codes need to be delivered within seconds, and Vercel's own scheduler on
 // this project's plan only runs once a day (and even on a paid plan, no
-// finer than once a minute). Instead, an external free scheduler (e.g.
-// cron-job.org) is pointed at this URL every ~15-20 seconds. Secured by its
-// own dedicated secret (SMS_POLL_SECRET) — intentionally separate from
-// CRON_SECRET, since this one has to be pasted into a third-party
-// scheduler's config rather than staying purely server-side.
+// finer than once a minute). Instead, the always-on Railway worker
+// (worker/src/index.ts, startSmsPollLoop) hits this URL every ~3 seconds.
+// A free external scheduler (e.g. cron-job.org) can be used as a fallback,
+// but its minimum interval is 60s — confirmed directly, not assumed — so
+// it's far slower on its own; claimAccount() below makes it safe to run
+// both at once without duplicate Discord sends if one is left on. Secured
+// by its own dedicated secret (SMS_POLL_SECRET) — intentionally separate
+// from CRON_SECRET, since this one is shared with a process outside
+// Vercel entirely.
 
 type SmsPassAccount = {
   id: number;
@@ -30,11 +34,13 @@ type SmsMessage = {
   timestamp: string;
 };
 
-// Soft lock: if a previous invocation touched this row less than this many
-// seconds ago, skip it this cycle. Guards against two overlapping poll
-// cycles (e.g. the external scheduler firing faster than one cycle
-// completes) both forwarding the same new message to Discord twice.
-const SOFT_LOCK_SECONDS = 8;
+// Claim window: an in-flight claim on a row is considered valid for this
+// long before another invocation is allowed to re-claim it (safety net in
+// case a previous invocation crashed mid-cycle and never released it).
+// This is NOT the primary duplicate-prevention mechanism — see claimAccount
+// below for that. It only needs to outlast one real poll cycle
+// (SMSPass fetch + Discord posts), not match the poll interval.
+const CLAIM_WINDOW_SECONDS = 10;
 
 function fingerprint(m: SmsMessage): string {
   return `${m.from}|${m.to}|${m.message}|${m.timestamp}`;
@@ -47,6 +53,32 @@ function fingerprint(m: SmsMessage): string {
 function extractCode(message: string): string | null {
   const match = message.match(/\b(\d{4,8})\b/);
   return match ? match[1] : null;
+}
+
+// Atomically claims a row for processing: the UPDATE only succeeds (and
+// returns a row) if last_polled_at is null or older than the claim window
+// AT THE MOMENT POSTGRES EXECUTES THE WRITE — not at the moment we read it
+// earlier. This closes the race the previous read-then-write-separately
+// approach had: if two invocations overlap (e.g. a leftover external
+// scheduler poll landing at the same moment as the worker's tight loop),
+// only the first one's UPDATE can match the WHERE condition: the instant
+// it commits, last_polled_at is bumped forward, so the second invocation's
+// UPDATE finds no matching row and gets nothing back — it skips this
+// account entirely rather than both proceeding to fetch the same new SMS
+// and both forwarding it to Discord.
+async function claimAccount(
+  supabase: SupabaseClient,
+  accountId: number,
+): Promise<boolean> {
+  const cutoff = new Date(Date.now() - CLAIM_WINDOW_SECONDS * 1000).toISOString();
+  const { data, error } = await supabase
+    .from("sms_pass_accounts")
+    .update({ last_polled_at: new Date().toISOString() })
+    .eq("id", accountId)
+    .or(`last_polled_at.is.null,last_polled_at.lt.${cutoff}`)
+    .select("id");
+  if (error) return false;
+  return (data ?? []).length > 0;
 }
 
 async function sendDiscordEmbed(webhookUrl: string, m: SmsMessage): Promise<void> {
@@ -104,13 +136,10 @@ export async function GET(request: NextRequest) {
   let usersChecked = 0;
   let totalForwarded = 0;
   const errors: string[] = [];
-  const now = Date.now();
 
   for (const account of accounts as SmsPassAccount[]) {
-    if (account.last_polled_at) {
-      const elapsedSec = (now - new Date(account.last_polled_at).getTime()) / 1000;
-      if (elapsedSec >= 0 && elapsedSec < SOFT_LOCK_SECONDS) continue; // likely an overlapping invocation
-    }
+    const claimed = await claimAccount(supabase, account.id);
+    if (!claimed) continue; // another invocation is already processing (or just processed) this account
 
     usersChecked += 1;
     const userTag = account.user_id.slice(0, 8);
