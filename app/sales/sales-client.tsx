@@ -2107,6 +2107,27 @@ export default function SalesClient() {
 
             <button
               type="button"
+              disabled={massUpdating}
+              onClick={() => void deleteSelectedSales()}
+              style={{
+                display: "flex", alignItems: "center", gap: 5,
+                background: "rgba(248,113,113,0.12)",
+                border: "1px solid rgba(248,113,113,0.35)",
+                borderRadius: 999,
+                padding: "6px 12px",
+                cursor: massUpdating ? "not-allowed" : "pointer",
+                color: "#f87171",
+                fontSize: 12, fontWeight: 600,
+                opacity: massUpdating ? 0.5 : 1,
+              }}
+            >
+              🗑 Delete selected
+            </button>
+
+            <div style={{ width: 1, height: 20, background: "rgba(255,255,255,0.12)" }} />
+
+            <button
+              type="button"
               onClick={() => setSelectedSaleIds(new Set())}
               style={{
                 background: "rgba(255,255,255,0.06)",
