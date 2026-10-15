@@ -1625,7 +1625,7 @@ export default function SalesClient() {
             <div className="state-card">
               <div className="state-orb state-orb-muted" />
               <h5>No sales in this view</h5>
-              <p>Run Scan Sales or reset filters to widen the view.</p>
+              <p>Reset filters to widen the view, or check Forward Mail if you&apos;re expecting new sales to appear.</p>
             </div>
           ) : (
             <div className="inventory-group-list">

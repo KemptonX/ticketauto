@@ -7,7 +7,8 @@
     "prebuild": "node -e \"const{rmSync}=require('fs');rmSync('middleware.ts',{force:true});rmSync('middleware.js',{force:true})\"",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "node --experimental-strip-types --test app/guides/*.test.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.10.0",
