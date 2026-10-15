@@ -563,11 +563,23 @@ export default function SalesClient() {
     if (!confirmed) return;
     setMassUpdating(true);
     const ids = [...selectedSaleIds];
+    // Capture affected orders BEFORE deleting — needed to recalculate their
+    // cached sold_total/listing_status afterwards. Without this, a deleted
+    // duplicate sale's amount stays baked into orders.sold_total, which is
+    // what the dashboard's profit figures read from — causing it to keep
+    // showing the duplicate's revenue/profit even after the sale itself is
+    // gone from this page.
+    const affectedOrderIds = new Set(
+      sales.filter((s) => selectedSaleIds.has(s.id) && s.inventory_order_id != null).map((s) => s.inventory_order_id as number),
+    );
     const { error } = await supabase.from("sales").update({ sale_status: "Deleted" }).in("id", ids);
     if (error) { setMessage(error.message); setMassUpdating(false); return; }
     setSales((current) => current.filter((s) => !selectedSaleIds.has(s.id)));
     if (selectedSaleId != null && selectedSaleIds.has(selectedSaleId)) setSelectedSaleId(null);
     setSelectedSaleIds(new Set());
+    for (const orderId of affectedOrderIds) {
+      await syncOrderFromSales(orderId);
+    }
     setMassUpdating(false);
     setMessage(`${ids.length} sale${ids.length > 1 ? "s" : ""} moved to Deleted.`);
   }
