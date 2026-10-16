@@ -6,11 +6,11 @@
     },
     {
       "path": "/api/cron/notify-unsold",
-      "schedule": "0 * * * *"
+      "schedule": "0 9 * * *"
     },
     {
       "path": "/api/cron/whop-refresh",
-      "schedule": "0 */6 * * *"
+      "schedule": "0 3 * * *"
     }
   ]
 }

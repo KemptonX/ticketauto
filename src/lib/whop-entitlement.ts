@@ -23,8 +23,16 @@ export const ALLOWED_WHOP_STATUSES = new Set([
 // (see vercel.json's whop-refresh cron schedule). Both are explicit,
 // documented business policy — flagged for the owner to confirm/adjust in
 // the final report, not silently assumed as "correct" by this code.
+//
+// RECHECK_INTERVAL_HOURS is documentation of intent, not an enforced
+// value — the actual cadence is whatever vercel.json's cron schedule
+// says. It's 24 (once daily), not 6, because this Vercel account is on
+// the Hobby plan, which only permits daily cron jobs — confirmed when a
+// 6-hourly schedule failed to deploy. Should the account move to Pro,
+// vercel.json's whop-refresh schedule can go back to every 6 hours and
+// this constant should be updated to match.
 export const OUTAGE_GRACE_HOURS = 48;
-export const RECHECK_INTERVAL_HOURS = 6;
+export const RECHECK_INTERVAL_HOURS = 24;
 
 export type WhopMembership = {
   id: string;

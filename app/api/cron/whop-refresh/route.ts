@@ -12,13 +12,10 @@ export const maxDuration = 60;
 // instead of a user keeping access for as long as their session happens
 // to stay alive. Every Discord-login user gets a row in whop_entitlements
 // at their first login (app/auth/callback/route.ts); this route re-checks
-// every existing row on a schedule (see vercel.json — RECHECK_INTERVAL_HOURS
-// in src/lib/whop-entitlement.ts documents the intended cadence this should
-// be scheduled at).
-//
-// NOT scheduled in vercel.json yet — this migration/route is prepared, not
-// deployed. Adding the cron entry is part of the deployment plan in the
-// final report, not done automatically here.
+// every existing row on vercel.json's schedule (currently once daily —
+// RECHECK_INTERVAL_HOURS in src/lib/whop-entitlement.ts documents the
+// actual cadence and why it isn't the originally-intended 6 hours: this
+// Vercel account is on the Hobby plan, which only permits daily crons).
 
 export async function GET(request: NextRequest) {
   const authHeader = request.headers.get("authorization");

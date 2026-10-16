@@ -40,7 +40,18 @@ const THRESHOLDS: Threshold[] = [
 const EXCLUDE_STATUSES = new Set(["Sold", "Archived", "Ignored", "Personal"]);
 
 // Returns true if the current time in `timezone` matches the user's `alertTime` hour.
-// The cron fires at minute 0 of every hour so we only compare hours.
+//
+// This was originally written assuming the cron fires every hour (so
+// every user's chosen hour gets its own check), but vercel.json's
+// schedule is forced back to once daily — this Vercel account is on the
+// Hobby plan, which only permits daily cron jobs, confirmed when the
+// hourly schedule failed to deploy. In practice this means only users
+// whose configured alert_time hour matches the single daily run time
+// (currently 9am UTC) will actually receive a notification; everyone
+// else's custom alert time is saved but has no opportunity to fire.
+// This is a real, known limitation, not a bug in this function — fixing
+// it properly needs either a Pro-plan hourly cron or an external
+// scheduler hitting this route hourly with CRON_SECRET.
 function shouldNotifyNow(alertTime: string | null, timezone: string | null): boolean {
   const tz = timezone || "UTC";
   const time = alertTime || "09:00";
@@ -200,15 +211,13 @@ export async function GET(request: NextRequest) {
   const errors: string[] = [];
 
   for (const setting of userSettings as UserSetting[]) {
-    // PERF-003/notifications fix: shouldNotifyNow() was written (and its
-    // own comment already says "the cron fires at minute 0 of every
-    // hour") but never actually called anywhere — every user got
-    // notified unconditionally whenever this ran, regardless of their
-    // configured alert_time/alert_timezone. Settings saved the
-    // preference; nothing ever read it back. Now gated for real, paired
-    // with vercel.json's schedule actually changing to hourly (see that
-    // file) so there's a genuine opportunity to match each user's chosen
-    // hour, not just a fixed 9am UTC for everyone.
+    // PERF-003/notifications fix: shouldNotifyNow() was written but never
+    // actually called anywhere — every user got notified unconditionally
+    // whenever this ran, regardless of their configured
+    // alert_time/alert_timezone. Settings saved the preference; nothing
+    // ever read it back. Now gated for real — see shouldNotifyNow()'s own
+    // comment for why this still can't honour every user's chosen hour
+    // on this Vercel plan, only whichever single hour vercel.json runs at.
     if (!shouldNotifyNow(setting.alert_time, setting.alert_timezone)) continue;
 
     usersChecked += 1;
