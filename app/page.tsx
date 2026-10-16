@@ -14,15 +14,11 @@ export default async function HomePage() {
     // of bouncing anywhere, which is the right behaviour for the one page
     // that's reachable whether or not a session exists at all.
     //
-    // Discord-only login: no Discord identity (a pre-existing email/
-    // password account) is treated as not entitled, matching
-    // requireActiveAccess()'s new Discord-only enforcement — otherwise
-    // this page would render the full dashboard for exactly the session
-    // type that's meant to be shut out everywhere else.
+    // Discord-only enforcement here was reverted (see require-access.ts) —
+    // an email/password session is entitled again, same as before.
     const discordIdentity = user.identities?.find((i) => i.provider === "discord");
-    let isEntitled = false;
+    let isEntitled = true;
     if (discordIdentity) {
-      isEntitled = true;
       const { data: entitlement } = await supabase
         .from("whop_entitlements")
         .select("is_entitled")

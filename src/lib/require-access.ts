@@ -25,16 +25,13 @@ import type { SupabaseClient, User } from "@supabase/supabase-js";
 // or the first whop-refresh cron run, whichever comes first, rather than
 // being instantly locked out the moment this deploys.
 //
-// Discord-only login: a session with no Discord identity at all (an
-// email/password account, from before Discord became the only supported
-// method) is no longer granted access. Previously this returned the user
-// unconditionally — "email/password account, Whop was never part of this
-// user's access model" — which is exactly the kind of bypass a
-// Discord-only policy can't tolerate: anyone who still holds, or creates,
-// an email/password session (even via a direct API call bypassing the
-// login page entirely) would otherwise walk straight into the dashboard
-// with no Whop check at all. Removing the email/password UI alone
-// wouldn't have closed this — this is the actual server-side enforcement.
+// Discord-only login was briefly enforced here (denying any session with
+// no Discord identity) but reverted: real existing email/password
+// customers were locked out immediately with no migration path in place
+// yet, which is a worse outcome than the bypass risk this was meant to
+// close. Re-apply this once those customers have had a chance to migrate
+// via /account-access (see that route) — don't just silently leave it
+// off indefinitely.
 export async function requireActiveAccess(
   supabase: SupabaseClient,
 ): Promise<User> {
@@ -45,7 +42,7 @@ export async function requireActiveAccess(
 
   const discordIdentity = user.identities?.find((i) => i.provider === "discord");
   if (!discordIdentity) {
-    redirect("/login?error=" + encodeURIComponent("TixTracker now requires signing in with Discord. Please contact support if you need help migrating your account."));
+    return user; // email/password account — temporarily restored, see comment above
   }
 
   const { data: entitlement } = await supabase

@@ -17,15 +17,11 @@ export default async function LoginPage() {
     // this check, /login would immediately bounce them straight back to
     // /orders, which bounces them back here, forever.
     //
-    // Discord-only login: a session with no Discord identity at all (a
-    // pre-existing email/password account) is treated the same way —
-    // requireActiveAccess() now denies it too (see src/lib/require-access.ts),
-    // so this must agree, or the exact same redirect loop reappears for
-    // that case instead.
+    // Discord-only enforcement here was reverted (see require-access.ts) —
+    // an email/password session is entitled again, same as before.
     const discordIdentity = user.identities?.find((i) => i.provider === "discord");
-    let isEntitled = false;
+    let isEntitled = true;
     if (discordIdentity) {
-      isEntitled = true;
       const { data: entitlement } = await supabase
         .from("whop_entitlements")
         .select("is_entitled")
