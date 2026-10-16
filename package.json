@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "prebuild": "node -e \"const{rmSync}=require('fs');rmSync('middleware.ts',{force:true});rmSync('middleware.js',{force:true})\"",
-    "build": "next build",
+    "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint",
     "test": "node --experimental-strip-types --test src/lib/*.test.ts app/guides/*.test.ts"
