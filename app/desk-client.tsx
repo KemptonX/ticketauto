@@ -6,6 +6,8 @@ import { supabase } from "@/src/lib/supabase";
 import { formatCurrency } from "@/src/lib/currency";
 import { useRatesReady } from "@/app/components/CurrencyProvider";
 import { SidebarLogo, NavIcon, SidebarFooter } from "@/app/components/nav-icons";
+import { getProportionalCost } from "@/src/lib/proportional-cost";
+import { downloadCsv } from "@/src/lib/csv-export";
 
 type Order = {
   id: number;
@@ -33,16 +35,11 @@ type Sale = {
   sold_at: string | null;
 };
 
-function getProportionalCost(
-  totalCost: number | null,
-  qtyBought: number | null,
-  qtySold: number,
-  status: string | null,
-): number {
-  const cost = totalCost ?? 0;
-  if (status !== "Partially Sold" || (qtyBought ?? 0) <= 0 || qtySold <= 0) return cost;
-  return Math.min(cost, (qtySold / qtyBought!) * cost);
-}
+// getProportionalCost now imported from src/lib/proportional-cost.ts —
+// see that file for why (previously duplicated here with a bug: proration
+// only activated when listing_status was the exact string "Partially
+// Sold", silently understating profit for any partially-sold order whose
+// status label had drifted).
 
 const navItems = [
   { label: "Dashboard", href: "/", active: true },
@@ -184,15 +181,6 @@ export default function DeskClient() {
           .order("event_date", { ascending: true }),
       ]);
 
-      const csv = (rows: (string | number | null | undefined)[][]) => {
-        const esc = (v: string | number | null | undefined) => {
-          const s = v == null ? "" : String(v);
-          return s.includes(",") || s.includes('"') || s.includes("\n")
-            ? `"${s.replace(/"/g, '""')}"` : s;
-        };
-        return rows.map((r) => r.map(esc).join(",")).join("\n");
-      };
-
       const headers = [
         "Booking Ref", "Event Name", "Venue", "Event Date", "Account Email",
         "Section", "Row", "Seat From", "Seat To", "Qty Bought", "Order Cost", "Ticket Status", "Source",
@@ -252,13 +240,9 @@ export default function DeskClient() {
         return;
       }
 
-      const blob = new Blob([csv([headers, ...allRows])], { type: "text/csv" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `tixtracker-export-${new Date().toISOString().slice(0, 10)}.csv`;
-      a.click();
-      URL.revokeObjectURL(url);
+      // Uses the shared, injection-safe CSV builder (src/lib/csv-export.ts)
+      // instead of this page's previous own quote-only escaping.
+      downloadCsv(`tixtracker-export-${new Date().toISOString().slice(0, 10)}.csv`, headers, allRows);
     } finally {
       setExporting(false);
     }
@@ -537,6 +521,26 @@ export default function DeskClient() {
             </button>
           </div>
         </header>
+
+        {/* Empty-dashboard guidance — a brand-new account with no tickets
+            yet would otherwise just see a wall of £0 stat cards with no
+            indication of what to do next. Shown instead of (not in
+            addition to) the usual goal/KPI cards below, since those are
+            meaningless with zero inventory. */}
+        {!loading && orders.length === 0 && (
+          <section className="table-card" style={{ padding: "2rem", textAlign: "center", marginBottom: "1.5rem" }}>
+            <h3 style={{ marginBottom: "0.5rem" }}>Nothing here yet — let&apos;s fix that</h3>
+            <p style={{ color: "var(--muted)", marginBottom: "1.5rem" }}>
+              Your dashboard will fill up as soon as you add your first ticket, one way or another.
+            </p>
+            <div style={{ display: "flex", gap: "0.75rem", justifyContent: "center", flexWrap: "wrap" }}>
+              <Link href="/settings?tab=import&mode=tickets" className="primary-button">Import your tickets</Link>
+              <Link href="/orders" className="secondary-button">Add a ticket manually</Link>
+              <Link href="/settings?tab=connections" className="secondary-button">Set up email scanning</Link>
+              <Link href="/getting-started" className="secondary-button">View the getting-started guide</Link>
+            </div>
+          </section>
+        )}
 
         {/* Monthly profit goal */}
         {(() => {

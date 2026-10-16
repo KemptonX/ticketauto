@@ -1,16 +1,9 @@
 import { createSupabaseServerClient } from "@/src/lib/supabase-server";
-import { redirect } from "next/navigation";
+import { requireActiveAccess } from "@/src/lib/require-access";
 import GuidesClient from "./guides-client";
 
 export default async function GuidesPage() {
   const supabase = await createSupabaseServerClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    redirect("/login");
-  }
-
+  await requireActiveAccess(supabase);
   return <GuidesClient />;
 }

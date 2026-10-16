@@ -29,8 +29,7 @@ export default function PrivacyPage() {
         <h3>Account data</h3>
         <p>
           When you create a TixTracker account we collect your email address and any profile
-          information provided by the identity provider you use (Discord or email/password via
-          Supabase Auth).
+          information provided by Discord, the identity provider used to sign in (via Supabase Auth).
         </p>
         <h3>Ticket data you enter</h3>
         <p>

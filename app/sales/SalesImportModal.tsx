@@ -1,8 +1,21 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { supabase } from "@/src/lib/supabase";
+import { parseCSV, parseImportNumber, parseImportDate, autoMapHeader as sharedAutoMapHeader } from "@/src/lib/spreadsheet-parsing";
+import { CURRENCY_OPTIONS, getCurrencyCode, convertToGbpClient } from "@/src/lib/currency";
+import {
+  checkRequiredText,
+  checkQuantity,
+  checkFinancialValue,
+  checkCurrencyMismatch,
+  wouldOversell,
+  describeOversell,
+  classifyIssues,
+  type ImportIssue,
+  type RowClassification,
+} from "@/src/lib/import-validation";
 
 type MatchedOrder = {
   id: number;
@@ -74,45 +87,20 @@ const SALE_COLS = new Set([
 ]);
 
 // ─── Parsers ──────────────────────────────────────────────────────────────────
-
-function normalizeHeader(h: string) {
-  return h.toLowerCase().trim().replace(/[_\-]+/g, " ").replace(/\s+/g, " ");
-}
+// parseCSV / parseImportNumber / parseImportDate / header auto-mapping now
+// live in src/lib/spreadsheet-parsing.ts, shared with settings-client.tsx's
+// ticket importer — see that module for why.
 
 function autoMap(header: string): string {
-  const norm = normalizeHeader(header);
-  for (const f of FIELDS) {
-    if (norm === f.key.replace(/_/g, " ") || f.aliases.includes(norm)) return f.key;
-  }
-  let best = "skip", bestScore = 0;
-  for (const f of FIELDS) {
-    for (const a of f.aliases) {
-      if (norm.includes(a) || a.includes(norm)) {
-        if (a.length > bestScore) { bestScore = a.length; best = f.key; }
-      }
-    }
-  }
-  return best;
+  return sharedAutoMapHeader(header, FIELDS);
 }
 
 function parseDate(raw: string): string | null {
-  if (!raw?.trim()) return null;
-  const s = raw.trim();
-  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
-  const uk = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
-  if (uk) return `${uk[3]}-${uk[2].padStart(2, "0")}-${uk[1].padStart(2, "0")}`;
-  const MONTHS: Record<string, string> = { jan:"01",feb:"02",mar:"03",apr:"04",may:"05",jun:"06",jul:"07",aug:"08",sep:"09",oct:"10",nov:"11",dec:"12" };
-  const df = s.match(/(\d{1,2})\s+([A-Za-z]{3,9})\s+(\d{4})/);
-  if (df) { const mo = MONTHS[df[2].toLowerCase().slice(0, 3)]; if (mo) return `${df[3]}-${mo}-${df[1].padStart(2, "0")}`; }
-  const d = new Date(s);
-  if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10);
-  return null;
+  return parseImportDate(raw);
 }
 
 function parseNum(raw: string): number | null {
-  if (!raw?.trim() || raw.trim() === "-" || raw.trim() === "n/a") return null;
-  const n = parseFloat(raw.replace(/[£$€,\s]/g, "").replace(/[()]/g, ""));
-  return isNaN(n) ? null : n;
+  return parseImportNumber(raw);
 }
 
 function parseSaleStatus(raw: string): string {
@@ -137,30 +125,6 @@ function parsePaymentStatus(raw: string): string {
   if (!s || s === "not due" || s === "n/a" || s === "na" || s === "not applicable" || s === "awaiting") return "Awaiting Payment";
   if (s === "paid" || s.includes("received") || s.includes("settled") || s.includes("complete") || s === "yes" || s === "true" || s === "1" || s === "payment received") return "Paid";
   return "Awaiting Payment";
-}
-
-function parseCSV(text: string): string[][] {
-  const rows: string[][] = [];
-  let row: string[] = [], cell = "", inQuotes = false;
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i], next = text[i + 1];
-    if (inQuotes) {
-      if (ch === '"' && next === '"') { cell += '"'; i++; }
-      else if (ch === '"') inQuotes = false;
-      else cell += ch;
-    } else {
-      if (ch === '"') inQuotes = true;
-      else if (ch === ',' || ch === '\t') { row.push(cell); cell = ""; }
-      else if (ch === '\n' || ch === '\r') {
-        if (ch === '\r' && next === '\n') i++;
-        row.push(cell); cell = "";
-        if (row.some(c => c.trim())) rows.push(row);
-        row = [];
-      } else cell += ch;
-    }
-  }
-  if (cell || row.length) { row.push(cell); if (row.some(c => c.trim())) rows.push(row); }
-  return rows;
 }
 
 function transformRow(rawRow: string[], headers: string[], colMap: Record<number, string>): Record<string, unknown> {
@@ -289,6 +253,17 @@ function findBestOrder(row: Record<string, unknown>, orders: MatchedOrder[]): { 
   return best;
 }
 
+// Top-N candidate orders regardless of the 55% auto-accept threshold —
+// used to let the customer pick manually when confidence is too low to
+// auto-match, instead of the row silently staying "Unmatched".
+function findCandidates(row: Record<string, unknown>, orders: MatchedOrder[], limit = 3): { order: MatchedOrder; score: number }[] {
+  return orders
+    .map((o) => ({ order: o, score: scoreMatch(row, o) }))
+    .filter((c) => c.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit);
+}
+
 async function syncOrder(orderId: number) {
   const { data } = await supabase
     .from("sales")
@@ -330,7 +305,55 @@ export default function SalesImportModal({ allOrders, onClose, onImported }: Sal
   const [dragOver, setDragOver] = useState(false);
   const [message, setMessage] = useState("");
   const [result, setResult] = useState<ImportResult | null>(null);
+  const [importCurrency, setImportCurrency] = useState(() => getCurrencyCode());
+  const [alreadySoldByOrder, setAlreadySoldByOrder] = useState<Map<number, number>>(new Map());
+  const [includeWarningRows, setIncludeWarningRows] = useState(false);
+  // Per preview-row override for low-confidence/no matches — "skip" means
+  // "don't try to match this row at all" (it imports unmatched), a number
+  // is an explicit order id the customer picked themselves.
+  const [matchOverride, setMatchOverride] = useState<Record<number, number | "skip">>({});
+  const [importFileName, setImportFileName] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
+
+  // Best-effort import-history record (see supabase/migrations/0009_import_batches.sql)
+  // — never blocks or fails the import itself if the table doesn't exist yet.
+  async function recordImportBatch(counts: Record<string, number>) {
+    const { data: userRes } = await supabase.auth.getUser();
+    const userId = userRes?.user?.id;
+    if (!userId) return;
+    await supabase.from("import_batches").insert({ user_id: userId, source: "sales_import", source_filename: importFileName || null, counts });
+  }
+
+  // Loads how much of each order is already sold (excluding "Deleted"
+  // sales) so oversell can be checked against the real current total, not
+  // just the quantity bought. Paginated — this user's sales could exceed
+  // Supabase's default 1000-row page size.
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      const orderIds = allOrders.map((o) => o.id);
+      if (orderIds.length === 0) return;
+      const totals = new Map<number, number>();
+      const pageSize = 1000;
+      for (let from = 0; ; from += pageSize) {
+        const { data, error } = await supabase
+          .from("sales")
+          .select("inventory_order_id, qty_sold")
+          .in("inventory_order_id", orderIds)
+          .neq("sale_status", "Deleted")
+          .range(from, from + pageSize - 1);
+        if (error || !data || data.length === 0) break;
+        for (const row of data as { inventory_order_id: number | null; qty_sold: number | null }[]) {
+          if (row.inventory_order_id == null) continue;
+          totals.set(row.inventory_order_id, (totals.get(row.inventory_order_id) ?? 0) + (row.qty_sold ?? 0));
+        }
+        if (data.length < pageSize) break;
+      }
+      if (!cancelled) setAlreadySoldByOrder(totals);
+    }
+    void load();
+    return () => { cancelled = true; };
+  }, [allOrders]);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -341,6 +364,7 @@ export default function SalesImportModal({ allOrders, onClose, onImported }: Sal
 
   async function handleFile(file: File) {
     setMessage("");
+    setImportFileName(file.name);
     try {
       let rows: string[][];
       const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
@@ -379,9 +403,64 @@ export default function SalesImportModal({ allOrders, onClose, onImported }: Sal
     [previewRows, allOrders],
   );
 
+  type ValidatedSaleRow = {
+    rowNum: number;
+    row: Record<string, unknown>;
+    match: { order: MatchedOrder; score: number } | null;
+    candidates: { order: MatchedOrder; score: number }[];
+    issues: ImportIssue[];
+    classification: RowClassification;
+  };
+
+  // Classifies every sale row before anything is written — required
+  // fields, valid quantities, and (critically) an oversell check that
+  // accumulates across the whole batch: several rows in this file can
+  // legitimately point at the same order (multiple partial sales), so the
+  // running total — not any single row in isolation — is what must stay
+  // within that order's qty_bought.
+  const validatedRows: ValidatedSaleRow[] = useMemo(() => {
+    const runningSold = new Map(alreadySoldByOrder);
+    return allTransformed.map((row, i) => {
+      const rowNum = i + 2;
+      if (row._skip) {
+        return { rowNum, row, match: null, candidates: [], issues: [], classification: "valid" as RowClassification };
+      }
+
+      const override = matchOverride[i];
+      const auto = findBestOrder(row, allOrders);
+      const candidates = findCandidates(row, allOrders);
+      const match = override === "skip" ? null : override != null ? { order: allOrders.find((o) => o.id === override)!, score: 100 } : auto;
+
+      const issues: ImportIssue[] = [];
+      issues.push(...checkRequiredText("event_name", "Event Name", row.event_name as string | undefined));
+      issues.push(...checkQuantity("qty_sold", "Quantity Sold", (row.qty_sold as number) ?? null, { required: true }));
+
+      const saleTotalGbp = row.sale_total != null ? convertToGbpClient(row.sale_total as number, importCurrency) : null;
+      issues.push(...checkFinancialValue("sale_total", "Sale Price", saleTotalGbp, { required: true }));
+
+      const rawMoneyCells: string[] = [];
+      for (let c = 0; c < headers.length; c++) {
+        if (colMap[c] === "sale_total") rawMoneyCells.push(importRows[i]?.[c] ?? "");
+      }
+      const mismatch = checkCurrencyMismatch(rawMoneyCells, importCurrency);
+      if (mismatch) issues.push(mismatch);
+
+      const qtySold = (row.qty_sold as number) ?? 0;
+      if (match && qtySold > 0) {
+        const already = runningSold.get(match.order.id) ?? 0;
+        if (wouldOversell(match.order.qty_bought, already, qtySold)) {
+          issues.push({ severity: "error", code: "oversell", message: describeOversell(match.order.qty_bought ?? 0, already, qtySold) });
+        }
+        runningSold.set(match.order.id, already + qtySold);
+      }
+
+      return { rowNum, row, match, candidates, issues, classification: classifyIssues(issues) };
+    });
+  }, [allTransformed, allOrders, alreadySoldByOrder, matchOverride, importCurrency, headers, colMap, importRows]);
+
   const previewSummary = useMemo(() => {
     let ticketsSold = 0, awaitingTransfer = 0, transferredPending = 0, paidArchived = 0, cancelled = 0;
-    let awaitingPaymentAmount = 0, paidAmount = 0;
+    let awaitingPaymentAmount = 0, paidAmount = 0, errorCount = 0, warningCount = 0;
     for (const row of allTransformed) {
       if (row._skip) continue;
       ticketsSold += (row.qty_sold as number) ?? 0;
@@ -391,9 +470,13 @@ export default function SalesImportModal({ allOrders, onClose, onImported }: Sal
       else if (t === "paid-archived") { paidArchived++; paidAmount += (row.payout_total as number) ?? (row.sale_total as number) ?? 0; }
       else if (t === "cancelled") cancelled++;
     }
+    for (const r of validatedRows) {
+      if (r.classification === "error") errorCount++;
+      else if (r.classification === "warning") warningCount++;
+    }
     const skipped = allTransformed.filter(r => r._skip).length;
-    return { total: importRows.length, skipped, ticketsSold, awaitingTransfer, transferredPending, paidArchived, cancelled, awaitingPaymentAmount, paidAmount };
-  }, [allTransformed, importRows.length]);
+    return { total: importRows.length, skipped, ticketsSold, awaitingTransfer, transferredPending, paidArchived, cancelled, awaitingPaymentAmount, paidAmount, errorCount, warningCount };
+  }, [allTransformed, importRows.length, validatedRows]);
 
   async function runImport() {
     setImporting(true);
@@ -410,17 +493,13 @@ export default function SalesImportModal({ allOrders, onClose, onImported }: Sal
     const batchMeta: { rowNum: number; rowType: ReturnType<typeof getRowType>; payout: number }[] = [];
 
     for (let i = 0; i < importRows.length; i++) {
-      const obj = transformRow(importRows[i], headers, colMap);
+      const validated = validatedRows[i];
+      const obj = { ...validated.row };
 
       if (obj._skip) { skipped++; continue; }
       delete obj._skip;
 
       for (const k of Object.keys(obj)) { if (!SALE_COLS.has(k)) delete obj[k]; }
-
-      if (!obj.event_name) {
-        errors.push({ rowNum: i + 2, reason: "Missing event name" });
-        continue;
-      }
 
       // Skip rows that have no sale data — these are order-only rows from a TixTracker export
       // (e.g. personal/unsold tickets that have event info but no qty_sold / sale_total)
@@ -430,12 +509,26 @@ export default function SalesImportModal({ allOrders, onClose, onImported }: Sal
         continue;
       }
 
-      const bestMatch = findBestOrder(obj, allOrders);
-      if (bestMatch) {
-        obj.inventory_order_id = bestMatch.order.id;
-        obj.match_confidence = Math.round(bestMatch.score) / 100;
+      if (validated.classification === "error") {
+        errors.push({ rowNum: validated.rowNum, reason: validated.issues.find((iss) => iss.severity === "error")?.message ?? "This row has a problem and was not imported." });
+        continue;
+      }
+      if (validated.classification === "warning" && !includeWarningRows) {
+        errors.push({ rowNum: validated.rowNum, reason: validated.issues.find((iss) => iss.severity === "warning")?.message ?? "This row needs attention and was skipped." });
+        continue;
+      }
+
+      // Convert sale/payout amounts from the selected import currency to
+      // GBP (TixTracker's canonical storage currency) — reuses the same
+      // convertToGbpClient() used for manual sale entry and the ticket importer.
+      if (obj.sale_total != null) obj.sale_total = convertToGbpClient(obj.sale_total as number, importCurrency);
+      if (obj.payout_total != null) obj.payout_total = convertToGbpClient(obj.payout_total as number, importCurrency);
+
+      if (validated.match) {
+        obj.inventory_order_id = validated.match.order.id;
+        obj.match_confidence = Math.round(validated.match.score) / 100;
         matched++;
-        syncIds.add(bestMatch.order.id);
+        syncIds.add(validated.match.order.id);
       } else {
         unmatched++;
       }
@@ -518,6 +611,7 @@ export default function SalesImportModal({ allOrders, onClose, onImported }: Sal
     setResult({ inserted, duplicates, matched, unmatched, skipped, errors, awaitingTransfer, transferredPending, paidArchived, awaitingPaymentAmount, paidAmount });
     setStep("done");
     setImporting(false);
+    void recordImportBatch({ inserted, matched, unmatched, duplicates, skipped, errors: errors.length });
   }
 
   const content = (
@@ -614,6 +708,18 @@ export default function SalesImportModal({ allOrders, onClose, onImported }: Sal
                 ))}
               </div>
               {message && <p style={{ color: "#f87171", fontSize: 13, marginTop: 10 }}>{message}</p>}
+
+              <div style={{ marginTop: 16 }}>
+                <p style={{ fontSize: 12, color: "rgba(255,255,255,0.45)", marginBottom: 6 }}>What currency is this file&apos;s money in?</p>
+                <select
+                  className="field"
+                  style={{ fontSize: 12, padding: "4px 8px", maxWidth: 260 }}
+                  value={importCurrency}
+                  onChange={(e) => setImportCurrency(e.target.value)}
+                >
+                  {CURRENCY_OPTIONS.map((c) => <option key={c.code} value={c.code}>{c.label}</option>)}
+                </select>
+              </div>
             </div>
           )}
 
@@ -631,6 +737,8 @@ export default function SalesImportModal({ allOrders, onClose, onImported }: Sal
                   { label: "Awaiting payment",        value: previewSummary.awaitingPaymentAmount > 0 ? `£${previewSummary.awaitingPaymentAmount.toFixed(2)}` : "—", color: "#fbbf24" },
                   { label: "Paid out",                value: previewSummary.paidAmount > 0 ? `£${previewSummary.paidAmount.toFixed(2)}` : "—",           color: "#4ade80" },
                   { label: "Skipped (unsold)",        value: previewSummary.skipped,                                        color: "rgba(255,255,255,0.35)" },
+                  { label: "Need attention",          value: previewSummary.warningCount,                                   color: "#fbbf24" },
+                  { label: "Can't import yet",        value: previewSummary.errorCount,                                     color: "#f87171" },
                 ].map(m => (
                   <div key={m.label} style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 8, padding: "10px 12px" }}>
                     <div style={{ fontSize: 11, color: "rgba(255,255,255,0.35)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>{m.label}</div>
@@ -638,6 +746,80 @@ export default function SalesImportModal({ allOrders, onClose, onImported }: Sal
                   </div>
                 ))}
               </div>
+
+              {(previewSummary.errorCount > 0 || previewSummary.warningCount > 0) && (
+                <div style={{ marginBottom: 16, maxHeight: 260, overflowY: "auto", display: "flex", flexDirection: "column", gap: 6 }}>
+                  {validatedRows
+                    .filter((r) => r.classification !== "valid")
+                    .slice(0, 50)
+                    .map((r) => (
+                      <div
+                        key={r.rowNum}
+                        style={{
+                          padding: "8px 10px", borderRadius: 8,
+                          border: `1px solid ${r.classification === "error" ? "rgba(248,113,113,0.3)" : "rgba(251,191,36,0.3)"}`,
+                          background: r.classification === "error" ? "rgba(248,113,113,0.06)" : "rgba(251,191,36,0.06)",
+                        }}
+                      >
+                        <strong style={{ fontSize: 12 }}>Row {r.rowNum}{r.row.event_name ? ` — ${String(r.row.event_name)}` : ""}</strong>
+                        {r.issues.map((issue, j) => (
+                          <p key={j} style={{ fontSize: 12, color: "rgba(255,255,255,0.5)", margin: "3px 0 0" }}>{issue.message}</p>
+                        ))}
+                      </div>
+                    ))}
+                </div>
+              )}
+
+              {previewSummary.warningCount > 0 && (
+                <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, marginBottom: 16, cursor: "pointer" }}>
+                  <input type="checkbox" checked={includeWarningRows} onChange={(e) => setIncludeWarningRows(e.target.checked)} />
+                  Also import the {previewSummary.warningCount} row{previewSummary.warningCount !== 1 ? "s" : ""} that need attention, as-is
+                </label>
+              )}
+
+              {(() => {
+                const needsMatch = validatedRows
+                  .map((r, i) => ({ r, i }))
+                  .filter(({ r, i }) => !r.row._skip && !r.match && (r.row.qty_sold != null || r.row.sale_total != null) && matchOverride[i] !== "skip");
+                return needsMatch.length > 0 ? (
+                  <div style={{ marginBottom: 16 }}>
+                    <p style={{ fontSize: 12, color: "rgba(255,255,255,0.45)", marginBottom: 8, fontWeight: 600 }}>
+                      {needsMatch.length} row{needsMatch.length !== 1 ? "s" : ""} couldn&apos;t be auto-matched to a ticket — pick the right one, or leave as unmatched
+                    </p>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 220, overflowY: "auto" }}>
+                      {needsMatch.slice(0, 30).map(({ r, i }) => (
+                        <div key={r.rowNum} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
+                          <span style={{ minWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "rgba(255,255,255,0.6)" }}>
+                            Row {r.rowNum}: {String(r.row.event_name ?? "—")}
+                          </span>
+                          <select
+                            className="field"
+                            style={{ fontSize: 12, padding: "3px 6px", flex: 1 }}
+                            value={matchOverride[i] ?? ""}
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              setMatchOverride((prev) => {
+                                const next = { ...prev };
+                                if (v === "") delete next[i];
+                                else next[i] = v === "skip" ? "skip" : Number(v);
+                                return next;
+                              });
+                            }}
+                          >
+                            <option value="">— Use best automatic match (none found) —</option>
+                            {r.candidates.map((c) => (
+                              <option key={c.order.id} value={c.order.id}>
+                                {c.order.event_name ?? "Untitled"} · {c.order.event_date ?? "no date"} ({c.score}% match)
+                              </option>
+                            ))}
+                            <option value="skip">Leave unmatched (import without linking to a ticket)</option>
+                          </select>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null;
+              })()}
 
               <p style={{ fontSize: 12, color: "rgba(255,255,255,0.45)", marginBottom: 10, fontWeight: 600 }}>
                 Preview — first {Math.min(5, importRows.length)} of {importRows.length} rows
@@ -762,17 +944,21 @@ export default function SalesImportModal({ allOrders, onClose, onImported }: Sal
           {step === "map" && (
             <>
               <button className="secondary-button" type="button" onClick={() => setStep("upload")}>Back</button>
-              <button className="secondary-button" type="button" onClick={() => setStep("preview")}>Preview</button>
-              <button className="primary-button" type="button" disabled={importing} onClick={() => void runImport()}>
-                {importing ? "Importing…" : `Import ${importRows.length} rows`}
+              <button className="primary-button" type="button" onClick={() => setStep("preview")}>
+                Preview import →
               </button>
             </>
           )}
           {step === "preview" && (
             <>
               <button className="secondary-button" type="button" onClick={() => setStep("map")}>Back</button>
-              <button className="primary-button" type="button" disabled={importing} onClick={() => void runImport()}>
-                {importing ? "Importing…" : `Import ${importRows.length} rows`}
+              <button
+                type="button"
+                className="primary-button"
+                disabled={importing || (previewSummary.total - previewSummary.skipped - previewSummary.errorCount - (includeWarningRows ? 0 : previewSummary.warningCount) <= 0)}
+                onClick={() => void runImport()}
+              >
+                {importing ? "Importing…" : `Import ${previewSummary.total - previewSummary.skipped - previewSummary.errorCount - (includeWarningRows ? 0 : previewSummary.warningCount)} rows`}
               </button>
             </>
           )}
@@ -780,6 +966,7 @@ export default function SalesImportModal({ allOrders, onClose, onImported }: Sal
             <>
               <button className="secondary-button" type="button" onClick={() => {
                 setStep("upload"); setImportRows([]); setHeaders([]); setColMap({}); setResult(null); setMessage("");
+                setIncludeWarningRows(false); setMatchOverride({});
               }}>
                 Import more
               </button>

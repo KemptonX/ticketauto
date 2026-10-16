@@ -3,6 +3,12 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { decryptCredential } from "@/src/lib/marketplace/encryption";
 
 export const runtime = "nodejs";
+// PERF-002 fix — see app/api/cron/scan/route.ts for the full reasoning.
+// This one is polled every ~3s by the always-on worker rather than
+// Vercel's own cron, but it's still a regular serverless invocation
+// subject to the same default timeout — a defensive ceiling here stops
+// one hung request from blocking a worker poll slot indefinitely.
+export const maxDuration = 60;
 
 // This endpoint is deliberately NOT a Vercel cron entry — verification
 // codes need to be delivered within seconds, and Vercel's own scheduler on

@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
 export const runtime = "nodejs";
+// PERF-002 fix — see app/api/cron/scan/route.ts for the full reasoning.
+export const maxDuration = 60;
 
 type Order = {
   id: number;
@@ -198,6 +200,17 @@ export async function GET(request: NextRequest) {
   const errors: string[] = [];
 
   for (const setting of userSettings as UserSetting[]) {
+    // PERF-003/notifications fix: shouldNotifyNow() was written (and its
+    // own comment already says "the cron fires at minute 0 of every
+    // hour") but never actually called anywhere — every user got
+    // notified unconditionally whenever this ran, regardless of their
+    // configured alert_time/alert_timezone. Settings saved the
+    // preference; nothing ever read it back. Now gated for real, paired
+    // with vercel.json's schedule actually changing to hourly (see that
+    // file) so there's a genuine opportunity to match each user's chosen
+    // hour, not just a fixed 9am UTC for everyone.
+    if (!shouldNotifyNow(setting.alert_time, setting.alert_timezone)) continue;
+
     usersChecked += 1;
 
     const today = getTodayForTimezone(setting.alert_timezone);

@@ -4,11 +4,33 @@ import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { supabase } from "@/src/lib/supabase";
-import { CURRENCY_OPTIONS, getCurrencyCode, setCurrencyCode, formatCurrency } from "@/src/lib/currency";
+import { CURRENCY_OPTIONS, getCurrencyCode, setCurrencyCode, formatCurrency, convertToGbpClient } from "@/src/lib/currency";
 import { useRatesReady } from "@/app/components/CurrencyProvider";
 import { TEMPLATE_VARS, DEFAULT_SUBJECT, DEFAULT_BODY, EmailTemplate, loadTemplates, saveTemplates, loadActiveTemplateId, saveActiveTemplateId, interpolate } from "@/src/lib/email-template";
 import { SidebarLogo, NavIcon, SidebarFooter } from "@/app/components/nav-icons";
+import { buildCsv } from "@/src/lib/csv-export";
 import AccountsTab from "@/app/components/marketplace/AccountsTab";
+import {
+  autoMapHeader as sharedAutoMapHeader,
+  parseImportNumber,
+  parseImportDate,
+  parseCSV,
+} from "@/src/lib/spreadsheet-parsing";
+import {
+  checkQuantity,
+  checkRequiredText,
+  checkDate,
+  checkFinancialValue,
+  checkCostPriceSwap,
+  checkCurrencyMismatch,
+  checkDuplicateOrder,
+  checkConflictingStatus,
+  wouldOversell,
+  describeOversell,
+  classifyIssues,
+  type ImportIssue,
+  type RowClassification,
+} from "@/src/lib/import-validation";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -301,90 +323,16 @@ const SALE_COLUMNS = new Set([
 ]);
 
 // ─── Auto-mapping ─────────────────────────────────────────────────────────────
-
-function normalizeHeader(h: string): string {
-  return h.toLowerCase().trim().replace(/[_\-]+/g, " ").replace(/\s+/g, " ");
-}
+// parseCSV / parseImportNumber / parseImportDate / header auto-mapping now
+// live in src/lib/spreadsheet-parsing.ts, shared with SalesImportModal.tsx —
+// see that module for why (previously duplicated here and there, including
+// a date-parsing fallback bug that silently stored unparsed text).
 
 function autoMapHeader(header: string): string {
-  const norm = normalizeHeader(header);
-
-  for (const field of IMPORT_FIELDS) {
-    const keyNorm = field.key.replace(/_/g, " ");
-    if (norm === keyNorm) return field.key;
-    if (field.aliases.includes(norm)) return field.key;
-  }
-
-  // Partial / substring match — prefer longer alias matches
-  let bestKey = "skip";
-  let bestScore = 0;
-
-  for (const field of IMPORT_FIELDS) {
-    for (const alias of field.aliases) {
-      if (norm.includes(alias) || alias.includes(norm)) {
-        const score = alias.length;
-        if (score > bestScore) {
-          bestScore = score;
-          bestKey = field.key;
-        }
-      }
-    }
-  }
-
-  return bestKey;
+  return sharedAutoMapHeader(header, IMPORT_FIELDS);
 }
 
-// ─── Value parsers ────────────────────────────────────────────────────────────
-
-function parseImportNumber(raw: string): number | null {
-  if (!raw || raw.trim() === "" || raw.trim() === "-") return null;
-  const cleaned = raw.replace(/[£$€,\s]/g, "").replace(/[()]/g, "");
-  const n = parseFloat(cleaned);
-  return isNaN(n) ? null : n;
-}
-
-function parseImportDate(raw: string): string | null {
-  if (!raw || raw.trim() === "") return null;
-  const s = raw.trim();
-
-  // ISO: 2025-04-14 or 2025-04-14T...
-  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
-
-  // UK: 14/04/2025 or 14-04-2025
-  const ukSlash = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
-  if (ukSlash) {
-    const [, d, m, y] = ukSlash;
-    return `${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`;
-  }
-
-  // US: 04/14/2025
-  const usSlash = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
-  if (usSlash) {
-    const [, m, d, y] = usSlash;
-    return `${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`;
-  }
-
-  // "14 Apr 2025" or "April 14, 2025"
-  const months: Record<string, string> = {
-    jan: "01", feb: "02", mar: "03", apr: "04", may: "05", jun: "06",
-    jul: "07", aug: "08", sep: "09", oct: "10", nov: "11", dec: "12",
-  };
-  const dayFirst = s.match(/(\d{1,2})\s+([A-Za-z]{3,9})\s+(\d{4})/);
-  if (dayFirst) {
-    const mo = months[dayFirst[2].toLowerCase().slice(0, 3)];
-    if (mo) return `${dayFirst[3]}-${mo}-${dayFirst[1].padStart(2, "0")}`;
-  }
-  const monthFirst = s.match(/([A-Za-z]{3,9})\s+(\d{1,2})[,\s]+(\d{4})/);
-  if (monthFirst) {
-    const mo = months[monthFirst[1].toLowerCase().slice(0, 3)];
-    if (mo) return `${monthFirst[3]}-${mo}-${monthFirst[2].padStart(2, "0")}`;
-  }
-
-  // Native parse fallback
-  const d = new Date(s);
-  if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10);
-  return s; // keep raw if nothing works
-}
+// ─── Value parsers (status fields specific to the combined ticket+sale shape) ──
 
 function parseImportStatus(raw: string): string {
   const s = raw.trim().toLowerCase();
@@ -429,38 +377,6 @@ function getRowType(obj: Record<string, unknown>): RowType {
   if ((obj.payment_status as string) === "Paid" || (obj.sale_status as string) === "Paid") return "sale_paid";
   if ((obj.transfer_status as string) === "Transfer Completed" || (obj.sale_status as string) === "Sold – Transfer Completed") return "sale_transferred";
   return "sale_awaiting_transfer";
-}
-
-// ─── CSV parser ───────────────────────────────────────────────────────────────
-
-function parseCSV(text: string): string[][] {
-  const rows: string[][] = [];
-  let row: string[] = [];
-  let cell = "";
-  let inQuotes = false;
-
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i];
-    const next = text[i + 1];
-
-    if (inQuotes) {
-      if (ch === '"' && next === '"') { cell += '"'; i++; }
-      else if (ch === '"') inQuotes = false;
-      else cell += ch;
-    } else {
-      if (ch === '"') { inQuotes = true; }
-      else if (ch === ',' || ch === '\t') { row.push(cell); cell = ""; }
-      else if (ch === '\n' || ch === '\r') {
-        if (ch === '\r' && next === '\n') i++;
-        row.push(cell);
-        cell = "";
-        if (row.some((c) => c.trim())) rows.push(row);
-        row = [];
-      } else cell += ch;
-    }
-  }
-  if (cell || row.length) { row.push(cell); if (row.some((c) => c.trim())) rows.push(row); }
-  return rows;
 }
 
 // ─── Row transformer ──────────────────────────────────────────────────────────
@@ -604,13 +520,15 @@ export default function SettingsClient() {
         supabase.from("orders").select("*").eq("user_id", user.id),
         supabase.from("sales").select("*").eq("user_id", user.id),
       ]);
+      // toCSV previously used JSON.stringify per-cell, which escapes quotes
+      // correctly but — like every other export in this app — did nothing
+      // to stop a cell starting with =, +, - or @ from being executed as a
+      // formula when opened in Excel/Sheets. Now uses the shared,
+      // injection-safe builder (src/lib/csv-export.ts).
       function toCSV(rows: Record<string, unknown>[]): string {
         if (!rows?.length) return "";
         const headers = Object.keys(rows[0]);
-        return [
-          headers.join(","),
-          ...rows.map((r) => headers.map((h) => JSON.stringify(r[h] ?? "")).join(",")),
-        ].join("\n");
+        return buildCsv(headers, rows.map((r) => headers.map((h) => r[h])));
       }
       function download(csv: string, filename: string) {
         const blob = new Blob([csv], { type: "text/csv" });
@@ -1119,6 +1037,12 @@ export default function SettingsClient() {
     }
     return {} as Record<string, string>;
   });
+  const [importFileName, setImportFileName] = useState("");
+  const [recentImports, setRecentImports] = useState<{ id: string; created_at: string; source_filename: string | null; counts: Record<string, number> }[]>([]);
+  const [importCurrency, setImportCurrency] = useState(() => (typeof window !== "undefined" ? getCurrencyCode() : "GBP"));
+  const [includeWarningRows, setIncludeWarningRows] = useState(false);
+  const [issueFilter, setIssueFilter] = useState<"all" | "error" | "warning">("all");
+  const [existingOrdersForDupeCheck, setExistingOrdersForDupeCheck] = useState<{ bookingRef: string | null; eventName: string | null; eventDate: string | null; qtyBought: number | null; totalCost: number | null; alreadySoldQty: number }[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   async function handleLogout() {
@@ -1204,6 +1128,7 @@ export default function SettingsClient() {
   useEffect(() => {
     void loadAccounts();
     void loadImapAccounts();
+    void loadRecentImports();
   }, []);
 
   useEffect(() => {
@@ -1307,6 +1232,7 @@ export default function SettingsClient() {
   // ── Import handlers ──
   async function handleFile(file: File) {
     setImportMessage("");
+    setImportFileName(file.name);
     try {
       const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
       let rows: string[][];
@@ -1359,6 +1285,140 @@ export default function SettingsClient() {
     setColMap((prev) => ({ ...prev, [colIndex]: fieldKey }));
   }
 
+  // Loads this user's existing orders (plus how much of each is already
+  // sold, excluding "Deleted" sales) so the preview step can flag rows that
+  // look like a repeat import or would oversell an existing ticket.
+  // Paginated explicitly — Supabase's default page size (1000) would
+  // silently truncate a larger inventory otherwise.
+  async function loadExistingOrdersForImportCheck() {
+    const pageSize = 1000;
+    type OrderRow = { id: number; booking_ref: string | null; event_name: string | null; event_date: string | null; qty_bought: number | null; total_cost: number | null };
+    const orders: OrderRow[] = [];
+    for (let from = 0; ; from += pageSize) {
+      const { data, error } = await supabase
+        .from("orders")
+        .select("id, booking_ref, event_name, event_date, qty_bought, total_cost")
+        .range(from, from + pageSize - 1);
+      if (error || !data || data.length === 0) break;
+      orders.push(...(data as OrderRow[]));
+      if (data.length < pageSize) break;
+    }
+
+    const soldByOrder = new Map<number, number>();
+    for (let from = 0; ; from += pageSize) {
+      const { data, error } = await supabase
+        .from("sales")
+        .select("inventory_order_id, qty_sold")
+        .neq("sale_status", "Deleted")
+        .not("inventory_order_id", "is", null)
+        .range(from, from + pageSize - 1);
+      if (error || !data || data.length === 0) break;
+      for (const row of data as { inventory_order_id: number | null; qty_sold: number | null }[]) {
+        if (row.inventory_order_id == null) continue;
+        soldByOrder.set(row.inventory_order_id, (soldByOrder.get(row.inventory_order_id) ?? 0) + (row.qty_sold ?? 0));
+      }
+      if (data.length < pageSize) break;
+    }
+
+    setExistingOrdersForDupeCheck(orders.map((o) => ({
+      bookingRef: o.booking_ref,
+      eventName: o.event_name,
+      eventDate: o.event_date,
+      qtyBought: o.qty_bought,
+      totalCost: o.total_cost,
+      alreadySoldQty: soldByOrder.get(o.id) ?? 0,
+    })));
+  }
+
+  async function goToPreview() {
+    setImportMessage("");
+    await loadExistingOrdersForImportCheck();
+    setImportStep("preview");
+  }
+
+  type ValidatedImportRow = { rowNum: number; data: Record<string, unknown>; issues: ImportIssue[]; classification: RowClassification };
+
+  // Classifies every row (not just the first few) before anything is
+  // written to the database — see src/lib/import-validation.ts. Errors
+  // block a row from being imported at all; warnings require the customer
+  // to explicitly confirm via "Also import rows with warnings" below.
+  const validatedRows: ValidatedImportRow[] = useMemo(() => {
+    return importRows.map((rawRow, i) => {
+      const rowNum = i + 2;
+      const parsed = transformRow(rawRow, importHeaders, colMap);
+      const data: Record<string, unknown> = { ...(parsed ?? {}) };
+      for (const [key, value] of Object.entries(fixedValues)) {
+        if (value && !(key in data)) data[key] = value;
+      }
+
+      if (!parsed || Object.keys(parsed).length < 2) {
+        return { rowNum, data, issues: [{ severity: "error", code: "empty_row", message: "This row doesn't have enough data to import — it will be skipped." }] as ImportIssue[], classification: "error" as RowClassification };
+      }
+
+      const issues: ImportIssue[] = [];
+      const rawCellFor = (fieldKey: string): string => {
+        const idx = Object.entries(colMap).find(([, v]) => v === fieldKey)?.[0];
+        return idx != null ? (rawRow[Number(idx)] ?? "") : "";
+      };
+
+      issues.push(...checkRequiredText("event_name", "Event Name", data.event_name as string | undefined));
+      issues.push(...checkQuantity("qty_bought", "Quantity Bought", (data.qty_bought as number) ?? null, { required: true, max: 1000 }));
+      issues.push(...checkDate("event_date", "Event Date", (data.event_date as string) ?? null, rawCellFor("event_date"), { required: true }));
+
+      const qtyBought = (data.qty_bought as number) ?? null;
+      const totalCostGbp = data.total_cost != null ? convertToGbpClient(data.total_cost as number, importCurrency) : null;
+      issues.push(...checkFinancialValue("total_cost", "Total Cost", totalCostGbp, { required: true }));
+
+      const qtySold = (data.qty_sold as number) ?? null;
+      const saleTotalGbp = data.sale_total != null ? convertToGbpClient(data.sale_total as number, importCurrency) : null;
+      if (qtySold != null) {
+        issues.push(...checkQuantity("qty_sold", "Quantity Sold", qtySold));
+        issues.push(...checkFinancialValue("sale_total", "Sale Total", saleTotalGbp));
+        const swap = checkCostPriceSwap(totalCostGbp, saleTotalGbp);
+        if (swap) issues.push(swap);
+      }
+
+      const dupe = checkDuplicateOrder(
+        { bookingRef: (data.booking_ref as string) ?? null, eventName: (data.event_name as string) ?? null, eventDate: (data.event_date as string) ?? null, qtyBought, totalCost: totalCostGbp },
+        existingOrdersForDupeCheck,
+      );
+      if (dupe) issues.push(dupe);
+
+      if (qtySold != null) {
+        const ref = data.booking_ref as string | undefined;
+        const matched = ref ? existingOrdersForDupeCheck.find((o) => o.bookingRef && o.bookingRef.toLowerCase() === ref.toLowerCase()) : undefined;
+        const effectiveQtyBought = matched ? (matched.qtyBought ?? qtyBought ?? 0) : (qtyBought ?? 0);
+        const alreadySold = matched ? matched.alreadySoldQty : 0;
+        if (wouldOversell(effectiveQtyBought, alreadySold, qtySold)) {
+          issues.push({ severity: "error", code: "oversell", message: describeOversell(effectiveQtyBought, alreadySold, qtySold) });
+        }
+      }
+
+      const moneyRawCells = ["total_cost", "sale_total", "payout_total"].map(rawCellFor).filter(Boolean);
+      const mismatch = checkCurrencyMismatch(moneyRawCells, importCurrency);
+      if (mismatch) issues.push(mismatch);
+
+      const conflict = checkConflictingStatus({ saleStatus: data.sale_status as string | undefined, qtySold, paymentStatus: data.payment_status as string | undefined });
+      if (conflict) issues.push(conflict);
+
+      return { rowNum, data, issues, classification: classifyIssues(issues) };
+    });
+  }, [importRows, importHeaders, colMap, fixedValues, importCurrency, existingOrdersForDupeCheck]);
+
+  const importSummary = useMemo(() => {
+    const events = new Set<string>();
+    let salesDetected = 0;
+    let errorCount = 0, warningCount = 0, validCount = 0;
+    for (const row of validatedRows) {
+      if (row.data.event_name) events.add(String(row.data.event_name).toLowerCase());
+      if (row.data.qty_sold != null || row.data.sale_total != null) salesDetected++;
+      if (row.classification === "error") errorCount++;
+      else if (row.classification === "warning") warningCount++;
+      else validCount++;
+    }
+    return { total: validatedRows.length, events: events.size, salesDetected, errorCount, warningCount, validCount };
+  }, [validatedRows]);
+
   const previewRows = useMemo(() => {
     return importRows.slice(0, 5).map((row) => transformRow(row, importHeaders, colMap));
   }, [importRows, importHeaders, colMap]);
@@ -1384,19 +1444,33 @@ export default function SettingsClient() {
     const errors: string[] = [];
     const failedRows: FailedRow[] = [];
 
-    for (let i = 0; i < importRows.length; i++) {
-      const obj = transformRow(importRows[i], importHeaders, colMap);
-      if (!obj || Object.keys(obj).length < 2) {
-        const reason = "Not enough data (fewer than 2 fields)";
-        errors.push(`Row ${i + 2}: ${reason}`);
-        failedRows.push({ rowNum: i + 2, reason, data: obj ?? {} });
+    // Convert money fields from the selected import currency to GBP
+    // (TixTracker's canonical storage currency) up front, for every row —
+    // reuses the same convertToGbpClient() already used for manual ticket
+    // entry. Rows blocked/skipped below still get the converted data, so
+    // "Retry" (which re-attempts failedRows data verbatim) never has to
+    // guess whether conversion already happened.
+    const toGbp = (row: Record<string, unknown>): Record<string, unknown> => {
+      const obj = { ...row };
+      for (const field of ["total_cost", "sale_total", "payout_total"] as const) {
+        if (obj[field] != null) obj[field] = convertToGbpClient(obj[field] as number, importCurrency);
+      }
+      return obj;
+    };
+
+    for (const row of validatedRows) {
+      if (row.classification === "error") {
+        const reason = row.issues.find((i) => i.severity === "error")?.message ?? "This row has a problem and was not imported.";
+        errors.push(`Row ${row.rowNum}: ${reason}`);
+        failedRows.push({ rowNum: row.rowNum, reason, data: toGbp(row.data) });
         continue;
       }
-      // Apply fixed values for any field not already mapped from a column
-      for (const [key, value] of Object.entries(fixedValues)) {
-        if (value && !(key in obj)) obj[key] = value;
+      if (row.classification === "warning" && !includeWarningRows) {
+        const reason = row.issues.find((i) => i.severity === "warning")?.message ?? "This row has a warning and was skipped.";
+        failedRows.push({ rowNum: row.rowNum, reason, data: toGbp(row.data) });
+        continue;
       }
-      toInsert.push({ rowNum: i + 2, data: obj });
+      toInsert.push({ rowNum: row.rowNum, data: toGbp(row.data) });
     }
 
     // Deduplicate booking_refs within this batch: if multiple rows share the same
@@ -1551,6 +1625,27 @@ export default function SettingsClient() {
     setFailedEdits(failedRows.map((r) => ({ ...r, data: { ...r.data } })));
     setImporting(false);
     setImportStep("done");
+    void recordImportBatch("ticket_import", importFileName, { inserted, updated, skipped, salesCreated, errors: errors.length });
+  }
+
+  // Best-effort import-history record — never blocks or fails the import
+  // itself. Tolerates supabase/migrations/0009_import_batches.sql not
+  // being applied yet (the table simply won't exist until then).
+  async function recordImportBatch(source: string, filename: string, counts: Record<string, number>) {
+    const { data: userRes } = await supabase.auth.getUser();
+    const userId = userRes?.user?.id;
+    if (!userId) return;
+    const { error } = await supabase.from("import_batches").insert({ user_id: userId, source, source_filename: filename || null, counts });
+    if (!error) void loadRecentImports();
+  }
+
+  async function loadRecentImports() {
+    const { data, error } = await supabase
+      .from("import_batches")
+      .select("id, created_at, source_filename, counts")
+      .order("created_at", { ascending: false })
+      .limit(10);
+    if (!error && data) setRecentImports(data as typeof recentImports);
   }
 
   function resetImport() {
@@ -1562,6 +1657,8 @@ export default function SettingsClient() {
     setImportResult(null);
     setFailedEdits([]);
     setFixedValues({});
+    setIncludeWarningRows(false);
+    setIssueFilter("all");
   }
 
   async function retryFailed() {
@@ -1582,6 +1679,19 @@ export default function SettingsClient() {
           const data = { ...row.data };
           for (const [key, value] of Object.entries(fixedValues)) {
             if (value && !(key in data)) data[key] = value;
+          }
+
+          // Re-check the hard requirements before retrying — "Retry" edits
+          // a row inline and re-attempts it, but if the customer retried
+          // without actually fixing the problem (e.g. still missing an
+          // event name, or still oversold), it must not quietly insert
+          // anyway just because this is the retry path.
+          const retryIssues = [
+            ...checkRequiredText("event_name", "Event Name", data.event_name as string | undefined),
+            ...checkQuantity("qty_bought", "Quantity Bought", (data.qty_bought as number) ?? null, { required: true }),
+          ];
+          if (retryIssues.some((i) => i.severity === "error")) {
+            return { inserted: 0, updated: 0, skipped: 1, salesCreated: 0, failed: [{ ...row, reason: retryIssues[0].message, data }] };
           }
 
           const orderData: Record<string, unknown> = {};
@@ -1723,6 +1833,9 @@ export default function SettingsClient() {
           <div>
             <p className="eyebrow">Account</p>
             <h2>Settings</h2>
+          </div>
+          <div className="topbar-actions">
+            <Link href="/getting-started" className="secondary-button">Revisit setup guide</Link>
           </div>
         </header>
 
@@ -2313,6 +2426,19 @@ export default function SettingsClient() {
                       Download Template CSV
                     </button>
                   </div>
+                  {recentImports.length > 0 && (
+                    <div style={{ marginTop: "1.5rem" }}>
+                      <p className="section-tag" style={{ marginBottom: "0.5rem" }}>Recent imports</p>
+                      <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
+                        {recentImports.map((b) => (
+                          <div key={b.id} style={{ fontSize: "0.8125rem", color: "var(--muted)", display: "flex", justifyContent: "space-between", gap: "1rem" }}>
+                            <span>{new Date(b.created_at).toLocaleDateString()} — {b.source_filename || "Untitled file"}</span>
+                            <span>{b.counts?.inserted ?? 0} added{(b.counts?.salesCreated ?? 0) > 0 ? `, ${b.counts.salesCreated} sales` : ""}{(b.counts?.errors ?? 0) > 0 ? `, ${b.counts.errors} skipped` : ""}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                   <div style={{ marginTop: "1.5rem" }}>
                     <p className="section-tag" style={{ marginBottom: "0.5rem" }}>Tips for best results</p>
                     <ul style={{ fontSize: "0.8125rem", color: "var(--muted)", lineHeight: 1.6, paddingLeft: "1.25rem" }}>
@@ -2372,6 +2498,22 @@ export default function SettingsClient() {
                     );
                   })}
                 </div>
+                {/* Currency of this file's money values */}
+                <div style={{ padding: "0 1.5rem 1rem", borderTop: "1px solid var(--border)" }}>
+                  <p className="section-tag" style={{ margin: "1rem 0 0.25rem" }}>What currency is this file&apos;s money in?</p>
+                  <p style={{ fontSize: "0.8125rem", color: "var(--muted)", marginBottom: "0.5rem" }}>
+                    Costs and sale prices will be converted to your TixTracker display currency before they&apos;re saved.
+                  </p>
+                  <select
+                    className="field"
+                    style={{ maxWidth: 280 }}
+                    value={importCurrency}
+                    onChange={(e) => setImportCurrency(e.target.value)}
+                  >
+                    {CURRENCY_OPTIONS.map((c) => <option key={c.code} value={c.code}>{c.label}</option>)}
+                  </select>
+                </div>
+
                 {/* Fixed values panel */}
                 <div style={{ padding: "0 1.5rem 1rem", borderTop: "1px solid var(--border)" }}>
                   <p className="section-tag" style={{ margin: "1rem 0 0.25rem" }}>Optional fallback values</p>
@@ -2468,7 +2610,7 @@ export default function SettingsClient() {
                   <button
                     type="button"
                     className="primary-button"
-                    onClick={() => setImportStep("preview")}
+                    onClick={() => void goToPreview()}
                     disabled={!Object.values(colMap).some((v) => v !== "skip")}
                   >
                     Preview import →
@@ -2483,44 +2625,127 @@ export default function SettingsClient() {
                 <div className="table-card-header">
                   <div>
                     <p className="section-tag">Step 3 of 4</p>
-                    <h4>Preview (first 5 rows)</h4>
+                    <h4>We&apos;ve checked your file</h4>
                   </div>
-                  <span className="table-count">{importRows.length} rows ready to import</span>
+                  <span className="table-count">{importSummary.total} rows found</span>
                 </div>
-                <div style={{ padding: "0 1.5rem 1rem" }}>
-                  <p style={{ color: "var(--muted)", fontSize: "0.875rem" }}>
-                    Check the data looks right before importing. Only completely empty rows will be skipped.
-                  </p>
+
+                <div style={{ padding: "0 1.5rem 1rem", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: "0.75rem" }}>
+                  {[
+                    { label: "Ticket records found", value: importSummary.total, color: "inherit" },
+                    { label: "Distinct events", value: importSummary.events, color: "inherit" },
+                    { label: "Sales detected", value: importSummary.salesDetected, color: "inherit" },
+                    { label: "Ready to import", value: importSummary.validCount, color: "#4ade80" },
+                    { label: "Need attention", value: importSummary.warningCount, color: "#fbbf24" },
+                    { label: "Can't be imported yet", value: importSummary.errorCount, color: "#f87171" },
+                  ].map((m) => (
+                    <div key={m.label} style={{ background: "var(--surface-2, rgba(0,0,0,0.03))", border: "1px solid var(--border)", borderRadius: 8, padding: "10px 12px" }}>
+                      <div style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>{m.label}</div>
+                      <div style={{ fontSize: 20, fontWeight: 700, color: m.color }}>{m.value}</div>
+                    </div>
+                  ))}
                 </div>
-                <div className="table-scroll">
-                  <table className="premium-table">
-                    <thead>
-                      <tr>
-                        {mappedFieldLabels.map((label) => <th key={label}>{label}</th>)}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {previewRows.map((row, i) =>
-                        row ? (
-                          <tr key={i}>
-                            {mappedFieldLabels.map((label) => {
-                              const fieldKey = IMPORT_FIELDS.find((f) => f.label === label)?.key ?? label;
-                              return <td key={label}>{String(row[fieldKey] ?? "—")}</td>;
-                            })}
-                          </tr>
-                        ) : (
-                          <tr key={i} style={{ opacity: 0.4 }}>
-                            <td colSpan={mappedFieldLabels.length}>Empty row — will be skipped</td>
-                          </tr>
-                        )
+
+                {(importSummary.errorCount > 0 || importSummary.warningCount > 0) && (
+                  <div style={{ padding: "0 1.5rem 1rem" }}>
+                    <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.75rem" }}>
+                      {([
+                        ["all", `All (${importSummary.total})`],
+                        ["error", `Can't import (${importSummary.errorCount})`],
+                        ["warning", `Need attention (${importSummary.warningCount})`],
+                      ] as const).map(([val, label]) => (
+                        <button
+                          key={val}
+                          type="button"
+                          className={issueFilter === val ? "secondary-button toggle-btn-active" : "secondary-button"}
+                          style={{ fontSize: 12, padding: "4px 10px" }}
+                          onClick={() => setIssueFilter(val)}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                    <div style={{ maxHeight: 320, overflowY: "auto", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                      {validatedRows
+                        .filter((r) => r.classification !== "valid")
+                        .filter((r) => issueFilter === "all" || r.classification === issueFilter)
+                        .slice(0, 50)
+                        .map((r) => (
+                          <div
+                            key={r.rowNum}
+                            style={{
+                              padding: "0.6rem 0.75rem",
+                              borderRadius: 8,
+                              border: `1px solid ${r.classification === "error" ? "rgba(248,113,113,0.3)" : "rgba(251,191,36,0.3)"}`,
+                              background: r.classification === "error" ? "rgba(248,113,113,0.06)" : "rgba(251,191,36,0.06)",
+                            }}
+                          >
+                            <strong style={{ fontSize: 12.5 }}>
+                              Row {r.rowNum}{r.data.event_name ? ` — ${String(r.data.event_name)}` : ""}
+                            </strong>
+                            {r.issues.map((issue, j) => (
+                              <p key={j} style={{ fontSize: 12.5, color: "var(--muted)", margin: "0.2rem 0 0" }}>{issue.message}</p>
+                            ))}
+                          </div>
+                        ))}
+                      {validatedRows.filter((r) => r.classification !== "valid" && (issueFilter === "all" || r.classification === issueFilter)).length > 50 && (
+                        <p style={{ fontSize: 12, color: "var(--muted)" }}>
+                          …and {validatedRows.filter((r) => r.classification !== "valid" && (issueFilter === "all" || r.classification === issueFilter)).length - 50} more
+                        </p>
                       )}
-                    </tbody>
-                  </table>
+                    </div>
+                  </div>
+                )}
+
+                {importSummary.warningCount > 0 && (
+                  <div style={{ padding: "0 1.5rem 1rem" }}>
+                    <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.875rem", cursor: "pointer" }}>
+                      <input type="checkbox" checked={includeWarningRows} onChange={(e) => setIncludeWarningRows(e.target.checked)} />
+                      Also import the {importSummary.warningCount} row{importSummary.warningCount !== 1 ? "s" : ""} that need attention, as-is
+                    </label>
+                  </div>
+                )}
+
+                <div style={{ padding: "0 1.5rem 1rem" }}>
+                  <p className="section-tag" style={{ marginBottom: "0.5rem" }}>First 5 rows</p>
+                  <div className="table-scroll">
+                    <table className="premium-table">
+                      <thead>
+                        <tr>
+                          {mappedFieldLabels.map((label) => <th key={label}>{label}</th>)}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {previewRows.map((row, i) =>
+                          row ? (
+                            <tr key={i}>
+                              {mappedFieldLabels.map((label) => {
+                                const fieldKey = IMPORT_FIELDS.find((f) => f.label === label)?.key ?? label;
+                                return <td key={label}>{String(row[fieldKey] ?? "—")}</td>;
+                              })}
+                            </tr>
+                          ) : (
+                            <tr key={i} style={{ opacity: 0.4 }}>
+                              <td colSpan={mappedFieldLabels.length}>Empty row — will be skipped</td>
+                            </tr>
+                          )
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
+
                 <div className="import-footer">
                   <button type="button" className="ghost-button" onClick={() => setImportStep("map")}>Back</button>
-                  <button type="button" className="primary-button" onClick={() => void runImport()} disabled={importing}>
-                    {importing ? "Importing..." : `Import ${importRows.length} rows →`}
+                  <button
+                    type="button"
+                    className="primary-button"
+                    onClick={() => void runImport()}
+                    disabled={importing || (importSummary.validCount === 0 && !(includeWarningRows && importSummary.warningCount > 0))}
+                  >
+                    {importing
+                      ? "Importing..."
+                      : `Import ${includeWarningRows ? importSummary.validCount + importSummary.warningCount : importSummary.validCount} row${(includeWarningRows ? importSummary.validCount + importSummary.warningCount : importSummary.validCount) !== 1 ? "s" : ""} →`}
                   </button>
                 </div>
               </section>

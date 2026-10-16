@@ -10,6 +10,8 @@ import { loadTemplate, interpolate } from "@/src/lib/email-template";
 import { SidebarLogo, NavIcon, SidebarFooter } from "@/app/components/nav-icons";
 import ShareBannerModal, { ShareMultiBannerModal, type MultiSaleStats } from "./ShareBannerModal";
 import SalesImportModal from "./SalesImportModal";
+import { downloadCsv as downloadCSV } from "@/src/lib/csv-export";
+import { wouldOversell, describeOversell } from "@/src/lib/import-validation";
 
 type Sale = {
   id: number;
@@ -936,6 +938,32 @@ export default function SalesClient() {
     const order = addSaleOrderId != null ? allOrders.find((o) => o.id === addSaleOrderId) : null;
     const payout = addSaleForm.sale_price !== "" ? Number(addSaleForm.sale_price) : null;
     const qty = addSaleForm.qty_sold !== "" ? Number(addSaleForm.qty_sold) : null;
+
+    if (qty === null || !Number.isFinite(qty) || qty <= 0 || Math.floor(qty) !== qty) {
+      setMessage("Quantity should be a whole number greater than 0.");
+      return;
+    }
+
+    // Oversell guard — previously this inserted qty_sold with no check at
+    // all against the linked order's qty_bought. Mirrors the same
+    // wouldOversell() rule used by the spreadsheet importers and the
+    // (unapplied) DB trigger in migration 0007.
+    if (order) {
+      const { data: existingSales, error: existingError } = await supabase
+        .from("sales")
+        .select("qty_sold")
+        .eq("inventory_order_id", order.id)
+        .neq("sale_status", "Deleted");
+      if (existingError) {
+        setMessage(existingError.message);
+        return;
+      }
+      const alreadySold = (existingSales ?? []).reduce((sum, s) => sum + ((s as { qty_sold?: number | null }).qty_sold ?? 0), 0);
+      if (wouldOversell(order.qty_bought, alreadySold, qty)) {
+        setMessage(describeOversell(order.qty_bought ?? 0, alreadySold, qty));
+        return;
+      }
+    }
 
     const newSale = {
       source: "manual" as const,
@@ -3267,20 +3295,8 @@ function formatSoldAt(value: string | null) {
   }).format(date);
 }
 
-function downloadCSV(filename: string, headers: string[], rows: (string | number)[][]) {
-  const escape = (v: string | number) => {
-    const s = String(v);
-    return s.includes(",") || s.includes('"') || s.includes("\n") ? `"${s.replace(/"/g, '""')}"` : s;
-  };
-  const csv = [headers, ...rows].map((r) => r.map(escape).join(",")).join("\n");
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
-}
+// downloadCSV now imported from src/lib/csv-export.ts — see that file for
+// why (previously duplicated here without a formula-injection guard).
 
 function dateStamp() {
   return new Date().toISOString().slice(0, 10);

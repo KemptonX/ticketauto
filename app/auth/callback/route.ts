@@ -1,80 +1,10 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { createServerClient } from "@supabase/ssr";
+import { createClient } from "@supabase/supabase-js";
+import { checkWhopMembership, upsertEntitlement } from "@/src/lib/whop-entitlement";
 
 export const runtime = "nodejs";
-
-const WHOP_API_BASE = process.env.WHOP_API_BASE_URL ?? "https://api.whop.com/api/v2";
-// Free Whop products may return "completed" instead of "active"/"trialing".
-// Also accept past_due/pastDue so payment-grace members aren't locked out.
-const ALLOWED_STATUSES = new Set([
-  "active",
-  "trialing",
-  "completed",
-  "canceling",
-  "past_due",
-  "pastDue",
-]);
-
-type WhopMembership = {
-  id: string;
-  product?: string;   // Whop API v2 uses "product" not "product_id"
-  status: string;
-  valid?: boolean;
-  email?: string;
-  discord?: { id?: string; username?: string } | null;
-  [key: string]: unknown;
-};
-
-async function fetchWhopMemberships(
-  params: URLSearchParams,
-  apiKey: string,
-): Promise<WhopMembership[]> {
-  const url = `${WHOP_API_BASE}/memberships?${params.toString()}`;
-  const res = await fetch(url, {
-    headers: { Authorization: `Bearer ${apiKey}` },
-    cache: "no-store",
-  });
-  const raw = await res.text();
-  console.log("[whop] GET %s → %d | %s", url, res.status, raw.slice(0, 3000));
-  if (!res.ok) return [];
-  const parsed = JSON.parse(raw) as { data?: WhopMembership[] };
-  return parsed.data ?? [];
-}
-
-// Whop API v2 returns all company memberships regardless of query params,
-// so we must filter locally by identity (discordId or email) and product.
-function pickActiveMembership(
-  memberships: WhopMembership[],
-  allowedProductIds: Set<string>,
-  identity?: { discordId?: string; email?: string },
-): WhopMembership | undefined {
-  memberships.forEach((m) =>
-    console.log(
-      "[whop] membership id=%s product=%s plan=%s status=%s valid=%s email=%s discord_id=%s",
-      m.id,
-      m.product,
-      (m as Record<string, unknown>).plan ?? "none",
-      m.status,
-      m.valid,
-      m.email,
-      m.discord?.id ?? "none",
-    ),
-  );
-  return memberships.find((m) => {
-    // Ensure membership belongs to this user
-    if (identity?.discordId && m.discord?.id !== identity.discordId) return false;
-    if (identity?.email && !identity.discordId && m.email !== identity.email) return false;
-    // allowedProductIds may contain product IDs (prod_xxx) or plan IDs (plan_xxx)
-    const planId = String((m as Record<string, unknown>).plan ?? "");
-    const productMatch =
-      allowedProductIds.size === 0 ||
-      allowedProductIds.has(m.product ?? "") ||
-      allowedProductIds.has(planId);
-    const accessOk = m.valid === true || ALLOWED_STATUSES.has(m.status);
-    return productMatch && accessOk;
-  });
-}
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -184,32 +114,9 @@ export async function GET(request: Request) {
     console.log("[auth] owner_bypass=%s allowed_products=%s", isOwner, [...allowedProductIds].join(","));
 
     if (discordIdentity && !isOwner) {
-      let activeMembership: WhopMembership | undefined;
+      const result = await checkWhopMembership({ discordId, email: userEmail ?? undefined }, apiKey, allowedProductIds);
 
-      // 1. Primary: match by Discord account ID (API returns all company memberships,
-      //    so we filter locally by discordId to match only this user's memberships)
-      if (discordId) {
-        const memberships = await fetchWhopMemberships(
-          new URLSearchParams({ discord_account_id: discordId }),
-          apiKey,
-        );
-        activeMembership = pickActiveMembership(memberships, allowedProductIds, { discordId });
-      }
-
-      // 2. Fallback: match by email (catches Whop accounts with Discord not linked)
-      if (!activeMembership && userEmail) {
-        console.log("[auth] discord lookup found nothing — trying email fallback email=%s", userEmail);
-        const memberships = await fetchWhopMemberships(
-          new URLSearchParams({ email: userEmail }),
-          apiKey,
-        );
-        activeMembership = pickActiveMembership(memberships, allowedProductIds, { email: userEmail });
-        if (activeMembership) {
-          console.log("[auth] matched via email fallback membership=%s", activeMembership.id);
-        }
-      }
-
-      if (!activeMembership) {
+      if (!result.ok || !result.isEntitled) {
         await supabase.auth.signOut();
         return NextResponse.redirect(
           `https://tixtracker.app/login?error=${encodeURIComponent(
@@ -217,6 +124,25 @@ export async function GET(request: Request) {
           )}`,
         );
       }
+
+      // Persist the result — this is the fix for SEC-001: previously this
+      // check ran once, here, and was never looked at again. Now it's
+      // stored, and app/api/cron/whop-refresh/route.ts re-checks it
+      // periodically so a later cancellation is actually detected instead
+      // of the user keeping access for as long as their session happens
+      // to stay alive. Uses the service-role key since the authenticated
+      // `supabase` client above doesn't have INSERT/UPDATE rights on this
+      // table by design (see migration 0006's RLS policy).
+      if (process.env.SUPABASE_SERVICE_ROLE_KEY) {
+        const serviceClient = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY);
+        await upsertEntitlement(serviceClient, data.user.id, discordId ?? null, result);
+      }
+    } else if (isOwner && process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      // Owners bypass the Whop check entirely but still get a row, so the
+      // enforcement layer (middleware/page checks) has one consistent
+      // thing to read rather than special-casing "no row at all".
+      const serviceClient = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY);
+      await upsertEntitlement(serviceClient, data.user.id, discordId ?? null, { ok: true, isEntitled: true, status: "owner_bypass", membershipId: null });
     }
   }
 

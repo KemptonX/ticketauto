@@ -320,10 +320,16 @@ function buildPayoutEmbed(data: PayoutEmailData, results: PayoutLineResult[], ac
 
 export async function POST(request: Request) {
   // --- Webhook secret validation ---
+  // SEC-009 fix: previously `if (expectedSecret && providedSecret !==
+  // expectedSecret)` — if the env var were ever unset, `expectedSecret &&`
+  // short-circuited to false and the whole check was silently skipped,
+  // accepting any unauthenticated request. Now fails CLOSED: a missing
+  // env var is treated as a misconfiguration that rejects everything,
+  // never as "no check required."
   const url = new URL(request.url);
   const providedSecret = url.searchParams.get("secret");
   const expectedSecret = process.env.POSTMARK_INBOUND_WEBHOOK_SECRET?.trim();
-  if (expectedSecret && providedSecret !== expectedSecret) {
+  if (!expectedSecret || providedSecret !== expectedSecret) {
     // Return 200 to Postmark to avoid endless retries on auth failure.
     // Log nothing sensitive in the response.
     return NextResponse.json({ ok: false, status: "unauthorized" }, { status: 200 });

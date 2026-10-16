@@ -54,7 +54,7 @@ const CATS: Category[] = [
       {
         id: "ti-2",
         q: "Which email providers are supported?",
-        a: "Gmail is currently supported, with additional email providers planned for future updates.",
+        a: "Outlook connects directly with one click. Gmail and any other IMAP-capable inbox connect using an app-specific password rather than your normal password (direct Gmail sign-in is marked 'Coming soon'). You can also set up Email Forwarding to send specific confirmation emails to a dedicated TixTracker address for instant alerts.",
       },
       {
         id: "ti-3",
@@ -73,6 +73,12 @@ const CATS: Category[] = [
           "Cost price and booking reference",
           "Source platform",
         ],
+      },
+      {
+        id: "ti-5",
+        q: "I'm importing a spreadsheet and some rows are flagged — what does that mean?",
+        a: "Before anything is saved, every row is checked and sorted into three groups: ready to import, needs attention, and can't be imported yet. 'Needs attention' rows (like a possible duplicate, or an unusually large amount) can still be imported once you've reviewed them. 'Can't be imported yet' rows (like a missing event name, or a sale that would oversell a ticket) are never saved until you fix the underlying file and re-upload — nothing is ever guessed or defaulted on your behalf. Each flagged row shows a plain-English explanation and its row number so you can find and fix it in your spreadsheet.",
+        popular: true,
       },
     ],
   },

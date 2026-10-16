@@ -49,20 +49,20 @@ export const ARTICLES: Article[] = [
     title: "Getting set up, in the right order",
     categoryId: "getting-started",
     summary: "The full first-time setup sequence, from signing up to your first scan.",
-    appLink: { href: "/settings", label: "Open Settings" },
-    relatedIds: ["email-connecting", "import-overview", "notifications-overview"],
+    appLink: { href: "/getting-started", label: "Open the setup guide" },
+    relatedIds: ["email-connecting", "import-overview", "import-fixing-errors", "notifications-overview"],
     whatIsIt: [
-      "TixTracker works best when a few things are set up in order. Doing them out of order usually just means repeating a step later — nothing breaks, but it wastes time.",
+      "A new account is walked through this same order automatically, in a short five-step guide (Welcome → Tickets → Email scanning → Notifications → Done) the first time you sign in. Every step there can be skipped and picked up again later from Settings — this article is the same sequence as plain reference, and for anyone who skipped ahead.",
     ],
     whyUseIt: [
       "Following this order means your dashboard shows real numbers from day one instead of an empty screen, and your historic sales/purchases get picked up correctly instead of needing to be re-imported.",
     ],
     howToUseIt: [
-      "1. Sign in. TixTracker supports two ways in: signing in with Discord (this checks for an active subscription via Whop), or a plain email + password account, which doesn't need Whop at all.",
+      "1. Sign in with Discord — this is the only way in, and it checks for an active subscription via Whop as part of signing in.",
       "2. Set your basics in Settings — your display currency (Settings → Currency) if you buy or sell in anything other than GBP.",
       "3. Connect your email. Go to Settings → Connections. Outlook connects directly. Gmail currently only works through the IMAP option here (direct Gmail sign-in is marked 'Coming soon'), using an app-specific password rather than your normal Gmail password.",
       "4. Decide if you also want Email Forwarding set up (see the Email Connections category) — this is required if you want instant Discord notifications for new sales, transfers and payouts, not just daily scans.",
-      "5. Import your existing inventory. If you already have tickets bought before using TixTracker, use Settings → Import rather than typing them in one by one — see the Import & Export category for how to map columns correctly.",
+      "5. Import your existing inventory. If you already have tickets bought before using TixTracker, use Settings → Import rather than typing them in one by one — see the Import & Export category for how the column mapping and error checking works.",
       "6. Look at the Dashboard. Once email is connected or your import has run, the dashboard (the '/' page) starts showing real figures.",
       "7. Check Tickets and Sales. Confirm what got imported looks right before you rely on it.",
       "8. Set up Notifications if you want them (Settings → Notifications) — see the Notifications category, since what you get depends on how your email is connected.",
@@ -73,7 +73,7 @@ export const ARTICLES: Article[] = [
     ],
     importantNotes: [
       { type: "tip", text: "Do the import before you start manually adding lots of tickets by hand — it's far faster to import a spreadsheet of 50 tickets than add them one at a time." },
-      { type: "warning", text: "Take your time on the import step. A rushed or incorrectly mapped import is the single easiest way to end up with wrong profit figures later — see Import & Export for what to check before confirming." },
+      { type: "tip", text: "TixTracker checks your import file for common mistakes (oversold quantities, duplicates, missing information) before saving anything — see 'Fixing import errors' if a row gets flagged." },
     ],
   },
 
@@ -374,29 +374,55 @@ export const ARTICLES: Article[] = [
     id: "import-overview",
     title: "Importing your existing records",
     categoryId: "import-export",
-    summary: "Mapping columns correctly the first time saves hours of cleanup later.",
+    summary: "TixTracker checks your file for problems before anything is saved — here's what it looks for.",
     appLink: { href: "/settings", label: "Open Settings → Import" },
-    relatedIds: ["getting-started-order", "tickets-adding"],
+    relatedIds: ["getting-started-order", "tickets-adding", "import-fixing-errors"],
     whatIsIt: [
-      "A guided 4-step wizard (Upload → Map fields → Preview → Done) for bringing in tickets and sales you already have in a spreadsheet, instead of adding them one at a time.",
+      "A guided 4-step wizard (Upload → Map fields → Preview → Done) for bringing in tickets and sales you already have in a spreadsheet, instead of adding them one at a time. A separate importer on the Sales page handles a spreadsheet of sales on its own, matched automatically against your existing tickets.",
     ],
     whyUseIt: [
-      "If you're moving from spreadsheets or another tool, this is by far the fastest way to get your historic data into TixTracker — and getting it right the first time avoids needing to go back and fix dozens of records later.",
+      "If you're moving from spreadsheets or another tool, this is by far the fastest way to get your historic data into TixTracker.",
     ],
     howToUseIt: [
       "Go to Settings → Import. Upload a .csv, .xlsx, .xls, .tsv or .ods file (max 5MB) — drag and drop or click to browse.",
       "If you only want to import ticket purchases (no sale/transfer/payment data), use the 'import as tickets' mode — reached via the link from the Tickets page — which clearly marks every row as Unlisted.",
-      "On the mapping step, TixTracker tries to auto-match your spreadsheet's column headers to the right fields (ticket details, sale details, transfer, payment) — check every mapping carefully rather than trusting the autofill blindly, especially for anything financial.",
+      "On the mapping step, TixTracker auto-matches your spreadsheet's column headers to the right fields — check every mapping, especially anything financial, rather than trusting the autofill blindly.",
+      "Tell TixTracker what currency your file's money values are in — they're converted automatically before saving, so this matters even if your figures look right at a glance.",
       "Not sure what headers to use? Use 'Download Template CSV' to get an example file with the exact expected column names.",
-      "The preview step shows you what will actually be created before anything is saved — review it properly, don't just click through.",
-      "If some rows fail validation, you'll get a chance to edit and retry just those rows rather than starting the whole import over.",
+      "The preview step checks every row — not just the first few — before anything is saved, and sorts them into three groups: ready to import, need attention, and can't be imported yet. See 'Fixing import errors' for what each of those means.",
     ],
     whatHappensNext: [
-      "Confirmed rows become real Ticket (and, if included, Sale) records exactly as mapped — there's no further automatic correction after import, so whatever was mapped is what you get.",
+      "Only rows that passed the check (plus any 'need attention' rows you explicitly chose to include) become real Ticket/Sale records — rows marked 'can't be imported yet' are never written to your account, and nothing is changed silently to force a row through.",
+      "A short record of what was imported and when appears under 'Recent imports' on the Import tab.",
     ],
     importantNotes: [
-      { type: "warning", text: "Take real care on the mapping step. A column mapped to the wrong field (cost mapped as sale price, or vice versa) will silently produce wrong profit figures everywhere in the app — Dashboard, Analytics, Cash Flow — and the only way to catch it is checking the preview before confirming." },
-      { type: "tip", text: "Importing a smaller test batch first (10-20 rows) before importing your full history is a good way to confirm your mapping is right before committing to everything at once." },
+      { type: "warning", text: "The checks catch the common mistakes (oversold quantities, duplicates, missing information, wrong currency) but can't read your mind — always glance over the preview before confirming, especially for anything financial." },
+      { type: "tip", text: "Importing a smaller test batch first (10-20 rows) is a good way to confirm your mapping is right before committing to everything at once." },
+    ],
+  },
+  {
+    id: "import-fixing-errors",
+    title: "Fixing import errors",
+    categoryId: "import-export",
+    summary: "What 'needs attention' and 'can't import yet' actually mean, in plain English.",
+    relatedIds: ["import-overview"],
+    whatIsIt: [
+      "Before anything is saved, every row in your file is sorted into one of three groups: ready to import, needs attention, or can't be imported yet.",
+    ],
+    whyUseIt: [
+      "This is what stops a messy spreadsheet from quietly creating wrong quantities, duplicate records, or misleading profit figures — which is exactly how a batch of incorrect data can end up looking like real inventory.",
+    ],
+    howToUseIt: [
+      "Ready to import: no problems found — these rows import as soon as you confirm.",
+      "Needs attention: something unusual but not necessarily wrong — a duplicate-looking order, an unusually large amount, a sale price far below the purchase cost. Each one is explained in plain English (e.g. \"This order has 2 tickets, but 4 are marked sold\") with the row number so you can find it in your file. Tick 'Also import rows that need attention' to include them as-is, or fix your file and re-upload.",
+      "Can't be imported yet: a hard problem — a missing event name, an invalid quantity, or a sale that would oversell a ticket. These rows are never written to your account until the underlying file is corrected and re-uploaded.",
+      "Nothing is ever defaulted to zero or guessed on your behalf — a missing cost or sale price is always flagged, never silently treated as £0, since that would misrepresent your profit.",
+    ],
+    whatHappensNext: [
+      "Fixing the file usually means correcting it in your spreadsheet and re-uploading — the import never partially commits a row, so re-uploading the corrected file is always safe.",
+    ],
+    importantNotes: [
+      { type: "tip", text: "If a row keeps getting flagged as a possible duplicate but it's genuinely a second, separate purchase of the same event, you can still choose to import it — the duplicate check is a warning, not a block." },
     ],
   },
   {

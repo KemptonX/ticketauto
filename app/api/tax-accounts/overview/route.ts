@@ -2,15 +2,11 @@ import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/src/lib/supabase-server";
 import {
   computeOverview,
-  computeDataQuality,
-  resolveUkTaxYear,
-  resolveCompanyFinancialYear,
-  resolvePresetPeriod,
+  computeReadiness,
   resolveCustomPeriod,
-  resolveYearToDatePreset,
+  resolvePresetPeriod,
   selfAssessmentDeadline,
   type PeriodRange,
-  type BusinessStructure,
   type AccountingBasis,
 } from "@/src/lib/accounting";
 
@@ -22,67 +18,37 @@ export async function GET(request: Request) {
   if (!user) return NextResponse.json({ error: "You must be signed in" }, { status: 401 });
 
   const url = new URL(request.url);
-  const kind = url.searchParams.get("kind") ?? "uk_tax_year";
-  const offset = Number(url.searchParams.get("offset") ?? "0") || 0;
+  const kind = url.searchParams.get("kind") ?? "custom";
   const start = url.searchParams.get("start");
   const end = url.searchParams.get("end");
-
-  const { data: profile } = await supabase
-    .from("accounting_profiles")
-    .select("business_structure, company_year_end, accounting_basis")
-    .eq("user_id", user.id)
-    .maybeSingle();
-
-  const businessStructure = (profile?.business_structure as BusinessStructure) ?? "sole_trader";
-  const companyYearEnd = (profile?.company_year_end as string | null) ?? null;
-  // Limited companies don't get UK cash basis — treat as accrual/traditional.
-  const accountingBasis: AccountingBasis =
-    businessStructure === "limited_company" ? "traditional" : ((profile?.accounting_basis as AccountingBasis) ?? "cash");
+  const entityType = url.searchParams.get("entityType"); // "sole_trader" | "limited_company"
   const now = new Date();
 
   let period: PeriodRange;
-  switch (kind) {
-    case "uk_tax_year":
-      period = resolveUkTaxYear(now, offset);
-      break;
-    case "company_fy":
-      if (!companyYearEnd) {
-        return NextResponse.json(
-          { error: "Company financial year end isn't set up yet — complete business settings first." },
-          { status: 400 },
-        );
-      }
-      period = resolveCompanyFinancialYear(companyYearEnd, now, offset);
-      break;
-    case "this_month":
-    case "last_month":
-    case "this_quarter":
-      period = resolvePresetPeriod(kind, now);
-      break;
-    case "year_to_date":
-      period = resolveYearToDatePreset(businessStructure, companyYearEnd, now);
-      break;
-    case "custom":
-      if (!start || !end) {
-        return NextResponse.json({ error: "Custom period needs both start and end dates" }, { status: 400 });
-      }
-      period = resolveCustomPeriod(start, end);
-      break;
-    default:
-      return NextResponse.json({ error: `Unknown period kind: ${kind}` }, { status: 400 });
+  if (kind === "this_month" || kind === "last_month" || kind === "this_quarter") {
+    period = resolvePresetPeriod(kind, now);
+  } else {
+    if (!start || !end) return NextResponse.json({ error: "start and end dates are required" }, { status: 400 });
+    period = resolveCustomPeriod(start, end);
   }
 
-  const [figures, dataQuality] = await Promise.all([
-    computeOverview(supabase, user.id, period, accountingBasis),
-    computeDataQuality(supabase, user.id, period),
+  const periodIsOpen = period.end >= now.toISOString().slice(0, 10);
+
+  let accountingBasis: AccountingBasis = "traditional";
+  if (entityType === "sole_trader") {
+    const { data: profile } = await supabase.from("accounting_profiles").select("accounting_basis").eq("user_id", user.id).maybeSingle();
+    accountingBasis = (profile?.accounting_basis as AccountingBasis) ?? "cash";
+  }
+
+  const [figures, readiness] = await Promise.all([
+    computeOverview(supabase, user.id, period, periodIsOpen, accountingBasis),
+    computeReadiness(supabase, user.id, period, true),
   ]);
 
   return NextResponse.json({
     period,
     figures,
-    dataQuality,
-    accountingBasis,
-    businessStructure,
+    readiness,
     selfAssessmentDeadline: selfAssessmentDeadline(period),
   });
 }

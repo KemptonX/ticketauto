@@ -1,12 +1,40 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { createSupabaseServerClient } from "@/src/lib/supabase-server";
+import { shouldShowOnboarding } from "@/src/lib/require-access";
 import DeskClient from "./desk-client";
 
 export default async function HomePage() {
   const supabase = await createSupabaseServerClient();
   const { data: { user } } = await supabase.auth.getUser();
 
-  if (user) return <DeskClient />;
+  if (user) {
+    // Mirrors requireActiveAccess's entitlement check, without the
+    // redirect — this page shows the marketing/landing content instead
+    // of bouncing anywhere, which is the right behaviour for the one page
+    // that's reachable whether or not a session exists at all.
+    //
+    // Discord-only login: no Discord identity (a pre-existing email/
+    // password account) is treated as not entitled, matching
+    // requireActiveAccess()'s new Discord-only enforcement — otherwise
+    // this page would render the full dashboard for exactly the session
+    // type that's meant to be shut out everywhere else.
+    const discordIdentity = user.identities?.find((i) => i.provider === "discord");
+    let isEntitled = false;
+    if (discordIdentity) {
+      isEntitled = true;
+      const { data: entitlement } = await supabase
+        .from("whop_entitlements")
+        .select("is_entitled")
+        .eq("user_id", user.id)
+        .maybeSingle();
+      if (entitlement && entitlement.is_entitled === false) isEntitled = false;
+    }
+    if (isEntitled) {
+      if (await shouldShowOnboarding(supabase, user.id)) redirect("/getting-started");
+      return <DeskClient />;
+    }
+  }
 
   return (
     <div className="lp-shell">

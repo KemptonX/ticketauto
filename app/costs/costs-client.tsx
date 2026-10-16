@@ -6,6 +6,7 @@ import { supabase } from "@/src/lib/supabase";
 import { formatCurrency } from "@/src/lib/currency";
 import { useRatesReady } from "@/app/components/CurrencyProvider";
 import { SidebarLogo, NavIcon, SidebarFooter } from "@/app/components/nav-icons";
+import { downloadCsv } from "@/src/lib/csv-export";
 
 type BillingCycle = "monthly" | "annual" | "weekly" | "one-off";
 
@@ -113,6 +114,11 @@ export default function CostsClient() {
       category: category.trim() || null,
       notes: notes.trim() || null,
       created_at: billedDate || new Date().toISOString().slice(0, 10),
+      // expense_date is the explicit accounting date Tax & Accounts reads.
+      // created_at above is kept as-is (still the billed date today) so
+      // autoAddMonthlyCharges' month-dedup logic, which reads created_at,
+      // keeps working unchanged.
+      expense_date: billedDate || new Date().toISOString().slice(0, 10),
     });
 
     if (error) {
@@ -145,17 +151,11 @@ export default function CostsClient() {
       o.notes ?? "",
     ]);
 
-    const csv = [headers, ...data]
-      .map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(","))
-      .join("\n");
-
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `ticketauto-costs-${new Date().toISOString().slice(0, 10)}.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
+    // Uses the shared, injection-safe CSV builder (src/lib/csv-export.ts)
+    // instead of this page's previous own quote-only escaping — an
+    // expense name or note is exactly the kind of free-text field that
+    // could carry a formula-injection payload if ever typed or imported.
+    downloadCsv(`ticketauto-costs-${new Date().toISOString().slice(0, 10)}.csv`, headers, data);
   }
 
   async function removeOverhead(id: number) {
@@ -214,6 +214,7 @@ export default function CostsClient() {
         billing_cycle: "monthly" as BillingCycle,
         category: row.category,
         notes: row.notes,
+        expense_date: now.toISOString().slice(0, 10),
       }))
     );
 

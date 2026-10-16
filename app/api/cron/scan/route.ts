@@ -6,6 +6,18 @@ import { syncImapInbox } from "@/src/lib/imap-sync";
 import type { ImapAccount } from "@/src/lib/imap-sync";
 
 export const runtime = "nodejs";
+// PERF-002 fix: previously no maxDuration was declared at all, meaning
+// this fell back to whatever the plan's invisible default is (10s on
+// Hobby) — far too short for a sequential loop over every connected
+// account across every user. 60s is Vercel's actual Hobby-plan ceiling
+// for a cron-triggered function (confirmed in Vercel's docs) — safe
+// regardless of plan tier, and a real improvement over an undeclared
+// default either way. Could not verify the exact current plan tier or
+// whether Fluid Compute is enabled via available CLI tooling in this
+// session — recommend the owner confirm directly in the Vercel dashboard
+// (Settings → General for plan; Settings → Functions for Fluid Compute)
+// and raise this further if a higher tier allows more headroom.
+export const maxDuration = 60;
 
 type GmailAccount = {
   id: string;

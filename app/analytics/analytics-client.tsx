@@ -6,6 +6,8 @@ import { supabase } from "@/src/lib/supabase";
 import { formatCurrency, convertFromGbp, getCurrencyCode } from "@/src/lib/currency";
 import { useRatesReady } from "@/app/components/CurrencyProvider";
 import { SidebarLogo, NavIcon, SidebarFooter } from "@/app/components/nav-icons";
+import { getProportionalCost } from "@/src/lib/proportional-cost";
+import { downloadCsv } from "@/src/lib/csv-export";
 
 type Order = {
   id: number;
@@ -178,17 +180,10 @@ export default function AnalyticsClient() {
       ];
     });
 
-    const csv = [headers, ...rows]
-      .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(","))
-      .join("\n");
-
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `ticketauto-sold-${new Date().toISOString().slice(0, 10)}.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
+    // Uses the shared, injection-safe CSV builder (src/lib/csv-export.ts)
+    // instead of this page's previous own quote-only escaping — see that
+    // file for why plain quoting alone doesn't stop formula injection.
+    downloadCsv(`ticketauto-sold-${new Date().toISOString().slice(0, 10)}.csv`, headers, rows);
   }
 
   async function loadOrders(showRefreshing = false) {
@@ -891,16 +886,9 @@ export default function AnalyticsClient() {
   );
 }
 
-function getProportionalCost(
-  totalCost: number | null,
-  qtyBought: number | null,
-  qtySold: number,
-  status: string | null,
-): number {
-  const cost = totalCost ?? 0;
-  if (status !== "Partially Sold" || (qtyBought ?? 0) <= 0 || qtySold <= 0) return cost;
-  return Math.min(cost, (qtySold / qtyBought!) * cost);
-}
+// getProportionalCost now imported from src/lib/proportional-cost.ts —
+// see that file for why (previously duplicated here with the same
+// status-string-dependent bug as orders-client.tsx and desk-client.tsx).
 
 function isSold(order: Order) {
   return normalizeStatus(order.listing_status) === "Sold" || (order.sold_total ?? 0) > 0;

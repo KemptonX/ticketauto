@@ -8,6 +8,9 @@ import { useRatesReady } from "@/app/components/CurrencyProvider";
 import { SidebarLogo, NavIcon, SidebarFooter } from "@/app/components/nav-icons";
 import { ShareMultiBannerModal, type MultiSaleStats } from "@/app/sales/ShareBannerModal";
 import ListingDraftModal from "@/app/components/marketplace/ListingDraftModal";
+import { getProportionalCost } from "@/src/lib/proportional-cost";
+import { downloadCsv as downloadCSV } from "@/src/lib/csv-export";
+import { checkQuantity, checkFinancialValue } from "@/src/lib/import-validation";
 
 type SyncLogEntry = {
   id: number;
@@ -121,16 +124,9 @@ const sourceTypeOptions = [
   { value: "manual", label: "Manual" },
 ];
 
-function getProportionalCost(
-  totalCost: number | null,
-  qtyBought: number | null,
-  qtySold: number,
-  status: string | null,
-): number {
-  const cost = totalCost ?? 0;
-  if (status !== "Partially Sold" || (qtyBought ?? 0) <= 0 || qtySold <= 0) return cost;
-  return Math.min(cost, (qtySold / qtyBought!) * cost);
-}
+// getProportionalCost now imported from src/lib/proportional-cost.ts —
+// see that file for why (previously duplicated here with the same
+// status-string-dependent bug as desk-client.tsx and analytics-client.tsx).
 
 type NewTicketForm = {
   event_name: string;
@@ -677,6 +673,30 @@ export default function OrdersClient() {
   }
 
   async function deleteOrder(id: number) {
+    // Check for linked sales BEFORE allowing delete. The database itself
+    // would only SET NULL the sale's inventory_order_id on delete (no
+    // orphaned reference) — but that silently severs a real sale's
+    // connection to its cost basis with no warning, which can make that
+    // sale look like near-100% pure profit afterward. Block rather than
+    // warn-and-proceed: this is cheap to check and the safest option that
+    // can't accidentally be dismissed in a hurry.
+    const { data: linkedSales, error: linkedCheckError } = await supabase
+      .from("sales")
+      .select("id")
+      .eq("inventory_order_id", id)
+      .neq("sale_status", "Deleted");
+    if (linkedCheckError) {
+      setMessage(linkedCheckError.message);
+      return;
+    }
+    if (linkedSales && linkedSales.length > 0) {
+      setMessage(
+        `Can't delete — this ticket has ${linkedSales.length} linked sale${linkedSales.length === 1 ? "" : "s"}. ` +
+        `Unmatch or delete the sale${linkedSales.length === 1 ? "" : "s"} on the Sales page first, so its revenue isn't silently detached from this purchase's cost.`,
+      );
+      return;
+    }
+
     const confirmed = window.confirm("Delete this ticket row?");
     if (!confirmed) {
       return;
@@ -710,6 +730,24 @@ export default function OrdersClient() {
       return;
     }
 
+    const qtyIssues = checkQuantity("qty_bought", "Quantity", newTicket.qty_bought > 0 ? newTicket.qty_bought : null, { required: true });
+    if (qtyIssues.length > 0) {
+      setMessage(qtyIssues[0].message);
+      return;
+    }
+
+    const parsedCost = newTicket.total_cost !== "" ? Number(newTicket.total_cost) : null;
+    if (newTicket.total_cost !== "" && !Number.isFinite(parsedCost)) {
+      setMessage("Total cost should be a number.");
+      return;
+    }
+    const costIssues = checkFinancialValue("total_cost", "Total cost", parsedCost);
+    const blockingCostIssue = costIssues.find((i) => i.severity === "error");
+    if (blockingCostIssue) {
+      setMessage(blockingCostIssue.message);
+      return;
+    }
+
     setSubmittingNew(true);
     setMessage("");
 
@@ -725,8 +763,8 @@ export default function OrdersClient() {
         row: newTicket.row.trim() || null,
         seat_from: newTicket.seat_from.trim() || null,
         seat_to: newTicket.seat_to.trim() || null,
-        qty_bought: newTicket.qty_bought > 0 ? newTicket.qty_bought : null,
-        total_cost: newTicket.total_cost !== "" ? convertToGbpClient(Number(newTicket.total_cost), getCurrencyCode()) : null,
+        qty_bought: newTicket.qty_bought,
+        total_cost: parsedCost !== null ? convertToGbpClient(parsedCost, getCurrencyCode()) : null,
         sold_total: null,
         listing_status: newTicket.listing_status,
         source_type: newTicket.source_type,
@@ -895,6 +933,25 @@ export default function OrdersClient() {
   async function bulkDelete() {
     const ids = [...selectedIds];
     if (ids.length === 0) return;
+
+    // Same linked-sales guard as the single-row delete — block the whole
+    // batch rather than partially deleting (a partial-success result from
+    // a bulk action is its own source of confusion).
+    const { data: linkedSales, error: linkedCheckError } = await supabase
+      .from("sales")
+      .select("inventory_order_id")
+      .in("inventory_order_id", ids)
+      .neq("sale_status", "Deleted");
+    if (linkedCheckError) { setMessage(linkedCheckError.message); return; }
+    if (linkedSales && linkedSales.length > 0) {
+      const affectedOrderCount = new Set(linkedSales.map((s) => s.inventory_order_id)).size;
+      setMessage(
+        `Can't delete — ${affectedOrderCount} of the selected ticket${affectedOrderCount === 1 ? "" : "s"} ` +
+        `${affectedOrderCount === 1 ? "has" : "have"} a linked sale. Unmatch or delete the linked sale(s) on the Sales page first, then try again.`,
+      );
+      return;
+    }
+
     const confirmed = window.confirm(`Delete ${ids.length} ticket${ids.length !== 1 ? "s" : ""}? This cannot be undone.`);
     if (!confirmed) return;
     const { error } = await supabase.from("orders").delete().in("id", ids);
@@ -2621,20 +2678,9 @@ function MultiSelectField({
 }
 
 
-function downloadCSV(filename: string, headers: string[], rows: (string | number)[][]) {
-  const escape = (v: string | number) => {
-    const s = String(v);
-    return s.includes(",") || s.includes('"') || s.includes("\n") ? `"${s.replace(/"/g, '""')}"` : s;
-  };
-  const csv = [headers, ...rows].map((r) => r.map(escape).join(",")).join("\n");
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
-}
+// downloadCSV now imported from src/lib/csv-export.ts — see that file for
+// why (previously duplicated here, and in several other pages, without a
+// formula-injection guard).
 
 function dateStamp() {
   return new Date().toISOString().slice(0, 10);
