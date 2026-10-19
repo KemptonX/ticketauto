@@ -1837,7 +1837,7 @@ function parseEventimDeTotal(text: string): string {
 // ── See Tickets UK / Gigs & Tours UK ─────────────────────────────────────────
 // Both services use an identical HTML email template; only the sender domain differs.
 
-function isSeeGigsEmail(from: string, subject: string = "", text: string = ""): boolean {
+export function isSeeGigsEmail(from: string, subject: string = "", text: string = ""): boolean {
   const f = from.toLowerCase();
   if (f.includes("seetickets.com") || f.includes("gigsandtours.com")) return true;
   // Forwarded: sender is the user, but body/subject still identify the original platform.
@@ -1847,9 +1847,29 @@ function isSeeGigsEmail(from: string, subject: string = "", text: string = ""): 
   const t = text.toLowerCase();
   const subjectMatches =
     s.includes("ticket order confirmation") ||
+    // Newer See Tickets template, same booking flow, different subject
+    // shape: "2027 BETMGM PREMIER LEAGUE DARTS - E-Ticket Order 130482212".
+    // Found via a real customer's forwarded order being silently dropped
+    // (no_ref_ignored) despite the body containing a perfectly matchable
+    // "BOOKING REFERENCE <number>" line — the body-text extraction was
+    // never reached because this subject shape wasn't recognised as a
+    // See Tickets email at all.
+    /-\s*e-ticket order\s+\d+/i.test(s) ||
     // Ballot-allocation emails: "You've got 26/27 World Darts Championship tickets 129771432"
     /^you(?:'|’)ve got\s+.+\s+tickets\s+\d{6,}/i.test(s);
-  return subjectMatches && (t.includes("gigsandtours.com") || t.includes("seetickets.com"));
+  return subjectMatches && (
+    t.includes("gigsandtours.com") ||
+    t.includes("seetickets.com") ||
+    // HTML-only forwards (no text/plain part — common from iCloud/Apple
+    // Mail forwards of this particular template, confirmed against a
+    // real customer's email) lose "seetickets.com" entirely once
+    // stripped: in this template the domain only ever appears inside
+    // href/src attributes, never as visible text, and stripHtml()
+    // discards tags along with their attributes. The footer's legal
+    // entity name is genuine visible body text in the same template, so
+    // it survives stripping and works as a reliable fallback signal.
+    t.includes("see group limited")
+  );
 }
 
 // Ballot-allocation emails (PDC World Darts Championship etc.) require a paid membership
