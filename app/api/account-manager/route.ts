@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/src/lib/supabase-server";
-import { ACCOUNT_STATUSES, buildDiscoveryCandidates } from "@/src/lib/account-manager";
+import { ACCOUNT_STATUSES, buildDiscoveryCandidates, classifyPlatform } from "@/src/lib/account-manager";
 
 export const runtime = "nodejs";
 
@@ -30,18 +30,23 @@ export async function GET() {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  // Enrich each account with its purchase history, matched by email —
-  // see migration 0012's comment for why this is computed rather than a
-  // stored foreign key. Paginated fetch of this user's orders (not
-  // capped at Supabase's default 1000) so the stats are correct even for
-  // a large account.
+  // Enrich each account with its purchase history, matched by platform
+  // AND email, not email alone — see migration 0012's comment for why
+  // this is computed rather than a stored foreign key. Platform-aware
+  // matching fixes a real reported bug: a Ticketmaster account and an
+  // AXS account sharing the same email both showed the identical
+  // purchase count, because the same email is a distinct identity per
+  // platform (same rule discovery/duplicate-prevention already use) and
+  // the match key here didn't account for that. Paginated fetch of this
+  // user's orders (not capped at Supabase's default 1000) so the stats
+  // are correct even for a large account.
   const PAGE = 1000;
-  type OrderRow = { account_email: string | null; total_cost: number | null; sold_total: number | null; event_date: string | null; created_at: string };
+  type OrderRow = { account_email: string | null; source_type: string | null; total_cost: number | null; sold_total: number | null; event_date: string | null; created_at: string };
   const allOrders: OrderRow[] = [];
   for (let from = 0; ; from += PAGE) {
     const { data, error: ordersError } = await supabase
       .from("orders")
-      .select("account_email, total_cost, sold_total, event_date, created_at")
+      .select("account_email, source_type, total_cost, sold_total, event_date, created_at")
       .not("account_email", "is", null)
       .range(from, from + PAGE - 1);
     if (ordersError || !data || data.length === 0) break;
@@ -49,21 +54,22 @@ export async function GET() {
     if (data.length < PAGE) break;
   }
 
-  const byEmail = new Map<string, { count: number; totalCost: number; totalSold: number; lastPurchaseAt: string }>();
+  const byPlatformEmail = new Map<string, { count: number; totalCost: number; totalSold: number; lastPurchaseAt: string }>();
   for (const o of allOrders) {
-    const key = (o.account_email ?? "").trim().toLowerCase();
-    if (!key) continue;
-    const stat = byEmail.get(key) ?? { count: 0, totalCost: 0, totalSold: 0, lastPurchaseAt: "" };
+    const email = (o.account_email ?? "").trim().toLowerCase();
+    if (!email) continue;
+    const key = `${classifyPlatform(o.source_type)}__${email}`;
+    const stat = byPlatformEmail.get(key) ?? { count: 0, totalCost: 0, totalSold: 0, lastPurchaseAt: "" };
     stat.count += 1;
     stat.totalCost += o.total_cost ?? 0;
     stat.totalSold += o.sold_total ?? 0;
     if (o.created_at > stat.lastPurchaseAt) stat.lastPurchaseAt = o.created_at;
-    byEmail.set(key, stat);
+    byPlatformEmail.set(key, stat);
   }
 
   const enriched = (accounts ?? []).map((a) => {
-    const key = (a.email ?? "").trim().toLowerCase();
-    const stat = key ? byEmail.get(key) : undefined;
+    const email = (a.email ?? "").trim().toLowerCase();
+    const stat = email ? byPlatformEmail.get(`${a.platform}__${email}`) : undefined;
     return {
       ...a,
       purchase_count: stat?.count ?? 0,
@@ -72,6 +78,15 @@ export async function GET() {
       last_purchase_at: stat?.lastPurchaseAt || null,
     };
   });
+
+  // Platform+email key for every saved account — the one correct way to
+  // check "does this order belong to a saved account", reused below for
+  // both discovery exclusion and the linked-purchases stat.
+  const savedPlatformEmailKeys = new Set(
+    (accounts ?? [])
+      .filter((a) => a.email)
+      .map((a) => `${a.platform}__${(a.email ?? "").trim().toLowerCase()}`),
+  );
 
   // Discovery candidates: Ticketmaster/AXS accounts seen in existing
   // orders that aren't saved here yet — never auto-created, just
@@ -82,12 +97,9 @@ export async function GET() {
     .from("dismissed_account_candidates")
     .select("platform, email");
   const existingKeys = new Set([
-    ...(accounts ?? [])
-      .filter((a) => a.email)
-      .map((a) => `${a.platform}__${(a.email ?? "").trim().toLowerCase()}`),
+    ...savedPlatformEmailKeys,
     ...(dismissedRows ?? []).map((d) => `${d.platform}__${d.email.trim().toLowerCase()}`),
   ]);
-  const existingEmails = new Set((accounts ?? []).map((a) => (a.email ?? "").trim().toLowerCase()).filter(Boolean));
   const { data: classifiableOrders } = await supabase
     .from("orders")
     .select("account_email, source_type, created_at")
@@ -96,14 +108,14 @@ export async function GET() {
   const candidates = buildDiscoveryCandidates(classifiableOrders ?? [], existingKeys);
 
   // Dashboard stats — all computed from the real data just fetched above,
-  // nothing hardcoded. "Linked purchases" = orders whose account_email
+  // nothing hardcoded. "Linked purchases" = orders whose (platform, email)
   // matches a saved account; deliberately not showing "unlinked
   // purchases" as a top-level figure any more — with 0 accounts saved it
   // trivially equals the user's total order count, which read as an
   // alarming number rather than a meaningful one.
   const matchedOrderCount = allOrders.filter((o) => {
-    const key = (o.account_email ?? "").trim().toLowerCase();
-    return key && existingEmails.has(key);
+    const email = (o.account_email ?? "").trim().toLowerCase();
+    return email && savedPlatformEmailKeys.has(`${classifyPlatform(o.source_type)}__${email}`);
   }).length;
   const stats = {
     totalAccounts: (accounts ?? []).length,

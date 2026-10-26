@@ -29,6 +29,17 @@ export const PLATFORM_LABELS: Record<Platform, string> = {
   other: "Other",
 };
 
+// Used everywhere an order's purchase history is attributed to a saved
+// account. Confirmed via a real production report: a Ticketmaster
+// account and an AXS account sharing the same email both showed the
+// same 152-purchase count, because the matching logic used email alone
+// — the same email is a distinct identity per platform (consistent with
+// how discovery and duplicate-prevention already treat it), so matching
+// must check both.
+export function matchesPlatform(accountPlatform: Platform, sourceType: string | null | undefined): boolean {
+  return classifyPlatform(sourceType) === accountPlatform;
+}
+
 // Organisational only — never auto-assigned based on any inferred
 // account health, per the brief ("do not automatically classify accounts
 // as banned/restricted/healthy/verified unless trustworthy evidence

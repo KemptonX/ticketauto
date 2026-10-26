@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { SidebarLogo, NavIcon, SidebarFooter } from "@/app/components/nav-icons";
-import { formatCurrency } from "@/src/lib/currency";
 import { parseCSV, autoMapHeader } from "@/src/lib/spreadsheet-parsing";
 import { downloadCsv } from "@/src/lib/csv-export";
 import { PLATFORM_LABELS, ACCOUNT_STATUSES, STATUS_LABELS, type Platform, type AccountStatus, type TicketAccount } from "@/src/lib/account-manager";
+import EditAccountModal from "./edit-account-modal";
 
 const navItems = [
   { label: "Dashboard", href: "/", active: false },
@@ -49,7 +50,6 @@ type Stats = {
 type DismissedItem = { platform: string; email: string; dismissed_at: string };
 
 type FormState = {
-  id: string | null;
   platform: Platform;
   account_name: string;
   email: string;
@@ -66,7 +66,7 @@ type FormState = {
 };
 
 const EMPTY_FORM: FormState = {
-  id: null, platform: "ticketmaster", account_name: "", email: "", phone: "",
+  platform: "ticketmaster", account_name: "", email: "", phone: "",
   browser_profile_number: "", browser_profile_tool: "", proxy_reference: "", country: "",
   status: "active", notes: "", tags: "", account_created_at: "", last_checked_at: "",
 };
@@ -93,20 +93,12 @@ function platformTag(platform: Platform) {
 }
 
 function statusTag(status: AccountStatus) {
-  const cls = status === "active" ? "am-tag-green" : status === "needs_attention" ? "am-tag-amber" : status === "archived" ? "am-tag-neutral" : "am-tag-neutral";
+  const cls = status === "active" ? "am-tag-green" : status === "needs_attention" ? "am-tag-amber" : "am-tag-neutral";
   return <span className={`am-tag ${cls}`}>{STATUS_LABELS[status]}</span>;
 }
 
-function FieldView({ label, value, span }: { label: string; value: string; span?: boolean }) {
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 3, gridColumn: span ? "1 / -1" : undefined }}>
-      <span style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--text-muted)" }}>{label}</span>
-      <span style={{ fontSize: 14, whiteSpace: span ? "pre-wrap" : undefined }}>{value || "—"}</span>
-    </div>
-  );
-}
-
 export default function AccountManagerClient() {
+  const router = useRouter();
   const [accounts, setAccounts] = useState<EnrichedAccount[]>([]);
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
@@ -146,13 +138,9 @@ export default function AccountManagerClient() {
   const [showMoreFields, setShowMoreFields] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  // Account details drawer
-  const [detailsAccount, setDetailsAccount] = useState<EnrichedAccount | null>(null);
-  const [detailsEditMode, setDetailsEditMode] = useState(false);
-  const [detailsForm, setDetailsForm] = useState<FormState>(EMPTY_FORM);
-  const [detailsSaving, setDetailsSaving] = useState(false);
-  const [historyRows, setHistoryRows] = useState<Record<string, unknown>[] | null>(null);
-  const [historyLoading, setHistoryLoading] = useState(false);
+  // Edit Account modal (shared component — also used by the account
+  // details page)
+  const [editingAccount, setEditingAccount] = useState<EnrichedAccount | null>(null);
 
   // Row action menu
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
@@ -412,83 +400,7 @@ export default function AccountManagerClient() {
     const existing = accounts.find((a) => a.id === duplicateAccountId);
     setShowAddModal(false);
     setDuplicateAccountId(null);
-    if (existing) openDetails(existing, true);
-  }
-
-  function formFromAccount(a: EnrichedAccount): FormState {
-    return {
-      id: a.id,
-      platform: a.platform,
-      account_name: a.account_name ?? "",
-      email: a.email ?? "",
-      phone: a.phone ?? "",
-      browser_profile_number: a.browser_profile_number ?? "",
-      browser_profile_tool: a.browser_profile_tool ?? "",
-      proxy_reference: a.proxy_reference ?? "",
-      country: a.country ?? "",
-      status: a.status,
-      notes: a.notes ?? "",
-      tags: a.tags.join(", "),
-      account_created_at: a.account_created_at ? a.account_created_at.slice(0, 10) : "",
-      last_checked_at: a.last_checked_at ? a.last_checked_at.slice(0, 10) : "",
-    };
-  }
-
-  async function openDetails(a: EnrichedAccount, editMode = false) {
-    setOpenMenuId(null);
-    setDetailsAccount(a);
-    setDetailsForm(formFromAccount(a));
-    setDetailsEditMode(editMode);
-    setHistoryRows(null);
-    if (a.purchase_count > 0) {
-      setHistoryLoading(true);
-      try {
-        const res = await fetch(`/api/account-manager/purchases?accountId=${a.id}`);
-        const data = await res.json();
-        setHistoryRows(res.ok ? (data.purchases ?? []) : []);
-      } finally {
-        setHistoryLoading(false);
-      }
-    } else {
-      setHistoryRows([]);
-    }
-  }
-
-  async function saveDetails() {
-    if (!detailsAccount) return;
-    setDetailsSaving(true);
-    try {
-      const res = await fetch("/api/account-manager", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          id: detailsForm.id,
-          platform: detailsForm.platform,
-          account_name: detailsForm.account_name.trim() || null,
-          email: detailsForm.email.trim() || null,
-          phone: detailsForm.phone.trim() || null,
-          browser_profile_number: detailsForm.browser_profile_number.trim() || null,
-          browser_profile_tool: detailsForm.browser_profile_tool.trim() || null,
-          proxy_reference: detailsForm.proxy_reference.trim() || null,
-          country: detailsForm.country.trim() || null,
-          status: detailsForm.status,
-          notes: detailsForm.notes.trim() || null,
-          tags: detailsForm.tags.split(",").map((t) => t.trim()).filter(Boolean),
-          account_created_at: detailsForm.account_created_at || null,
-          last_checked_at: detailsForm.last_checked_at ? new Date(detailsForm.last_checked_at).toISOString() : null,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) { setMessage(data.error ?? "Save failed"); return; }
-      setMessage("Account updated");
-      setDetailsAccount({ ...detailsAccount, ...data.account });
-      setDetailsEditMode(false);
-      await load();
-    } catch {
-      setMessage("Network error saving account");
-    } finally {
-      setDetailsSaving(false);
-    }
+    if (existing) setEditingAccount(existing);
   }
 
   async function toggleArchive(a: EnrichedAccount) {
@@ -502,7 +414,6 @@ export default function AccountManagerClient() {
     const data = await res.json();
     if (!res.ok) { setMessage(data.error ?? "Update failed"); return; }
     setMessage(nextStatus === "archived" ? "Account archived — its purchase history is preserved" : "Account restored");
-    if (detailsAccount?.id === a.id) setDetailsAccount({ ...detailsAccount, status: nextStatus });
     await load();
   }
 
@@ -513,7 +424,6 @@ export default function AccountManagerClient() {
     const data = await res.json();
     if (!res.ok) { setMessage(data.error ?? "Delete failed"); return; }
     setMessage("Account removed");
-    if (detailsAccount?.id === a.id) setDetailsAccount(null);
     await load();
   }
 
@@ -787,7 +697,7 @@ export default function AccountManagerClient() {
                   </thead>
                   <tbody>
                     {filteredAccounts.map((a) => (
-                      <tr key={a.id} onClick={() => void openDetails(a, false)} style={{ cursor: "pointer" }}>
+                      <tr key={a.id} onClick={() => router.push(`/account-manager/${a.id}`)} style={{ cursor: "pointer" }}>
                         <td>{platformTag(a.platform)}</td>
                         <td>
                           <span className="am-email-cell">
@@ -806,7 +716,8 @@ export default function AccountManagerClient() {
                             <button className="am-menu-trigger" type="button" onClick={() => setOpenMenuId(openMenuId === a.id ? null : a.id)}>⋯</button>
                             {openMenuId === a.id && (
                               <div className="am-menu">
-                                <button className="am-menu-item" type="button" onClick={() => void openDetails(a, true)}>Edit</button>
+                                <button className="am-menu-item" type="button" onClick={() => { setOpenMenuId(null); router.push(`/account-manager/${a.id}`); }}>View Account</button>
+                                <button className="am-menu-item" type="button" onClick={() => { setOpenMenuId(null); setEditingAccount(a); }}>Edit</button>
                                 <button className="am-menu-item" type="button" onClick={() => void toggleArchive(a)}>{a.status === "archived" ? "Restore" : "Archive"}</button>
                                 <button className="am-menu-item am-menu-item-danger" type="button" onClick={() => void deleteAccount(a)}>Delete</button>
                               </div>
@@ -923,256 +834,141 @@ export default function AccountManagerClient() {
 
       {/* ── Dismissed suggestions panel ── */}
       {showDismissed && (
-        <aside className="details-drawer details-drawer-open">
-          <div className="drawer-header">
-            <div>
-              <p className="eyebrow">Discovered accounts</p>
-              <h4>Dismissed suggestions</h4>
-            </div>
-            <button className="drawer-close" type="button" onClick={() => setShowDismissed(false)}>×</button>
-          </div>
-          <div className="drawer-content">
-            {dismissedLoading ? (
-              <p style={{ color: "var(--muted)" }}>Loading...</p>
-            ) : !dismissedList || dismissedList.length === 0 ? (
-              <p style={{ color: "var(--muted)" }}>No dismissed suggestions.</p>
-            ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-                {dismissedList.map((d) => (
-                  <div key={`${d.platform}-${d.email}`} style={{ display: "flex", alignItems: "center", gap: "0.75rem", padding: "0.5rem 0.75rem", border: "1px solid var(--border)", borderRadius: 8 }}>
-                    {platformTag(d.platform as Platform)}
-                    <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis" }}>{d.email}</span>
-                    <button className="secondary-button" type="button" style={{ fontSize: "0.8125rem", padding: "4px 10px" }} onClick={() => void restoreDismissed(d)}>Restore</button>
-                  </div>
-                ))}
+        <div className="add-sale-overlay" onClick={() => setShowDismissed(false)}>
+          <div className="add-sale-sheet" style={{ maxWidth: 600 }} onClick={(e) => e.stopPropagation()}>
+            <div className="drawer-header">
+              <div>
+                <p className="eyebrow">Discovered accounts</p>
+                <h4>Dismissed suggestions</h4>
               </div>
-            )}
+              <button className="drawer-close" type="button" onClick={() => setShowDismissed(false)}>✕</button>
+            </div>
+            <div className="add-sale-body">
+              {dismissedLoading ? (
+                <p style={{ color: "var(--muted)" }}>Loading...</p>
+              ) : !dismissedList || dismissedList.length === 0 ? (
+                <p style={{ color: "var(--muted)" }}>No dismissed suggestions.</p>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                  {dismissedList.map((d) => (
+                    <div key={`${d.platform}-${d.email}`} style={{ display: "flex", alignItems: "center", gap: "0.75rem", padding: "0.5rem 0.75rem", border: "1px solid var(--border)", borderRadius: 8 }}>
+                      {platformTag(d.platform as Platform)}
+                      <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis" }}>{d.email}</span>
+                      <button className="secondary-button" type="button" style={{ fontSize: "0.8125rem", padding: "4px 10px" }} onClick={() => void restoreDismissed(d)}>Restore</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
-        </aside>
+        </div>
       )}
 
       {/* ── Add Account modal (progressive disclosure) ── */}
       {showAddModal && (
-        <aside className="details-drawer details-drawer-open">
-          <div className="drawer-header">
-            <div>
-              <p className="eyebrow">New account</p>
-              <h4>Add account</h4>
+        <div className="add-sale-overlay" onClick={() => setShowAddModal(false)}>
+          <div className="add-sale-sheet" style={{ maxWidth: 760 }} onClick={(e) => e.stopPropagation()}>
+            <div className="drawer-header">
+              <div>
+                <p className="eyebrow">New account</p>
+                <h4>Add account</h4>
+              </div>
+              <button className="drawer-close" type="button" onClick={() => setShowAddModal(false)}>✕</button>
             </div>
-            <button className="drawer-close" type="button" onClick={() => setShowAddModal(false)}>×</button>
-          </div>
-          <div className="drawer-content">
-            <div className="drawer-grid">
-              <label>
-                <span>Platform</span>
-                <select className="field" value={form.platform} onChange={(e) => setForm((f) => ({ ...f, platform: e.target.value as Platform }))}>
-                  <option value="ticketmaster">Ticketmaster</option>
-                  <option value="axs">AXS</option>
-                  <option value="other">Other</option>
-                </select>
-              </label>
-              <label>
-                <span>Email address *</span>
-                <input className="field" type="email" placeholder="account@email.com" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} />
-              </label>
-              <label>
-                <span>Account name (optional)</span>
-                <input className="field" placeholder="e.g. John's TM account" value={form.account_name} onChange={(e) => setForm((f) => ({ ...f, account_name: e.target.value }))} />
-              </label>
+            <div className="add-sale-body">
+              <div className="drawer-grid">
+                <label>
+                  <span>Platform</span>
+                  <select className="field" value={form.platform} onChange={(e) => setForm((f) => ({ ...f, platform: e.target.value as Platform }))}>
+                    <option value="ticketmaster">Ticketmaster</option>
+                    <option value="axs">AXS</option>
+                    <option value="other">Other</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Email address *</span>
+                  <input className="field" type="email" placeholder="account@email.com" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} />
+                </label>
+                <label>
+                  <span>Account name (optional)</span>
+                  <input className="field" placeholder="e.g. John's TM account" value={form.account_name} onChange={(e) => setForm((f) => ({ ...f, account_name: e.target.value }))} />
+                </label>
+              </div>
+
+              {!showMoreFields ? (
+                <button type="button" className="am-progressive-toggle" onClick={() => setShowMoreFields(true)}>+ More details (optional)</button>
+              ) : (
+                <>
+                  <p className="am-section-title" style={{ marginTop: 18 }}>More details</p>
+                  <div className="drawer-grid">
+                    <label><span>Phone</span><input className="field" placeholder="+44..." value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} /></label>
+                    <label><span>Country / Region</span><input className="field" placeholder="e.g. UK, US" value={form.country} onChange={(e) => setForm((f) => ({ ...f, country: e.target.value }))} /></label>
+                    <label><span>Status</span>
+                      <select className="field" value={form.status} onChange={(e) => setForm((f) => ({ ...f, status: e.target.value as AccountStatus }))}>
+                        {ACCOUNT_STATUSES.map((s) => <option key={s} value={s}>{STATUS_LABELS[s]}</option>)}
+                      </select>
+                    </label>
+                    <label><span>Browser profile number</span><input className="field" placeholder="e.g. Profile 14" value={form.browser_profile_number} onChange={(e) => setForm((f) => ({ ...f, browser_profile_number: e.target.value }))} /></label>
+                    <label><span>Browser profile tool</span><input className="field" placeholder="e.g. AdsPower, GoLogin" value={form.browser_profile_tool} onChange={(e) => setForm((f) => ({ ...f, browser_profile_tool: e.target.value }))} /></label>
+                    <label><span>Proxy reference</span><input className="field" placeholder="e.g. UK-residential-03" value={form.proxy_reference} onChange={(e) => setForm((f) => ({ ...f, proxy_reference: e.target.value }))} /></label>
+                    <label><span>Tags (comma separated)</span><input className="field" placeholder="e.g. priority, UK" value={form.tags} onChange={(e) => setForm((f) => ({ ...f, tags: e.target.value }))} /></label>
+                    <label><span>Account created</span><input className="field" type="date" value={form.account_created_at} onChange={(e) => setForm((f) => ({ ...f, account_created_at: e.target.value }))} /></label>
+                    <label><span>Last checked</span><input className="field" type="date" value={form.last_checked_at} onChange={(e) => setForm((f) => ({ ...f, last_checked_at: e.target.value }))} /></label>
+                    <label style={{ gridColumn: "1 / -1" }}><span>Notes</span><textarea className="field" rows={3} value={form.notes} onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))} /></label>
+                  </div>
+                </>
+              )}
             </div>
-
-            {!showMoreFields ? (
-              <button type="button" className="am-progressive-toggle" onClick={() => setShowMoreFields(true)}>+ More details (optional)</button>
-            ) : (
-              <>
-                <p className="am-section-title" style={{ marginTop: 18 }}>More details</p>
-                <div className="drawer-grid">
-                  <label><span>Phone</span><input className="field" placeholder="+44..." value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} /></label>
-                  <label><span>Country / Region</span><input className="field" placeholder="e.g. UK, US" value={form.country} onChange={(e) => setForm((f) => ({ ...f, country: e.target.value }))} /></label>
-                  <label><span>Status</span>
-                    <select className="field" value={form.status} onChange={(e) => setForm((f) => ({ ...f, status: e.target.value as AccountStatus }))}>
-                      {ACCOUNT_STATUSES.map((s) => <option key={s} value={s}>{STATUS_LABELS[s]}</option>)}
-                    </select>
-                  </label>
-                  <label><span>Browser profile number</span><input className="field" placeholder="e.g. Profile 14" value={form.browser_profile_number} onChange={(e) => setForm((f) => ({ ...f, browser_profile_number: e.target.value }))} /></label>
-                  <label><span>Browser profile tool</span><input className="field" placeholder="e.g. AdsPower, GoLogin" value={form.browser_profile_tool} onChange={(e) => setForm((f) => ({ ...f, browser_profile_tool: e.target.value }))} /></label>
-                  <label><span>Proxy reference</span><input className="field" placeholder="e.g. UK-residential-03" value={form.proxy_reference} onChange={(e) => setForm((f) => ({ ...f, proxy_reference: e.target.value }))} /></label>
-                  <label><span>Tags (comma separated)</span><input className="field" placeholder="e.g. priority, UK" value={form.tags} onChange={(e) => setForm((f) => ({ ...f, tags: e.target.value }))} /></label>
-                  <label><span>Account created</span><input className="field" type="date" value={form.account_created_at} onChange={(e) => setForm((f) => ({ ...f, account_created_at: e.target.value }))} /></label>
-                  <label><span>Last checked</span><input className="field" type="date" value={form.last_checked_at} onChange={(e) => setForm((f) => ({ ...f, last_checked_at: e.target.value }))} /></label>
-                  <label style={{ gridColumn: "1 / -1" }}><span>Notes</span><textarea className="field" rows={3} value={form.notes} onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))} /></label>
-                </div>
-              </>
-            )}
-
-            <div className="drawer-actions">
+            <div className="add-sale-sheet drawer-actions" style={{ padding: "16px 24px", borderTop: "1px solid rgba(38,38,47,0.7)", display: "flex", justifyContent: "flex-end", gap: 12 }}>
               <button className="ghost-button" type="button" onClick={() => setShowAddModal(false)}>Cancel</button>
               <button className="primary-button" type="button" onClick={() => void saveNewAccount()} disabled={saving}>
                 {saving ? "Saving..." : "Add Account"}
               </button>
             </div>
           </div>
-        </aside>
+        </div>
       )}
 
-      {/* ── Account details drawer ── */}
-      {detailsAccount && (
-        <aside className="details-drawer details-drawer-open">
-          <div className="drawer-header">
-            <div>
-              <p className="eyebrow">{PLATFORM_LABELS[detailsAccount.platform]} account</p>
-              <h4>{detailsAccount.account_name || detailsAccount.email}</h4>
-            </div>
-            <button className="drawer-close" type="button" onClick={() => setDetailsAccount(null)}>×</button>
-          </div>
-          <div className="drawer-content">
-            <p className="am-section-title">Account information</p>
-            <div className="drawer-grid">
-              {detailsEditMode ? (
-                <>
-                  <label><span>Platform</span>
-                    <select className="field" value={detailsForm.platform} onChange={(e) => setDetailsForm((f) => ({ ...f, platform: e.target.value as Platform }))}>
-                      <option value="ticketmaster">Ticketmaster</option>
-                      <option value="axs">AXS</option>
-                      <option value="other">Other</option>
-                    </select>
-                  </label>
-                  <label><span>Email</span><input className="field" type="email" value={detailsForm.email} onChange={(e) => setDetailsForm((f) => ({ ...f, email: e.target.value }))} /></label>
-                  <label><span>Name</span><input className="field" value={detailsForm.account_name} onChange={(e) => setDetailsForm((f) => ({ ...f, account_name: e.target.value }))} /></label>
-                  <label><span>Phone</span><input className="field" value={detailsForm.phone} onChange={(e) => setDetailsForm((f) => ({ ...f, phone: e.target.value }))} /></label>
-                  <label><span>Country</span><input className="field" value={detailsForm.country} onChange={(e) => setDetailsForm((f) => ({ ...f, country: e.target.value }))} /></label>
-                  <label><span>Status</span>
-                    <select className="field" value={detailsForm.status} onChange={(e) => setDetailsForm((f) => ({ ...f, status: e.target.value as AccountStatus }))}>
-                      {ACCOUNT_STATUSES.map((s) => <option key={s} value={s}>{STATUS_LABELS[s]}</option>)}
-                    </select>
-                  </label>
-                </>
-              ) : (
-                <>
-                  <FieldView label="Platform" value={PLATFORM_LABELS[detailsAccount.platform]} />
-                  <FieldView label="Email" value={detailsAccount.email ?? ""} />
-                  <FieldView label="Name" value={detailsAccount.account_name ?? ""} />
-                  <FieldView label="Phone" value={detailsAccount.phone ?? ""} />
-                  <FieldView label="Country" value={detailsAccount.country ?? ""} />
-                  <FieldView label="Status" value={STATUS_LABELS[detailsAccount.status]} />
-                </>
-              )}
-            </div>
-
-            <p className="am-section-title">Browser & profile details</p>
-            <div className="drawer-grid">
-              {detailsEditMode ? (
-                <>
-                  <label><span>Browser profile number</span><input className="field" value={detailsForm.browser_profile_number} onChange={(e) => setDetailsForm((f) => ({ ...f, browser_profile_number: e.target.value }))} /></label>
-                  <label><span>Browser profile tool</span><input className="field" value={detailsForm.browser_profile_tool} onChange={(e) => setDetailsForm((f) => ({ ...f, browser_profile_tool: e.target.value }))} /></label>
-                  <label><span>Proxy reference</span><input className="field" value={detailsForm.proxy_reference} onChange={(e) => setDetailsForm((f) => ({ ...f, proxy_reference: e.target.value }))} /></label>
-                </>
-              ) : (
-                <>
-                  <FieldView label="Browser profile number" value={detailsAccount.browser_profile_number ?? ""} />
-                  <FieldView label="Browser profile tool" value={detailsAccount.browser_profile_tool ?? ""} />
-                  <FieldView label="Proxy reference" value={detailsAccount.proxy_reference ?? ""} />
-                </>
-              )}
-            </div>
-
-            <p className="am-section-title">Purchase history</p>
-            <div className="drawer-grid" style={{ marginBottom: 12 }}>
-              <FieldView label="Total purchases" value={String(detailsAccount.purchase_count)} />
-              <FieldView label="Total spend" value={formatCurrency(detailsAccount.total_spent)} />
-              <FieldView label="Last purchase" value={detailsAccount.last_purchase_at ? new Date(detailsAccount.last_purchase_at).toLocaleDateString("en-GB") : ""} />
-            </div>
-            {historyLoading ? (
-              <p style={{ color: "var(--muted)", fontSize: 13 }}>Loading linked orders...</p>
-            ) : !historyRows || historyRows.length === 0 ? (
-              <p style={{ color: "var(--muted)", fontSize: 13 }}>No linked purchases found for this account&apos;s email.</p>
-            ) : (
-              <div className="table-scroll">
-                <table className="premium-table">
-                  <thead><tr><th>Event</th><th>Venue</th><th>Date</th><th>Qty</th><th>Cost</th><th>Status</th></tr></thead>
-                  <tbody>
-                    {historyRows.map((r) => (
-                      <tr key={r.id as number}>
-                        <td>{String(r.event_name ?? "—")}</td>
-                        <td>{String(r.venue ?? "—")}</td>
-                        <td>{String(r.event_date ?? "—")}</td>
-                        <td>{String(r.qty_bought ?? "—")}</td>
-                        <td>{formatCurrency((r.total_cost as number) ?? null)}</td>
-                        <td>{String(r.listing_status ?? "—")}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-
-            <p className="am-section-title">Notes & organisation</p>
-            <div className="drawer-grid">
-              {detailsEditMode ? (
-                <>
-                  <label><span>Tags (comma separated)</span><input className="field" value={detailsForm.tags} onChange={(e) => setDetailsForm((f) => ({ ...f, tags: e.target.value }))} /></label>
-                  <label><span>Account created</span><input className="field" type="date" value={detailsForm.account_created_at} onChange={(e) => setDetailsForm((f) => ({ ...f, account_created_at: e.target.value }))} /></label>
-                  <label><span>Last checked</span><input className="field" type="date" value={detailsForm.last_checked_at} onChange={(e) => setDetailsForm((f) => ({ ...f, last_checked_at: e.target.value }))} /></label>
-                  <label style={{ gridColumn: "1 / -1" }}><span>Notes</span><textarea className="field" rows={3} value={detailsForm.notes} onChange={(e) => setDetailsForm((f) => ({ ...f, notes: e.target.value }))} /></label>
-                </>
-              ) : (
-                <>
-                  <FieldView label="Tags" value={detailsAccount.tags.join(", ")} />
-                  <FieldView label="Account created" value={detailsAccount.account_created_at ? new Date(detailsAccount.account_created_at).toLocaleDateString("en-GB") : ""} />
-                  <FieldView label="Last checked" value={detailsAccount.last_checked_at ? new Date(detailsAccount.last_checked_at).toLocaleDateString("en-GB") : ""} />
-                  <FieldView label="Notes" value={detailsAccount.notes ?? ""} span />
-                </>
-              )}
-            </div>
-
-            <div className="drawer-actions">
-              {detailsEditMode ? (
-                <>
-                  <button className="ghost-button" type="button" onClick={() => { setDetailsEditMode(false); setDetailsForm(formFromAccount(detailsAccount)); }}>Cancel</button>
-                  <button className="primary-button" type="button" onClick={() => void saveDetails()} disabled={detailsSaving}>{detailsSaving ? "Saving..." : "Save changes"}</button>
-                </>
-              ) : (
-                <>
-                  <button className="ghost-button am-menu-item-danger" type="button" onClick={() => void deleteAccount(detailsAccount)}>Delete</button>
-                  <button className="ghost-button" type="button" onClick={() => void toggleArchive(detailsAccount)}>{detailsAccount.status === "archived" ? "Restore" : "Archive"}</button>
-                  <button className="primary-button" type="button" onClick={() => setDetailsEditMode(true)}>Edit</button>
-                </>
-              )}
-            </div>
-          </div>
-        </aside>
+      {editingAccount && (
+        <EditAccountModal
+          account={editingAccount}
+          onClose={() => setEditingAccount(null)}
+          onSaved={() => { setEditingAccount(null); setMessage("Account updated"); void load(); }}
+        />
       )}
 
-      {/* ── Bulk import drawer ── */}
+      {/* ── Bulk import modal ── */}
       {importStep !== "idle" && (
-        <aside className="details-drawer details-drawer-open">
-          <div className="drawer-header">
-            <div>
-              <p className="eyebrow">Import accounts</p>
-              <h4>Map columns — {importRows.length} rows detected</h4>
+        <div className="add-sale-overlay" onClick={() => { setImportStep("idle"); setImportRows([]); }}>
+          <div className="add-sale-sheet" style={{ maxWidth: 720 }} onClick={(e) => e.stopPropagation()}>
+            <div className="drawer-header">
+              <div>
+                <p className="eyebrow">Import accounts</p>
+                <h4>Map columns — {importRows.length} rows detected</h4>
+              </div>
+              <button className="drawer-close" type="button" onClick={() => { setImportStep("idle"); setImportRows([]); }}>✕</button>
             </div>
-            <button className="drawer-close" type="button" onClick={() => { setImportStep("idle"); setImportRows([]); }}>×</button>
-          </div>
-          <div className="drawer-content">
-            <div className="drawer-grid">
-              {importHeaders.map((h, i) => (
-                <label key={i}>
-                  <span>{h}</span>
-                  <select className="field" value={importColMap[i] ?? "skip"} onChange={(e) => setImportColMap((prev) => ({ ...prev, [i]: e.target.value }))}>
-                    <option value="skip">— Skip —</option>
-                    {IMPORT_FIELD_ALIASES.map((f) => <option key={f.key} value={f.key}>{f.key}</option>)}
-                  </select>
-                </label>
-              ))}
+            <div className="add-sale-body">
+              <div className="drawer-grid">
+                {importHeaders.map((h, i) => (
+                  <label key={i}>
+                    <span>{h}</span>
+                    <select className="field" value={importColMap[i] ?? "skip"} onChange={(e) => setImportColMap((prev) => ({ ...prev, [i]: e.target.value }))}>
+                      <option value="skip">— Skip —</option>
+                      {IMPORT_FIELD_ALIASES.map((f) => <option key={f.key} value={f.key}>{f.key}</option>)}
+                    </select>
+                  </label>
+                ))}
+              </div>
             </div>
-            <div className="drawer-actions">
+            <div className="add-sale-sheet drawer-actions" style={{ padding: "16px 24px", borderTop: "1px solid rgba(38,38,47,0.7)", display: "flex", justifyContent: "flex-end", gap: 12 }}>
               <button className="ghost-button" type="button" onClick={() => { setImportStep("idle"); setImportRows([]); }}>Cancel</button>
               <button className="primary-button" type="button" onClick={() => void runImport()} disabled={importing}>
                 {importing ? "Importing..." : `Import ${importRows.length} rows`}
               </button>
             </div>
           </div>
-        </aside>
+        </div>
       )}
     </div>
   );

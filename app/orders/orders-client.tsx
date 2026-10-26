@@ -221,6 +221,14 @@ export default function OrdersClient() {
   const [privacyMode, setPrivacyMode] = useState(false);
 
   const [search, setSearch] = useState("");
+
+  // Deep-link from Account Manager's "View in Tickets" action
+  // (?search=<booking ref>) — pre-fills the existing search box rather
+  // than introducing a separate lookup mechanism.
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search).get("search");
+    if (q) setSearch(decodeURIComponent(q));
+  }, []);
   const [eventFilters, setEventFilters] = useState<string[]>([]);
   const [venueFilters, setVenueFilters] = useState<string[]>([]);
   const [statusFilters, setStatusFilters] = useState<string[]>([]);

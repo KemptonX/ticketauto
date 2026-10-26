@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { classifyPlatform, buildDiscoveryCandidates, assessCandidateConfidence } from "./account-manager.ts";
+import { classifyPlatform, buildDiscoveryCandidates, assessCandidateConfidence, matchesPlatform } from "./account-manager.ts";
 
 describe("classifyPlatform", () => {
   it("recognises every real Ticketmaster source_type variant seen in production", () => {
@@ -80,6 +80,27 @@ describe("buildDiscoveryCandidates", () => {
     );
     assert.equal(result[0].needsReview, false);
     assert.equal(result[0].reviewReason, null);
+  });
+});
+
+describe("matchesPlatform", () => {
+  it("reproduces the real reported bug: a Ticketmaster and an AXS account sharing the same email must not both match the same order", () => {
+    const tmOrder = { source_type: "ticketmaster_direct" };
+    const axsOrder = { source_type: "AXS" };
+    assert.equal(matchesPlatform("ticketmaster", tmOrder.source_type), true);
+    assert.equal(matchesPlatform("axs", tmOrder.source_type), false);
+    assert.equal(matchesPlatform("axs", axsOrder.source_type), true);
+    assert.equal(matchesPlatform("ticketmaster", axsOrder.source_type), false);
+  });
+
+  it("handles every real source_type casing variant seen in production for both platforms", () => {
+    for (const s of ["ticketmaster_direct", "Ticketmaster UK", "Ticketmaster"]) assert.equal(matchesPlatform("ticketmaster", s), true, s);
+    for (const s of ["AXS", "axs", "Axs", "axs_us"]) assert.equal(matchesPlatform("axs", s), true, s);
+  });
+
+  it("an 'other' platform account only matches orders that aren't classified as Ticketmaster or AXS", () => {
+    assert.equal(matchesPlatform("other", "Viagogo"), true);
+    assert.equal(matchesPlatform("other", "ticketmaster_direct"), false);
   });
 });
 
