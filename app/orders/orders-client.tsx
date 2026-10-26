@@ -168,6 +168,7 @@ const navItems = [
   { label: "Cash Flow", href: "/cash-flow", active: false },
   { label: "Costs", href: "/costs", active: false },
   { label: "Tax & Accounts", href: "/tax-accounts", active: false },
+  { label: "Accounts", href: "/account-manager", active: false },
   { label: "Calculator", href: "/viagogo-calculator", active: false },
   { label: "Scans", href: "/scans", active: false },
   { label: "Presale & Codes", href: "/presale", active: false },
@@ -201,6 +202,19 @@ export default function OrdersClient() {
   const [addingAccount, setAddingAccount] = useState(false);
   const [newAccountInput, setNewAccountInput] = useState("");
   const [newTicket, setNewTicket] = useState<NewTicketForm>(defaultNewTicket);
+
+  // Feedback from /auth/link-callback (Discord account linking from the
+  // temporary /account-access migration path) — read directly from the
+  // URL rather than useSearchParams() to avoid that hook's Suspense
+  // requirement on an already-large client component.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("linked") === "true") {
+      setMessage("Discord account connected — you're all set.");
+    } else if (params.get("linkError")) {
+      setMessage(`Couldn't connect Discord: ${decodeURIComponent(params.get("linkError")!)}`);
+    }
+  }, []);
 
   const [viewMode, setViewMode] = useState<"active" | "archived" | "ignored" | "personal">("active");
   const [sortBy, setSortBy] = useState<"event-date" | "added-newest" | "added-oldest">("event-date");

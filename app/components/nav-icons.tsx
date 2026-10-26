@@ -170,6 +170,17 @@ export function IconTaxAccounts(p: IconProps) {
   );
 }
 
+export function IconAccountManager(p: IconProps) {
+  return (
+    <Icon {...p}>
+      <rect x="2" y="5" width="20" height="14" rx="2.5" />
+      <path d="M2 9h20" />
+      <circle cx="8" cy="14.3" r="1.6" />
+      <line x1="12.5" y1="14.3" x2="17" y2="14.3" />
+    </Icon>
+  );
+}
+
 export function IconCashFlow(p: IconProps) {
   return (
     <Icon {...p}>
@@ -211,6 +222,7 @@ const ICON_MAP: Record<string, (p: IconProps) => React.JSX.Element> = {
   "/cash-flow": IconCashFlow,
   "/costs": IconCosts,
   "/tax-accounts": IconTaxAccounts,
+  "/account-manager": IconAccountManager,
   "/viagogo-calculator": IconCalculator,
   "/scans": IconScans,
   "/presale": IconPresale,

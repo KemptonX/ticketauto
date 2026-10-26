@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { Fragment, useEffect, useState } from "react";
@@ -13,6 +13,7 @@ const navItems = [
   { label: "Cash Flow", href: "/cash-flow", active: false },
   { label: "Costs", href: "/costs", active: false },
   { label: "Tax & Accounts", href: "/tax-accounts", active: false },
+  { label: "Accounts", href: "/account-manager", active: false },
   { label: "Calculator", href: "/viagogo-calculator", active: false },
   { label: "Scans", href: "/scans", active: true },
   { label: "Presale & Codes", href: "/presale", active: false },
@@ -126,7 +127,7 @@ export default function ScansClient() {
   const ticketsAdded = orderLogs.reduce((s, l) => s + (l.inserted ?? 0), 0);
   const ticketsUpdated = orderLogs.reduce((s, l) => s + (l.updated ?? 0), 0);
   const salesMatched = salesLogs.reduce((s, l) => s + (l.matched ?? 0), 0);
-  const lastScan = logs[0] ? timeAgo(logs[0].created_at) : "—";
+  const lastScan = logs[0] ? timeAgo(logs[0].created_at) : "â€”";
   const lastScanFull = logs[0] ? formatTs(logs[0].created_at) : "No scans yet";
 
   const filteredLogs = logs.filter((l) => {
@@ -227,7 +228,7 @@ export default function ScansClient() {
           </div>
 
           {loading ? (
-            <div className="empty-state compact-empty-state"><h5>Loading scan logs…</h5></div>
+            <div className="empty-state compact-empty-state"><h5>Loading scan logsâ€¦</h5></div>
           ) : filteredLogs.length === 0 ? (
             <div className="empty-state compact-empty-state">
               <div className="empty-orb" />
@@ -296,12 +297,12 @@ export default function ScansClient() {
                           <td style={{ textAlign: "center", fontVariantNumeric: "tabular-nums" }}>
                             {(log.updated ?? 0) > 0
                               ? <span>{log.updated}</span>
-                              : <span style={{ color: "var(--muted)", opacity: 0.4 }}>—</span>}
+                              : <span style={{ color: "var(--muted)", opacity: 0.4 }}>â€”</span>}
                           </td>
                           <td style={{ textAlign: "center", fontVariantNumeric: "tabular-nums" }}>
                             {(log.matched ?? 0) > 0
                               ? <span style={{ color: "#a78bfa" }}>{log.matched}</span>
-                              : <span style={{ color: "var(--muted)", opacity: 0.4 }}>—</span>}
+                              : <span style={{ color: "var(--muted)", opacity: 0.4 }}>â€”</span>}
                           </td>
                           <td style={{ textAlign: "right" }}>
                             <div style={{ display: "flex", gap: "0.4rem", justifyContent: "flex-end", alignItems: "center" }}>
@@ -322,7 +323,7 @@ export default function ScansClient() {
                                 disabled={deleting.has(log.id)}
                                 onClick={() => void deleteLog(log.id)}
                               >
-                                {deleting.has(log.id) ? "…" : "Delete"}
+                                {deleting.has(log.id) ? "â€¦" : "Delete"}
                               </button>
                             </div>
                           </td>

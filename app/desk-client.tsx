@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
@@ -35,7 +35,7 @@ type Sale = {
   sold_at: string | null;
 };
 
-// getProportionalCost now imported from src/lib/proportional-cost.ts —
+// getProportionalCost now imported from src/lib/proportional-cost.ts â€”
 // see that file for why (previously duplicated here with a bug: proration
 // only activated when listing_status was the exact string "Partially
 // Sold", silently understating profit for any partially-sold order whose
@@ -49,6 +49,7 @@ const navItems = [
   { label: "Cash Flow", href: "/cash-flow", active: false },
   { label: "Costs", href: "/costs", active: false },
   { label: "Tax & Accounts", href: "/tax-accounts", active: false },
+  { label: "Accounts", href: "/account-manager", active: false },
   { label: "Calculator", href: "/viagogo-calculator", active: false },
   { label: "Scans", href: "/scans", active: false },
   { label: "Presale & Codes", href: "/presale", active: false },
@@ -219,7 +220,7 @@ export default function DeskClient() {
         ];
       });
 
-      // Orders with no linked sale records — use sold_total from the order itself
+      // Orders with no linked sale records â€” use sold_total from the order itself
       // so old-way imports that stored revenue directly on the order still appear
       const personalRows = (ordersData ?? [])
         .filter((o) => !ordersWithSales.has((o as { id: number }).id))
@@ -294,7 +295,7 @@ export default function DeskClient() {
     const monthStart = new Date(selectedMonth.year, selectedMonth.month, 1);
     const nextMonth = new Date(selectedMonth.year, selectedMonth.month + 1, 1);
 
-    // Financial year: April 1 → March 31
+    // Financial year: April 1 â†’ March 31
     const fyStart = now.getMonth() >= 3
       ? new Date(now.getFullYear(), 3, 1)       // Apr 1 this year
       : new Date(now.getFullYear() - 1, 3, 1);  // Apr 1 last year
@@ -510,7 +511,7 @@ export default function DeskClient() {
               disabled={exporting}
               onClick={() => void exportMatchedCSV()}
             >
-              {exporting ? "Exporting…" : "Export"}
+              {exporting ? "Exportingâ€¦" : "Export"}
             </button>
             <button className="secondary-button" type="button" onClick={() => {
               const n = new Date();
@@ -522,14 +523,14 @@ export default function DeskClient() {
           </div>
         </header>
 
-        {/* Empty-dashboard guidance — a brand-new account with no tickets
-            yet would otherwise just see a wall of £0 stat cards with no
+        {/* Empty-dashboard guidance â€” a brand-new account with no tickets
+            yet would otherwise just see a wall of Â£0 stat cards with no
             indication of what to do next. Shown instead of (not in
             addition to) the usual goal/KPI cards below, since those are
             meaningless with zero inventory. */}
         {!loading && orders.length === 0 && (
           <section className="table-card" style={{ padding: "2rem", textAlign: "center", marginBottom: "1.5rem" }}>
-            <h3 style={{ marginBottom: "0.5rem" }}>Nothing here yet — let&apos;s fix that</h3>
+            <h3 style={{ marginBottom: "0.5rem" }}>Nothing here yet â€” let&apos;s fix that</h3>
             <p style={{ color: "var(--muted)", marginBottom: "1.5rem" }}>
               Your dashboard will fill up as soon as you add your first ticket, one way or another.
             </p>
@@ -604,12 +605,12 @@ export default function DeskClient() {
           const projected = metrics.yearlyProjected;
           const pct = yearlyGoal > 0 ? Math.min((profit / yearlyGoal) * 100, 100) : 0;
           const over = profit > yearlyGoal;
-          const fyLabel = `Apr ${metrics.fyStart.getFullYear()} – Mar ${metrics.fyEnd.getFullYear()}`;
+          const fyLabel = `Apr ${metrics.fyStart.getFullYear()} â€“ Mar ${metrics.fyEnd.getFullYear()}`;
           return (
             <section className="goal-card">
               <div className="goal-card-top">
                 <div>
-                  <p className="section-tag">Yearly goal · {fyLabel}</p>
+                  <p className="section-tag">Yearly goal Â· {fyLabel}</p>
                   <div className="goal-card-figures">
                     <span className={`goal-card-profit${over ? " value-up" : ""}`}>{formatCurrency(profit)}</span>
                     <span className="goal-card-divider">/</span>
@@ -664,7 +665,7 @@ export default function DeskClient() {
           <article className={`kpi-card${metrics.monthlyROI != null && metrics.monthlyROI >= 0 ? " analytics-kpi-profit" : ""}`}>
             <span className="kpi-accent" />
             <p>ROI this month</p>
-            <strong>{metrics.monthlyROI != null ? `${metrics.monthlyROI.toFixed(1)}%` : "—"}</strong>
+            <strong>{metrics.monthlyROI != null ? `${metrics.monthlyROI.toFixed(1)}%` : "â€”"}</strong>
             <span>return on sold {new Date(selectedMonth.year, selectedMonth.month, 1).toLocaleString("en-GB", { month: "long" })} tickets</span>
           </article>
           <article className="kpi-card">
@@ -677,7 +678,7 @@ export default function DeskClient() {
             <span className="kpi-accent" />
             <p>Tickets this month</p>
             <strong>{metrics.thisMonthTickets}</strong>
-            <span>{metrics.thisMonthTicketsSold} tickets sold · {metrics.thisMonthTicketsRemaining} still to sell</span>
+            <span>{metrics.thisMonthTicketsSold} tickets sold Â· {metrics.thisMonthTicketsRemaining} still to sell</span>
           </article>
         </section>
 
@@ -685,7 +686,7 @@ export default function DeskClient() {
           <div className="table-card-header">
             <div>
               <p className="section-tag">Action required</p>
-              <h4>Unsold — event within 7 days</h4>
+              <h4>Unsold â€” event within 7 days</h4>
             </div>
             {riskTickets.length > 0 && (
               <span className="table-count risk-count">{riskTickets.length} at risk</span>
@@ -726,17 +727,17 @@ export default function DeskClient() {
                         <td>
                           <div className="event-cell">
                             <strong>{order.event_name || "Untitled"}</strong>
-                            <span>{order.venue || "—"}</span>
+                            <span>{order.venue || "â€”"}</span>
                             <small>{formatEventDate(order.event_date)}</small>
                           </div>
                         </td>
                         <td>
                           <span className="truncate-text" title={order.account_email || ""}>
-                            {order.account_email || "—"}
+                            {order.account_email || "â€”"}
                           </span>
                         </td>
-                        <td>{order.section || "—"}</td>
-                        <td>{order.qty_bought ?? "—"}</td>
+                        <td>{order.section || "â€”"}</td>
+                        <td>{order.qty_bought ?? "â€”"}</td>
                         <td>{formatCurrency(order.total_cost)}</td>
                         <td>
                           <span className={`status-badge status-static ${getStatusTone(order.listing_status)}`}>
@@ -764,7 +765,7 @@ export default function DeskClient() {
               <p className="section-tag">Sales</p>
               <h4>Unmatched sales</h4>
             </div>
-            <Link href="/sales" className="ghost-button">Review in Sales →</Link>
+            <Link href="/sales" className="ghost-button">Review in Sales â†’</Link>
           </div>
 
           <div className="table-scroll">
@@ -784,18 +785,18 @@ export default function DeskClient() {
                     <td>
                       <div className="event-cell">
                         <strong>{sale.event_name || "Untitled sale"}</strong>
-                        <span>{sale.venue || "—"}</span>
-                        <small>{sale.event_date || "—"}</small>
+                        <span>{sale.venue || "â€”"}</span>
+                        <small>{sale.event_date || "â€”"}</small>
                       </div>
                     </td>
                     <td>
                       <span className="truncate-text" title={sale.account_email || ""}>
-                        {sale.account_email || "—"}
+                        {sale.account_email || "â€”"}
                       </span>
                     </td>
-                    <td>{sale.qty_sold ?? "—"}</td>
+                    <td>{sale.qty_sold ?? "â€”"}</td>
                     <td>{formatCurrency(sale.sale_total)}</td>
-                    <td>{sale.sold_at ? formatShortDate(sale.sold_at) : "—"}</td>
+                    <td>{sale.sold_at ? formatShortDate(sale.sold_at) : "â€”"}</td>
                   </tr>
                 ))}
               </tbody>
@@ -846,12 +847,12 @@ export default function DeskClient() {
                         <td>
                           <div className="event-cell">
                             <strong>{order.event_name || "Untitled"}</strong>
-                            <span>{order.venue || "—"}</span>
+                            <span>{order.venue || "â€”"}</span>
                           </div>
                         </td>
-                        <td>{order.section || "—"}</td>
-                        <td>{order.qty_bought ?? "—"}</td>
-                        <td>{order.qtySold > 0 ? order.qtySold : <span className="text-muted">—</span>}</td>
+                        <td>{order.section || "â€”"}</td>
+                        <td>{order.qty_bought ?? "â€”"}</td>
+                        <td>{order.qtySold > 0 ? order.qtySold : <span className="text-muted">â€”</span>}</td>
                         <td>
                           <strong className={daysAway != null && daysAway <= 3 ? "delta-down" : "delta-up"}>
                             {order.qtyLeft}

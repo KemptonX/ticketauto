@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { useMemo, useRef, useState } from "react";
@@ -13,6 +13,7 @@ const navItems = [
   { label: "Cash Flow", href: "/cash-flow", active: false },
   { label: "Costs", href: "/costs", active: false },
   { label: "Tax & Accounts", href: "/tax-accounts", active: false },
+  { label: "Accounts", href: "/account-manager", active: false },
   { label: "Calculator", href: "/viagogo-calculator", active: false },
   { label: "Scans", href: "/scans", active: false },
   { label: "Presale & Codes", href: "/presale", active: false },
@@ -82,7 +83,7 @@ function ArticleCard({
           <div className="guide-item-content">
             {article.appLink && (
               <Link href={article.appLink.href} className="guide-app-link">
-                {article.appLink.label} →
+                {article.appLink.label} â†’
               </Link>
             )}
 

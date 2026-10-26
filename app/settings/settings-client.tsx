@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -32,7 +32,7 @@ import {
   type RowClassification,
 } from "@/src/lib/import-validation";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 type GmailAccount = {
   id: string;
@@ -81,7 +81,7 @@ type ImportField = {
 
 type ImportStep = "upload" | "map" | "preview" | "done";
 
-// ─── Nav ──────────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Nav â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const navItems = [
   { label: "Dashboard", href: "/", active: false },
@@ -91,6 +91,7 @@ const navItems = [
   { label: "Cash Flow", href: "/cash-flow", active: false },
   { label: "Costs", href: "/costs", active: false },
   { label: "Tax & Accounts", href: "/tax-accounts", active: false },
+  { label: "Accounts", href: "/account-manager", active: false },
   { label: "Calculator", href: "/viagogo-calculator", active: false },
   { label: "Scans", href: "/scans", active: false },
   { label: "Presale & Codes", href: "/presale", active: false },
@@ -98,10 +99,10 @@ const navItems = [
   { label: "FAQ", href: "/faq", active: false, target: "_blank", rel: "noopener noreferrer" },
 ];
 
-// ─── Import field definitions ─────────────────────────────────────────────────
+// â”€â”€â”€ Import field definitions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const IMPORT_FIELDS: ImportField[] = [
-  // ── Ticket / Inventory ──
+  // â”€â”€ Ticket / Inventory â”€â”€
   {
     key: "event_name", group: "Ticket / Inventory",
     label: "Event Name",
@@ -197,7 +198,7 @@ const IMPORT_FIELDS: ImportField[] = [
     dataType: "text",
   },
 
-  // ── Sale Details ──
+  // â”€â”€ Sale Details â”€â”€
   {
     key: "qty_sold", group: "Sale Details",
     label: "Qty Sold",
@@ -259,7 +260,7 @@ const IMPORT_FIELDS: ImportField[] = [
     dataType: "text",
   },
 
-  // ── Transfer ──
+  // â”€â”€ Transfer â”€â”€
   {
     key: "transfer_status", group: "Transfer",
     label: "Transfer Status",
@@ -279,7 +280,7 @@ const IMPORT_FIELDS: ImportField[] = [
     dataType: "date",
   },
 
-  // ── Payment ──
+  // â”€â”€ Payment â”€â”€
   {
     key: "payment_status", group: "Payment",
     label: "Payment Status",
@@ -307,7 +308,7 @@ const FIELD_GROUPS = [
   { group: "Payment", fields: IMPORT_FIELDS.filter((f) => f.group === "Payment") },
 ];
 
-// ── Column sets ───────────────────────────────────────────────────────────────
+// â”€â”€ Column sets â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const ORDER_COLUMNS = new Set([
   "booking_ref", "event_name", "venue", "event_date", "purchased_at", "account_email",
@@ -322,9 +323,9 @@ const SALE_COLUMNS = new Set([
   "payment_status", "expected_payout_date", "payout_date",
 ]);
 
-// ─── Auto-mapping ─────────────────────────────────────────────────────────────
+// â”€â”€â”€ Auto-mapping â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // parseCSV / parseImportNumber / parseImportDate / header auto-mapping now
-// live in src/lib/spreadsheet-parsing.ts, shared with SalesImportModal.tsx —
+// live in src/lib/spreadsheet-parsing.ts, shared with SalesImportModal.tsx â€”
 // see that module for why (previously duplicated here and there, including
 // a date-parsing fallback bug that silently stored unparsed text).
 
@@ -332,7 +333,7 @@ function autoMapHeader(header: string): string {
   return sharedAutoMapHeader(header, IMPORT_FIELDS);
 }
 
-// ─── Value parsers (status fields specific to the combined ticket+sale shape) ──
+// â”€â”€â”€ Value parsers (status fields specific to the combined ticket+sale shape) â”€â”€
 
 function parseImportStatus(raw: string): string {
   const s = raw.trim().toLowerCase();
@@ -346,8 +347,8 @@ function parseSaleStatus(raw: string): string | null {
   const s = raw.trim().toLowerCase();
   if (["unsold", "listed", "live", "active", "available", "unlisted"].includes(s)) return "_skip";
   if (["paid", "payment received", "settled"].includes(s)) return "Paid";
-  if (["transfer completed", "transferred", "transfer complete", "complete"].includes(s)) return "Sold – Transfer Completed";
-  if (["awaiting transfer", "pending transfer", "transfer pending", "sold", "sale", "confirmed"].includes(s)) return "Sold – Awaiting Transfer";
+  if (["transfer completed", "transferred", "transfer complete", "complete"].includes(s)) return "Sold â€“ Transfer Completed";
+  if (["awaiting transfer", "pending transfer", "transfer pending", "sold", "sale", "confirmed"].includes(s)) return "Sold â€“ Awaiting Transfer";
   if (["cancelled", "canceled", "cancel", "issue", "refunded", "problem"].includes(s)) return "Cancelled / Issue";
   return null;
 }
@@ -375,11 +376,11 @@ function getRowType(obj: Record<string, unknown>): RowType {
   if ((obj.sale_status as string) === "_skip") return "skip";
   if ((obj.sale_status as string) === "Cancelled / Issue") return "sale_cancelled";
   if ((obj.payment_status as string) === "Paid" || (obj.sale_status as string) === "Paid") return "sale_paid";
-  if ((obj.transfer_status as string) === "Transfer Completed" || (obj.sale_status as string) === "Sold – Transfer Completed") return "sale_transferred";
+  if ((obj.transfer_status as string) === "Transfer Completed" || (obj.sale_status as string) === "Sold â€“ Transfer Completed") return "sale_transferred";
   return "sale_awaiting_transfer";
 }
 
-// ─── Row transformer ──────────────────────────────────────────────────────────
+// â”€â”€â”€ Row transformer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function transformRow(
   rawRow: string[],
@@ -412,9 +413,9 @@ function transformRow(
     } else if (field.dataType === "payment_status") {
       obj[fieldKey] = parsePaymentStatus(raw);
     } else {
-      // Handle combined seats field "12-14" → seat_from + seat_to
+      // Handle combined seats field "12-14" â†’ seat_from + seat_to
       if (fieldKey === "seats") {
-        const range = raw.match(/^(\w+)\s*[-–]\s*(\w+)$/);
+        const range = raw.match(/^(\w+)\s*[-â€“]\s*(\w+)$/);
         if (range) {
           obj.seat_from = range[1];
           obj.seat_to = range[2];
@@ -430,7 +431,7 @@ function transformRow(
   return Object.keys(obj).length ? obj : null;
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function connectionStatusClass(status: string) {
   switch (status) {
@@ -466,7 +467,7 @@ function formatOAuthError(error: string) {
   }
 }
 
-// ─── Main component ───────────────────────────────────────────────────────────
+// â”€â”€â”€ Main component â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export default function SettingsClient() {
   useRatesReady();
@@ -485,7 +486,7 @@ export default function SettingsClient() {
     return "connections";
   });
 
-  // ── Discord account linking state ──
+  // â”€â”€ Discord account linking state â”€â”€
   const [discordLinked, setDiscordLinked] = useState<{ username: string } | null | undefined>(undefined);
   const [exportingData, setExportingData] = useState(false);
   const [exported, setExported] = useState(false);
@@ -521,7 +522,7 @@ export default function SettingsClient() {
         supabase.from("sales").select("*").eq("user_id", user.id),
       ]);
       // toCSV previously used JSON.stringify per-cell, which escapes quotes
-      // correctly but — like every other export in this app — did nothing
+      // correctly but â€” like every other export in this app â€” did nothing
       // to stop a cell starting with =, +, - or @ from being executed as a
       // formula when opened in Excel/Sheets. Now uses the shared,
       // injection-safe builder (src/lib/csv-export.ts).
@@ -559,7 +560,7 @@ export default function SettingsClient() {
     if (error) setLinkError(error.message);
   }
 
-  // ── Discord notifications state ──
+  // â”€â”€ Discord notifications state â”€â”€
   const [discordWebhookUrl, setDiscordWebhookUrl] = useState("");
   const [discordSaved, setDiscordSaved] = useState(false);
   const [discordSaving, setDiscordSaving] = useState(false);
@@ -570,7 +571,7 @@ export default function SettingsClient() {
   const [alertScheduleSaved, setAlertScheduleSaved] = useState(false);
   const [alertScheduleSaving, setAlertScheduleSaving] = useState(false);
 
-  // ── Webhook field customisation ──
+  // â”€â”€ Webhook field customisation â”€â”€
   type WebhookFieldKey = "order" | "sale" | "transfer" | "payout";
   type WebhookFields = Record<WebhookFieldKey, string[]>;
   type NotifEnabled = Record<WebhookFieldKey, boolean>;
@@ -583,36 +584,36 @@ export default function SettingsClient() {
   const DEFAULT_NOTIF_ENABLED: NotifEnabled = { order: true, sale: true, transfer: true, payout: true };
   const WEBHOOK_FIELD_DEFS: Record<WebhookFieldKey, { id: string; label: string; emoji: string }[]> = {
     order: [
-      { id: "venue",   label: "Venue",          emoji: "📍" },
-      { id: "date",    label: "Date",            emoji: "📅" },
-      { id: "qty",     label: "Quantity",        emoji: "🎫" },
-      { id: "cost",    label: "Cost",            emoji: "💰" },
-      { id: "ref",     label: "Reference",       emoji: "🏷️" },
-      { id: "source",  label: "Source",          emoji: "📦" },
-      { id: "section", label: "Section / Row",   emoji: "💺" },
-      { id: "email",   label: "Account Email",   emoji: "📧" },
+      { id: "venue",   label: "Venue",          emoji: "ðŸ“" },
+      { id: "date",    label: "Date",            emoji: "ðŸ“…" },
+      { id: "qty",     label: "Quantity",        emoji: "ðŸŽ«" },
+      { id: "cost",    label: "Cost",            emoji: "ðŸ’°" },
+      { id: "ref",     label: "Reference",       emoji: "ðŸ·ï¸" },
+      { id: "source",  label: "Source",          emoji: "ðŸ“¦" },
+      { id: "section", label: "Section / Row",   emoji: "ðŸ’º" },
+      { id: "email",   label: "Account Email",   emoji: "ðŸ“§" },
     ],
     sale: [
-      { id: "date",        label: "Date",          emoji: "📅" },
-      { id: "qty",         label: "Qty Sold",      emoji: "🎫" },
-      { id: "sale_total",  label: "Sale Total",    emoji: "💰" },
-      { id: "payout",      label: "Payout",        emoji: "💵" },
-      { id: "marketplace", label: "Marketplace",   emoji: "🏪" },
-      { id: "section",     label: "Section / Row", emoji: "💺" },
+      { id: "date",        label: "Date",          emoji: "ðŸ“…" },
+      { id: "qty",         label: "Qty Sold",      emoji: "ðŸŽ«" },
+      { id: "sale_total",  label: "Sale Total",    emoji: "ðŸ’°" },
+      { id: "payout",      label: "Payout",        emoji: "ðŸ’µ" },
+      { id: "marketplace", label: "Marketplace",   emoji: "ðŸª" },
+      { id: "section",     label: "Section / Row", emoji: "ðŸ’º" },
     ],
     transfer: [
-      { id: "date",     label: "Event Date", emoji: "📅" },
-      { id: "qty",      label: "Qty",        emoji: "🎫" },
-      { id: "section",  label: "Section",    emoji: "💺" },
-      { id: "venue",    label: "Venue",      emoji: "📍" },
-      { id: "order_id", label: "Order #",    emoji: "🔢" },
+      { id: "date",     label: "Event Date", emoji: "ðŸ“…" },
+      { id: "qty",      label: "Qty",        emoji: "ðŸŽ«" },
+      { id: "section",  label: "Section",    emoji: "ðŸ’º" },
+      { id: "venue",    label: "Venue",      emoji: "ðŸ“" },
+      { id: "order_id", label: "Order #",    emoji: "ðŸ”¢" },
     ],
     payout: [
-      { id: "payment_date", label: "Payment Date",    emoji: "📅" },
-      { id: "total",        label: "Total Payout",    emoji: "💵" },
-      { id: "orders",       label: "Order Count",     emoji: "📦" },
-      { id: "ref",          label: "Payment Ref",     emoji: "🔢" },
-      { id: "breakdown",    label: "Event Breakdown", emoji: "📋" },
+      { id: "payment_date", label: "Payment Date",    emoji: "ðŸ“…" },
+      { id: "total",        label: "Total Payout",    emoji: "ðŸ’µ" },
+      { id: "orders",       label: "Order Count",     emoji: "ðŸ“¦" },
+      { id: "ref",          label: "Payment Ref",     emoji: "ðŸ”¢" },
+      { id: "breakdown",    label: "Event Breakdown", emoji: "ðŸ“‹" },
     ],
   };
   const [webhookFields, setWebhookFields] = useState<WebhookFields>(DEFAULT_WEBHOOK_FIELDS);
@@ -731,13 +732,13 @@ export default function SettingsClient() {
         setDiscordMessage({ ok: false, text: data.error ?? "Test failed" });
       }
     } catch {
-      setDiscordMessage({ ok: false, text: "Network error — check your connection" });
+      setDiscordMessage({ ok: false, text: "Network error â€” check your connection" });
     } finally {
       setDiscordTesting(false);
     }
   }
 
-  // ── SMS verification code forwarding (SMSPass.io → Discord) ──
+  // â”€â”€ SMS verification code forwarding (SMSPass.io â†’ Discord) â”€â”€
   const [smsApiKeyInput, setSmsApiKeyInput] = useState("");
   const [smsConfigured, setSmsConfigured] = useState(false);
   const [smsDiscordWebhookUrl, setSmsDiscordWebhookUrl] = useState("");
@@ -764,7 +765,7 @@ export default function SettingsClient() {
         setSmsLastSeenAt(data.lastSeenAt ?? null);
         setSmsLastPolledAt(data.lastPolledAt ?? null);
         setSmsLastError(data.lastError ?? null);
-      } catch { /* non-fatal — section just shows as not-yet-configured */ }
+      } catch { /* non-fatal â€” section just shows as not-yet-configured */ }
     })();
   }, []);
 
@@ -792,7 +793,7 @@ export default function SettingsClient() {
         setSmsMessage({ ok: false, text: data.error ?? "Save failed" });
       }
     } catch {
-      setSmsMessage({ ok: false, text: "Network error — check your connection" });
+      setSmsMessage({ ok: false, text: "Network error â€” check your connection" });
     } finally {
       setSmsSaving(false);
     }
@@ -807,19 +808,19 @@ export default function SettingsClient() {
       if (data.ok) {
         setSmsMessage({
           ok: true,
-          text: data.warning ?? `Connected — monitoring ${data.numbersFound ?? 0} number${(data.numbersFound ?? 0) === 1 ? "" : "s"}. Check Discord for the test message.`,
+          text: data.warning ?? `Connected â€” monitoring ${data.numbersFound ?? 0} number${(data.numbersFound ?? 0) === 1 ? "" : "s"}. Check Discord for the test message.`,
         });
       } else {
         setSmsMessage({ ok: false, text: data.error ?? "Test failed" });
       }
     } catch {
-      setSmsMessage({ ok: false, text: "Network error — check your connection" });
+      setSmsMessage({ ok: false, text: "Network error â€” check your connection" });
     } finally {
       setSmsTesting(false);
     }
   }
 
-  // ── Email forwarding state ──
+  // â”€â”€ Email forwarding state â”€â”€
   type ForwardingSettings = {
     id: string;
     forwarding_email: string;
@@ -890,7 +891,7 @@ export default function SettingsClient() {
     }
   }
 
-  // ── Currency state ──
+  // â”€â”€ Currency state â”€â”€
   const [selectedCurrency, setSelectedCurrency] = useState<string>(() => getCurrencyCode());
   const [currencySaved, setCurrencySaved] = useState(false);
 
@@ -901,7 +902,7 @@ export default function SettingsClient() {
     setTimeout(() => setCurrencySaved(false), 2000);
   }
 
-  // ── Client email template state ──
+  // â”€â”€ Client email template state â”€â”€
   const [templates, setTemplates] = useState<EmailTemplate[]>([]);
   const [activeTemplateId, setActiveTemplateId] = useState("");
   const [templateName, setTemplateName] = useState("");
@@ -986,15 +987,15 @@ export default function SettingsClient() {
 
   const templatePreview = interpolate(templateBody, {
     customer_name: "Jane Smith",
-    event_name: "Coldplay – Music of the Spheres",
+    event_name: "Coldplay â€“ Music of the Spheres",
     event_date: "Sat 14 Jun 2025",
     venue: "Wembley Stadium",
     section: "Block 201",
-    seats: "Row M, Seats 12–14",
+    seats: "Row M, Seats 12â€“14",
     quantity: "3",
   });
 
-  // ── Connections state ──
+  // â”€â”€ Connections state â”€â”€
   const [accounts, setAccounts] = useState<GmailAccount[]>([]);
   const [connLoading, setConnLoading] = useState(true);
   const [connRefreshing, setConnRefreshing] = useState(false);
@@ -1003,7 +1004,7 @@ export default function SettingsClient() {
   const [newEmail, setNewEmail] = useState("");
   const [newDisplayName, setNewDisplayName] = useState("");
 
-  // ── IMAP state ──
+  // â”€â”€ IMAP state â”€â”€
   const [imapAccounts, setImapAccounts] = useState<ImapAccountRow[]>([]);
   const [imapLoading, setImapLoading] = useState(true);
   const [imapMessage, setImapMessage] = useState<{ ok: boolean; text: string } | null>(null);
@@ -1018,7 +1019,7 @@ export default function SettingsClient() {
   const [imapMarkRead, setImapMarkRead] = useState(false);
   const [imapLabel, setImapLabel] = useState("");
 
-  // ── Import state ──
+  // â”€â”€ Import state â”€â”€
   const [importStep, setImportStep] = useState<ImportStep>("upload");
   const [importRows, setImportRows] = useState<string[][]>([]);
   const [importHeaders, setImportHeaders] = useState<string[]>([]);
@@ -1050,7 +1051,7 @@ export default function SettingsClient() {
     window.location.href = "/login";
   }
 
-  // ── IMAP handlers ──
+  // â”€â”€ IMAP handlers â”€â”€
   async function loadImapAccounts() {
     setImapLoading(true);
     const { data, error } = await supabase
@@ -1096,7 +1097,7 @@ export default function SettingsClient() {
         setImapMessage({ ok: false, text: data.error ?? "Connection failed" });
       }
     } catch {
-      setImapMessage({ ok: false, text: "Network error — check your connection" });
+      setImapMessage({ ok: false, text: "Network error â€” check your connection" });
     } finally {
       setImapSubmitting(false);
     }
@@ -1124,7 +1125,7 @@ export default function SettingsClient() {
     await loadImapAccounts();
   }
 
-  // ── Connection effects ──
+  // â”€â”€ Connection effects â”€â”€
   useEffect(() => {
     void loadAccounts();
     void loadImapAccounts();
@@ -1144,7 +1145,7 @@ export default function SettingsClient() {
     }
   }, [searchParams]);
 
-  // ── Connection handlers ──
+  // â”€â”€ Connection handlers â”€â”€
   async function loadAccounts(showRefreshing = false) {
     if (showRefreshing) setConnRefreshing(true);
     else setConnLoading(true);
@@ -1229,7 +1230,7 @@ export default function SettingsClient() {
     ];
   }, [accounts]);
 
-  // ── Import handlers ──
+  // â”€â”€ Import handlers â”€â”€
   async function handleFile(file: File) {
     setImportMessage("");
     setImportFileName(file.name);
@@ -1288,7 +1289,7 @@ export default function SettingsClient() {
   // Loads this user's existing orders (plus how much of each is already
   // sold, excluding "Deleted" sales) so the preview step can flag rows that
   // look like a repeat import or would oversell an existing ticket.
-  // Paginated explicitly — Supabase's default page size (1000) would
+  // Paginated explicitly â€” Supabase's default page size (1000) would
   // silently truncate a larger inventory otherwise.
   async function loadExistingOrdersForImportCheck() {
     const pageSize = 1000;
@@ -1339,7 +1340,7 @@ export default function SettingsClient() {
   type ValidatedImportRow = { rowNum: number; data: Record<string, unknown>; issues: ImportIssue[]; classification: RowClassification };
 
   // Classifies every row (not just the first few) before anything is
-  // written to the database — see src/lib/import-validation.ts. Errors
+  // written to the database â€” see src/lib/import-validation.ts. Errors
   // block a row from being imported at all; warnings require the customer
   // to explicitly confirm via "Also import rows with warnings" below.
   const validatedRows: ValidatedImportRow[] = useMemo(() => {
@@ -1352,7 +1353,7 @@ export default function SettingsClient() {
       }
 
       if (!parsed || Object.keys(parsed).length < 2) {
-        return { rowNum, data, issues: [{ severity: "error", code: "empty_row", message: "This row doesn't have enough data to import — it will be skipped." }] as ImportIssue[], classification: "error" as RowClassification };
+        return { rowNum, data, issues: [{ severity: "error", code: "empty_row", message: "This row doesn't have enough data to import â€” it will be skipped." }] as ImportIssue[], classification: "error" as RowClassification };
       }
 
       const issues: ImportIssue[] = [];
@@ -1445,7 +1446,7 @@ export default function SettingsClient() {
     const failedRows: FailedRow[] = [];
 
     // Convert money fields from the selected import currency to GBP
-    // (TixTracker's canonical storage currency) up front, for every row —
+    // (TixTracker's canonical storage currency) up front, for every row â€”
     // reuses the same convertToGbpClient() already used for manual ticket
     // entry. Rows blocked/skipped below still get the converted data, so
     // "Retry" (which re-attempts failedRows data verbatim) never has to
@@ -1494,7 +1495,7 @@ export default function SettingsClient() {
 
     let inserted = 0, updated = 0, skipped = 0, salesCreated = 0;
 
-    // Process rows in parallel batches — ~10x faster than sequential
+    // Process rows in parallel batches â€” ~10x faster than sequential
     const BATCH = 10;
     for (let b = 0; b < toInsert.length; b += BATCH) {
       const batchResults = await Promise.all(
@@ -1551,8 +1552,8 @@ export default function SettingsClient() {
             let saleStatus = saleData.sale_status as string;
             if (!saleStatus || saleStatus === "_skip") {
               if (paymentStatus === "Paid") saleStatus = "Paid";
-              else if (transferStatus === "Transfer Completed") saleStatus = "Sold – Transfer Completed";
-              else saleStatus = "Sold – Awaiting Transfer";
+              else if (transferStatus === "Transfer Completed") saleStatus = "Sold â€“ Transfer Completed";
+              else saleStatus = "Sold â€“ Awaiting Transfer";
             }
 
             const isFullySettled =
@@ -1628,20 +1629,26 @@ export default function SettingsClient() {
     void recordImportBatch("ticket_import", importFileName, { inserted, updated, skipped, salesCreated, errors: errors.length });
   }
 
-  // Best-effort import-history record — never blocks or fails the import
+  // Best-effort import-history record â€” never blocks or fails the import
   // itself. Tolerates supabase/migrations/0009_import_batches.sql not
   // being applied yet (the table simply won't exist until then).
+  //
+  // Table is ticket_import_batches, NOT import_batches â€” a table
+  // literally named import_batches already exists for the unrelated
+  // presale-code importer with a different schema; writing to it under
+  // that name silently failed on every real import (see migration
+  // 0009's comment for how this was found).
   async function recordImportBatch(source: string, filename: string, counts: Record<string, number>) {
     const { data: userRes } = await supabase.auth.getUser();
     const userId = userRes?.user?.id;
     if (!userId) return;
-    const { error } = await supabase.from("import_batches").insert({ user_id: userId, source, source_filename: filename || null, counts });
+    const { error } = await supabase.from("ticket_import_batches").insert({ user_id: userId, source, source_filename: filename || null, counts });
     if (!error) void loadRecentImports();
   }
 
   async function loadRecentImports() {
     const { data, error } = await supabase
-      .from("import_batches")
+      .from("ticket_import_batches")
       .select("id, created_at, source_filename, counts")
       .order("created_at", { ascending: false })
       .limit(10);
@@ -1681,7 +1688,7 @@ export default function SettingsClient() {
             if (value && !(key in data)) data[key] = value;
           }
 
-          // Re-check the hard requirements before retrying — "Retry" edits
+          // Re-check the hard requirements before retrying â€” "Retry" edits
           // a row inline and re-attempts it, but if the customer retried
           // without actually fixing the problem (e.g. still missing an
           // event name, or still oversold), it must not quietly insert
@@ -1735,8 +1742,8 @@ export default function SettingsClient() {
             let saleStatus = saleData.sale_status as string;
             if (!saleStatus || saleStatus === "_skip") {
               if (paymentStatus === "Paid") saleStatus = "Paid";
-              else if (transferStatus === "Transfer Completed") saleStatus = "Sold – Transfer Completed";
-              else saleStatus = "Sold – Awaiting Transfer";
+              else if (transferStatus === "Transfer Completed") saleStatus = "Sold â€“ Transfer Completed";
+              else saleStatus = "Sold â€“ Awaiting Transfer";
             }
             const isFullySettled =
               orderData.listing_status === "Archived" ||
@@ -1809,7 +1816,7 @@ export default function SettingsClient() {
     setRetrying(false);
   }
 
-  // ── Render ──────────────────────────────────────────────────────────────────
+  // â”€â”€ Render â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   return (
     <div className="orders-shell connections-shell">
@@ -1863,14 +1870,14 @@ export default function SettingsClient() {
           </div>
         </section>
 
-        {/* ── Connections tab ── */}
+        {/* â”€â”€ Connections tab â”€â”€ */}
         {activeTab === "connections" && (
           <>
-            {/* ── Email Forwarding — RECOMMENDED (top of page) ── */}
+            {/* â”€â”€ Email Forwarding â€” RECOMMENDED (top of page) â”€â”€ */}
             <section id="email-forwarding-section" className="hero-card connections-hero" style={{ border: "1px solid rgba(103,240,165,0.35)", background: "linear-gradient(135deg, rgba(103,240,165,0.06) 0%, rgba(0,0,0,0) 60%)" }}>
               <div>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                  <span style={{ fontSize: "0.7rem", fontWeight: 700, color: "#67F0A5", textTransform: "uppercase", letterSpacing: "0.08em", padding: "2px 8px", borderRadius: 99, background: "rgba(103,240,165,0.15)", border: "1px solid rgba(103,240,165,0.3)" }}>⭐ Recommended</span>
+                  <span style={{ fontSize: "0.7rem", fontWeight: 700, color: "#67F0A5", textTransform: "uppercase", letterSpacing: "0.08em", padding: "2px 8px", borderRadius: 99, background: "rgba(103,240,165,0.15)", border: "1px solid rgba(103,240,165,0.3)" }}>â­ Recommended</span>
                 </div>
                 <p className="section-tag">Email Forwarding</p>
                 <h3>Forward emails to TixTracker</h3>
@@ -1879,7 +1886,7 @@ export default function SettingsClient() {
                 <div>
                   <span className="hero-meta-label">Status</span>
                   <strong style={{ color: forwardingSettings ? "#67F0A5" : "var(--text-2)" }}>
-                    {forwardingLoading ? "Loading…" : forwardingSettings ? "Active" : "Not set up"}
+                    {forwardingLoading ? "Loadingâ€¦" : forwardingSettings ? "Active" : "Not set up"}
                   </strong>
                 </div>
                 {forwardingSettings?.last_successful_import_at && (
@@ -1898,17 +1905,17 @@ export default function SettingsClient() {
                   <h4>Forward from any email provider</h4>
                 </div>
                 <Link href="/how-to-forward" target="_blank" rel="noopener noreferrer" className="secondary-button" style={{ flexShrink: 0, fontSize: 13 }}>
-                  How to set up forwarding →
+                  How to set up forwarding â†’
                 </Link>
               </div>
               <div style={{ padding: "0 1.5rem 1.5rem", display: "flex", flexDirection: "column", gap: "1.25rem" }}>
                 <p style={{ fontSize: 13, color: "rgba(255,255,255,0.5)", margin: 0, lineHeight: 1.6 }}>
-                  Works with Gmail, Outlook, Apple Mail, Yahoo, ProtonMail, and any other email client. Copy your unique address below, then forward ticket confirmation emails to it — they&apos;re scanned automatically. You can forward emails one at a time, or set up an automatic forwarding rule so new ticket emails arrive without any extra steps.
+                  Works with Gmail, Outlook, Apple Mail, Yahoo, ProtonMail, and any other email client. Copy your unique address below, then forward ticket confirmation emails to it â€” they&apos;re scanned automatically. You can forward emails one at a time, or set up an automatic forwarding rule so new ticket emails arrive without any extra steps.
                 </p>
 
                 {forwardingLoading && (
                   <div style={{ padding: "14px 16px", borderRadius: 8, background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)", fontSize: 13, color: "var(--text-muted)" }}>
-                    Loading your forwarding address…
+                    Loading your forwarding addressâ€¦
                   </div>
                 )}
 
@@ -1984,7 +1991,7 @@ export default function SettingsClient() {
                         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                           <p style={{ margin: 0, fontSize: 12, color: "#f87171" }}>This will break any existing forwarding rules. You will need to update your email client to use the new address.</p>
                           <button type="button" className="secondary-button" style={{ fontSize: 12, color: "#f87171", borderColor: "rgba(248,113,113,0.5)" }} disabled={forwardingRegenLoading} onClick={() => void regenerateForwardingEmail()}>
-                            {forwardingRegenLoading ? "Regenerating…" : "Yes, regenerate"}
+                            {forwardingRegenLoading ? "Regeneratingâ€¦" : "Yes, regenerate"}
                           </button>
                           <button type="button" className="secondary-button" style={{ fontSize: 12 }} onClick={() => setForwardingRegenConfirm(false)}>Cancel</button>
                         </div>
@@ -1995,7 +2002,7 @@ export default function SettingsClient() {
 
                 {forwardingMessage && (
                   <div style={{ padding: "8px 14px", borderRadius: 8, fontSize: "0.82rem", background: forwardingMessage.ok ? "rgba(103,240,165,0.1)" : "rgba(255,80,80,0.1)", border: `1px solid ${forwardingMessage.ok ? "rgba(103,240,165,0.3)" : "rgba(255,80,80,0.3)"}`, color: forwardingMessage.ok ? "#67F0A5" : "#ff8080" }}>
-                    {forwardingMessage.ok ? "✓ " : "✗ "}{forwardingMessage.text}
+                    {forwardingMessage.ok ? "âœ“ " : "âœ— "}{forwardingMessage.text}
                   </div>
                 )}
               </div>
@@ -2088,7 +2095,7 @@ export default function SettingsClient() {
                 <div><p className="section-tag">IMAP</p><h4>Connect any email inbox via IMAP</h4></div>
               </div>
               <p style={{ margin: "0 0 1rem", color: "var(--text-2)", fontSize: "0.85rem", lineHeight: 1.6 }}>
-                Works with any IMAP-enabled inbox — iCloud Mail, Outlook, Gmail, Yahoo, custom domains, and more. Some providers require an app-specific password: iCloud (Apple ID → Sign-In &amp; Security → App-Specific Passwords), Gmail (Google Account → Security → App Passwords), Yahoo (Account Security → Generate app password).
+                Works with any IMAP-enabled inbox â€” iCloud Mail, Outlook, Gmail, Yahoo, custom domains, and more. Some providers require an app-specific password: iCloud (Apple ID â†’ Sign-In &amp; Security â†’ App-Specific Passwords), Gmail (Google Account â†’ Security â†’ App Passwords), Yahoo (Account Security â†’ Generate app password).
               </p>
               <form className="connections-form" style={{ gap: "0.75rem" }} onSubmit={(e) => void connectImap(e)}>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: "0.5rem" }}>
@@ -2142,7 +2149,7 @@ export default function SettingsClient() {
                     border: `1px solid ${imapMessage.ok ? "rgba(103,240,165,0.25)" : "rgba(255,80,80,0.25)"}`,
                     color: imapMessage.ok ? "#67F0A5" : "#ff8080",
                   }}>
-                    {imapMessage.ok ? "✓ " : "✗ "}{imapMessage.text}
+                    {imapMessage.ok ? "âœ“ " : "âœ— "}{imapMessage.text}
                   </div>
                 )}
                 <button type="submit" className="primary-button" disabled={imapSubmitting} style={{ alignSelf: "flex-start" }}>
@@ -2172,7 +2179,7 @@ export default function SettingsClient() {
                               {!account.is_active && <span className="status-badge badge-paused">Paused</span>}
                             </div>
                           </div>
-                          <p className="connection-email">{account.username} — {account.host}:{account.port}</p>
+                          <p className="connection-email">{account.username} â€” {account.host}:{account.port}</p>
                           <div className="connection-meta-grid">
                             <div><span className="connection-meta-label">Mailbox</span><strong>{account.mailbox}</strong></div>
                             <div><span className="connection-meta-label">TLS</span><strong>{account.use_tls ? "Yes" : "No"}</strong></div>
@@ -2248,7 +2255,7 @@ export default function SettingsClient() {
               )}
             </section>
 
-            {/* ── Discord account linking ── */}
+            {/* â”€â”€ Discord account linking â”€â”€ */}
             <section className="table-card connections-list-card">
               <div className="table-card-header">
                 <div>
@@ -2263,13 +2270,13 @@ export default function SettingsClient() {
               </div>
               <div style={{ padding: "1.25rem 1.5rem 1.5rem", display: "flex", flexDirection: "column", gap: "1rem" }}>
                 {discordLinked === undefined ? (
-                  <p style={{ fontSize: 13, color: "rgba(255,255,255,0.35)" }}>Checking account…</p>
+                  <p style={{ fontSize: 13, color: "rgba(255,255,255,0.35)" }}>Checking accountâ€¦</p>
                 ) : discordLinked !== null ? (
                   /* Already linked */
                   <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
                     {justLinked && (
                       <div style={{ padding: "10px 14px", borderRadius: 8, background: "rgba(74,222,128,0.1)", border: "1px solid rgba(74,222,128,0.25)", fontSize: 13, color: "#4ade80" }}>
-                        Discord linked successfully — you can now sign in with Discord.
+                        Discord linked successfully â€” you can now sign in with Discord.
                       </div>
                     )}
                     <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", borderRadius: 8, background: "rgba(88,101,242,0.1)", border: "1px solid rgba(88,101,242,0.25)" }}>
@@ -2281,15 +2288,15 @@ export default function SettingsClient() {
                     </div>
                   </div>
                 ) : (
-                  /* Not linked — show steps */
+                  /* Not linked â€” show steps */
                   <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
                     <p style={{ fontSize: 13, color: "rgba(255,255,255,0.5)", margin: 0 }}>
                       Link your Discord account so you can sign in with Discord going forward. Your existing data, orders, and sales are preserved.
                     </p>
 
-                    {/* Step 1 — Export */}
+                    {/* Step 1 â€” Export */}
                     <div style={{ padding: "14px 16px", borderRadius: 10, background: "rgba(251,191,36,0.07)", border: "1px solid rgba(251,191,36,0.2)" }}>
-                      <p style={{ fontSize: 12, fontWeight: 700, color: "#fbbf24", textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 6px" }}>Step 1 — Back up your data first</p>
+                      <p style={{ fontSize: 12, fontWeight: 700, color: "#fbbf24", textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 6px" }}>Step 1 â€” Back up your data first</p>
                       <p style={{ fontSize: 13, color: "rgba(255,255,255,0.5)", margin: "0 0 12px" }}>
                         Export your orders and sales as a safety net before linking. This takes 2 seconds and means nothing can be lost.
                       </p>
@@ -2300,13 +2307,13 @@ export default function SettingsClient() {
                         onClick={() => void exportAllData()}
                         style={{ fontSize: 13 }}
                       >
-                        {exportingData ? "Exporting…" : exported ? "✓ Exported — download again?" : "Export all data (CSV)"}
+                        {exportingData ? "Exportingâ€¦" : exported ? "âœ“ Exported â€” download again?" : "Export all data (CSV)"}
                       </button>
                     </div>
 
-                    {/* Step 2 — Link */}
+                    {/* Step 2 â€” Link */}
                     <div style={{ padding: "14px 16px", borderRadius: 10, background: "rgba(88,101,242,0.07)", border: "1px solid rgba(88,101,242,0.2)" }}>
-                      <p style={{ fontSize: 12, fontWeight: 700, color: "#a5aaff", textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 6px" }}>Step 2 — Link Discord</p>
+                      <p style={{ fontSize: 12, fontWeight: 700, color: "#a5aaff", textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 6px" }}>Step 2 â€” Link Discord</p>
                       <p style={{ fontSize: 13, color: "rgba(255,255,255,0.5)", margin: "0 0 12px" }}>
                         You&apos;ll be sent to Discord to authorise. When you return, your accounts are merged and you can log in with either method.
                       </p>
@@ -2322,7 +2329,7 @@ export default function SettingsClient() {
                       {linkError && (
                         <div style={{ marginTop: 10, padding: "8px 12px", borderRadius: 6, background: "rgba(248,113,113,0.1)", border: "1px solid rgba(248,113,113,0.25)", fontSize: 12, color: "#f87171" }}>
                           {linkError.includes("already") || linkError.includes("in use")
-                            ? "This Discord account is already linked to a different TixTracker login. If you previously signed in with Discord to test, you'll need to delete that test account first — contact support."
+                            ? "This Discord account is already linked to a different TixTracker login. If you previously signed in with Discord to test, you'll need to delete that test account first â€” contact support."
                             : linkError}
                         </div>
                       )}
@@ -2335,7 +2342,7 @@ export default function SettingsClient() {
           </>
         )}
 
-        {/* ── Import tab ── */}
+        {/* â”€â”€ Import tab â”€â”€ */}
         {activeTab === "import" && (
           <>
             <section className="hero-card connections-hero">
@@ -2344,7 +2351,7 @@ export default function SettingsClient() {
                 <h3>Bring in your existing tickets from any spreadsheet</h3>
               </div>
               <div className="hero-meta">
-                <div><span className="hero-meta-label">Formats</span><strong>CSV · XLSX · TSV</strong></div>
+                <div><span className="hero-meta-label">Formats</span><strong>CSV Â· XLSX Â· TSV</strong></div>
                 <div><span className="hero-meta-label">Step</span><strong>{importStep === "upload" ? "1 / 4" : importStep === "map" ? "2 / 4" : importStep === "preview" ? "3 / 4" : "Done"}</strong></div>
               </div>
             </section>
@@ -2352,7 +2359,7 @@ export default function SettingsClient() {
             {ticketsMode && (
               <div className="feedback-banner" role="status" style={{ background: "var(--accent-soft, #e8f4fd)", borderColor: "var(--accent, #2196f3)" }}>
                 <span className="feedback-dot" style={{ background: "var(--accent, #2196f3)" }} />
-                <span><strong>Ticket import mode</strong> — all rows will be imported as tickets (Unlisted) and will appear on your Tickets page, not the Sold page.</span>
+                <span><strong>Ticket import mode</strong> â€” all rows will be imported as tickets (Unlisted) and will appear on your Tickets page, not the Sold page.</span>
               </div>
             )}
 
@@ -2370,7 +2377,7 @@ export default function SettingsClient() {
                 </div>
                 <div style={{ padding: "1.5rem" }}>
                   <p style={{ marginBottom: "1rem", color: "var(--muted)", fontSize: "0.875rem" }}>
-                    Export your spreadsheet or Google Sheet as CSV, XLSX, or TSV. TixTracker will read your column headers and auto-map them — even if they don't match exactly.
+                    Export your spreadsheet or Google Sheet as CSV, XLSX, or TSV. TixTracker will read your column headers and auto-map them â€” even if they don't match exactly.
                   </p>
                   <div
                     className={`import-dropzone${dragOver ? " import-dropzone-active" : ""}`}
@@ -2382,9 +2389,9 @@ export default function SettingsClient() {
                     tabIndex={0}
                     onKeyDown={(e) => e.key === "Enter" && fileInputRef.current?.click()}
                   >
-                    <div className="import-dropzone-icon">↑</div>
+                    <div className="import-dropzone-icon">â†‘</div>
                     <strong>Drop file here or click to browse</strong>
-                    <span>Supports .csv, .xlsx, .xls, .tsv — max 5 MB</span>
+                    <span>Supports .csv, .xlsx, .xls, .tsv â€” max 5 MB</span>
                   </div>
                   <input ref={fileInputRef} type="file" accept=".csv,.xlsx,.xls,.tsv,.ods" style={{ display: "none" }} onChange={handleFileInput} />
                   <div style={{ marginTop: "0.75rem" }}>
@@ -2409,7 +2416,7 @@ export default function SettingsClient() {
                           "TM-123456", "myaccount@gmail.com",
                           "Viagogo", "VG-987654321", "2", "480.00", "420.00",
                           "John Smith", "buyer@email.com", "01/05/2025",
-                          "Sold – Transfer Completed", "Transfer Completed", "01/06/2025", "03/06/2025",
+                          "Sold â€“ Transfer Completed", "Transfer Completed", "01/06/2025", "03/06/2025",
                           "Paid", "10/06/2025", "05/06/2025",
                           "",
                         ];
@@ -2432,7 +2439,7 @@ export default function SettingsClient() {
                       <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
                         {recentImports.map((b) => (
                           <div key={b.id} style={{ fontSize: "0.8125rem", color: "var(--muted)", display: "flex", justifyContent: "space-between", gap: "1rem" }}>
-                            <span>{new Date(b.created_at).toLocaleDateString()} — {b.source_filename || "Untitled file"}</span>
+                            <span>{new Date(b.created_at).toLocaleDateString()} â€” {b.source_filename || "Untitled file"}</span>
                             <span>{b.counts?.inserted ?? 0} added{(b.counts?.salesCreated ?? 0) > 0 ? `, ${b.counts.salesCreated} sales` : ""}{(b.counts?.errors ?? 0) > 0 ? `, ${b.counts.errors} skipped` : ""}</span>
                           </div>
                         ))}
@@ -2443,9 +2450,9 @@ export default function SettingsClient() {
                     <p className="section-tag" style={{ marginBottom: "0.5rem" }}>Tips for best results</p>
                     <ul style={{ fontSize: "0.8125rem", color: "var(--muted)", lineHeight: 1.6, paddingLeft: "1.25rem" }}>
                       <li>Row 1 should be column headers (Event, Date, Cost, etc.)</li>
-                      <li>Headers don't need to match exactly — "Purchase Price", "Cost", "Amount Paid" all work</li>
+                      <li>Headers don't need to match exactly â€” "Purchase Price", "Cost", "Amount Paid" all work</li>
                       <li>Dates can be any common format: DD/MM/YYYY, MM/DD/YYYY, or "14 Apr 2025"</li>
-                      <li>Costs can include £ or $ symbols and commas — they'll be stripped automatically</li>
+                      <li>Costs can include Â£ or $ symbols and commas â€” they'll be stripped automatically</li>
                       <li>A "Seats" column with ranges like "12-14" will auto-split into Seat From and Seat To</li>
                     </ul>
                   </div>
@@ -2461,11 +2468,11 @@ export default function SettingsClient() {
                     <p className="section-tag">Step 2 of 4</p>
                     <h4>Review column mapping</h4>
                   </div>
-                  <span className="table-count">{importRows.length} data rows · {importHeaders.length} columns</span>
+                  <span className="table-count">{importRows.length} data rows Â· {importHeaders.length} columns</span>
                 </div>
                 <div style={{ padding: "0 1.5rem 0.5rem" }}>
                   <p style={{ color: "var(--muted)", fontSize: "0.875rem", marginBottom: "1rem" }}>
-                    TixTracker has auto-matched your columns. Check each one is mapped correctly — set to "Skip" for columns you don't need.
+                    TixTracker has auto-matched your columns. Check each one is mapped correctly â€” set to "Skip" for columns you don't need.
                   </p>
                 </div>
                 <div className="import-map-grid">
@@ -2479,13 +2486,13 @@ export default function SettingsClient() {
                           <strong>{header || `Column ${i + 1}`}</strong>
                           {sampleVal && <span className="import-map-sample">{sampleVal.slice(0, 60)}</span>}
                         </div>
-                        <div className="import-map-arrow">→</div>
+                        <div className="import-map-arrow">â†’</div>
                         <select
                           className="field import-map-select"
                           value={mapped}
                           onChange={(e) => updateColMap(i, e.target.value)}
                         >
-                          <option value="skip">— Skip column —</option>
+                          <option value="skip">â€” Skip column â€”</option>
                           {FIELD_GROUPS.map(({ group, fields }) => (
                             <optgroup key={group} label={group}>
                               {fields.map((f) => (
@@ -2519,7 +2526,7 @@ export default function SettingsClient() {
                   <p className="section-tag" style={{ margin: "1rem 0 0.25rem" }}>Optional fallback values</p>
                   <p style={{ fontSize: "0.8125rem", color: "var(--muted)", marginBottom: "1rem" }}>
                     Only used when a row has no value from the column mapping above. Each row's own data always takes priority.
-                    Useful when your entire file shares one value — e.g. every sale is via Viagogo, or every row is Awaiting Transfer.
+                    Useful when your entire file shares one value â€” e.g. every sale is via Viagogo, or every row is Awaiting Transfer.
                     If your file has mixed statuses per row, map those columns above and leave these blank.
                   </p>
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: "0.75rem" }}>
@@ -2530,7 +2537,7 @@ export default function SettingsClient() {
                         value={fixedValues.source_type ?? ""}
                         onChange={(e) => setFixedValues((p) => ({ ...p, source_type: e.target.value }))}
                       >
-                        <option value="">— not set —</option>
+                        <option value="">â€” not set â€”</option>
                         <option value="la28">LA28</option>
                         <option value="dice">DICE</option>
                         <option value="tixr">Tixr</option>
@@ -2550,7 +2557,7 @@ export default function SettingsClient() {
                         value={fixedValues.marketplace ?? ""}
                         onChange={(e) => setFixedValues((p) => ({ ...p, marketplace: e.target.value }))}
                       >
-                        <option value="">— not set —</option>
+                        <option value="">â€” not set â€”</option>
                         <option>Viagogo</option>
                         <option>StubHub</option>
                         <option>Lysted</option>
@@ -2572,9 +2579,9 @@ export default function SettingsClient() {
                         value={fixedValues.sale_status ?? ""}
                         onChange={(e) => setFixedValues((p) => ({ ...p, sale_status: e.target.value }))}
                       >
-                        <option value="">— not set —</option>
-                        <option value="Sold – Awaiting Transfer">Sold – Awaiting Transfer</option>
-                        <option value="Sold – Transfer Completed">Sold – Transfer Completed</option>
+                        <option value="">â€” not set â€”</option>
+                        <option value="Sold â€“ Awaiting Transfer">Sold â€“ Awaiting Transfer</option>
+                        <option value="Sold â€“ Transfer Completed">Sold â€“ Transfer Completed</option>
                         <option value="Paid">Paid</option>
                         <option value="Cancelled / Issue">Cancelled / Issue</option>
                       </select>
@@ -2586,7 +2593,7 @@ export default function SettingsClient() {
                         value={fixedValues.transfer_status ?? ""}
                         onChange={(e) => setFixedValues((p) => ({ ...p, transfer_status: e.target.value }))}
                       >
-                        <option value="">— not set —</option>
+                        <option value="">â€” not set â€”</option>
                         <option value="Awaiting Transfer">Awaiting Transfer</option>
                         <option value="Transfer Completed">Transfer Completed</option>
                       </select>
@@ -2598,7 +2605,7 @@ export default function SettingsClient() {
                         value={fixedValues.payment_status ?? ""}
                         onChange={(e) => setFixedValues((p) => ({ ...p, payment_status: e.target.value }))}
                       >
-                        <option value="">— not set —</option>
+                        <option value="">â€” not set â€”</option>
                         <option value="Awaiting Payment">Awaiting Payment</option>
                         <option value="Paid">Paid</option>
                       </select>
@@ -2613,7 +2620,7 @@ export default function SettingsClient() {
                     onClick={() => void goToPreview()}
                     disabled={!Object.values(colMap).some((v) => v !== "skip")}
                   >
-                    Preview import →
+                    Preview import â†’
                   </button>
                 </div>
               </section>
@@ -2681,7 +2688,7 @@ export default function SettingsClient() {
                             }}
                           >
                             <strong style={{ fontSize: 12.5 }}>
-                              Row {r.rowNum}{r.data.event_name ? ` — ${String(r.data.event_name)}` : ""}
+                              Row {r.rowNum}{r.data.event_name ? ` â€” ${String(r.data.event_name)}` : ""}
                             </strong>
                             {r.issues.map((issue, j) => (
                               <p key={j} style={{ fontSize: 12.5, color: "var(--muted)", margin: "0.2rem 0 0" }}>{issue.message}</p>
@@ -2690,7 +2697,7 @@ export default function SettingsClient() {
                         ))}
                       {validatedRows.filter((r) => r.classification !== "valid" && (issueFilter === "all" || r.classification === issueFilter)).length > 50 && (
                         <p style={{ fontSize: 12, color: "var(--muted)" }}>
-                          …and {validatedRows.filter((r) => r.classification !== "valid" && (issueFilter === "all" || r.classification === issueFilter)).length - 50} more
+                          â€¦and {validatedRows.filter((r) => r.classification !== "valid" && (issueFilter === "all" || r.classification === issueFilter)).length - 50} more
                         </p>
                       )}
                     </div>
@@ -2721,12 +2728,12 @@ export default function SettingsClient() {
                             <tr key={i}>
                               {mappedFieldLabels.map((label) => {
                                 const fieldKey = IMPORT_FIELDS.find((f) => f.label === label)?.key ?? label;
-                                return <td key={label}>{String(row[fieldKey] ?? "—")}</td>;
+                                return <td key={label}>{String(row[fieldKey] ?? "â€”")}</td>;
                               })}
                             </tr>
                           ) : (
                             <tr key={i} style={{ opacity: 0.4 }}>
-                              <td colSpan={mappedFieldLabels.length}>Empty row — will be skipped</td>
+                              <td colSpan={mappedFieldLabels.length}>Empty row â€” will be skipped</td>
                             </tr>
                           )
                         )}
@@ -2745,7 +2752,7 @@ export default function SettingsClient() {
                   >
                     {importing
                       ? "Importing..."
-                      : `Import ${includeWarningRows ? importSummary.validCount + importSummary.warningCount : importSummary.validCount} row${(includeWarningRows ? importSummary.validCount + importSummary.warningCount : importSummary.validCount) !== 1 ? "s" : ""} →`}
+                      : `Import ${includeWarningRows ? importSummary.validCount + importSummary.warningCount : importSummary.validCount} row${(includeWarningRows ? importSummary.validCount + importSummary.warningCount : importSummary.validCount) !== 1 ? "s" : ""} â†’`}
                   </button>
                 </div>
               </section>
@@ -2796,12 +2803,12 @@ export default function SettingsClient() {
                   )}
                   {failedEdits.length > 0 && (
                     <div style={{ marginBottom: "1.5rem" }}>
-                      <p className="section-tag" style={{ marginBottom: "0.25rem" }}>Failed rows — edit and retry ({failedEdits.length})</p>
+                      <p className="section-tag" style={{ marginBottom: "0.25rem" }}>Failed rows â€” edit and retry ({failedEdits.length})</p>
                       <p style={{ fontSize: "0.8125rem", color: "var(--muted)", marginBottom: "1rem" }}>Fix the data below then click Retry to import these rows.</p>
                       <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", maxHeight: "400px", overflowY: "auto" }}>
                         {failedEdits.map((row, ri) => (
                           <div key={ri} style={{ background: "var(--surface-2)", borderRadius: "8px", padding: "0.875rem 1rem" }}>
-                            <p style={{ fontSize: "0.75rem", color: "var(--muted)", marginBottom: "0.5rem" }}>Row {row.rowNum} — {row.reason}</p>
+                            <p style={{ fontSize: "0.75rem", color: "var(--muted)", marginBottom: "0.5rem" }}>Row {row.rowNum} â€” {row.reason}</p>
                             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: "0.5rem" }}>
                               {(["event_name","venue","event_date","booking_ref","account_email","qty_bought","total_cost","listing_status"] as const).map((field) => (
                                 <label key={field} className="field-label" style={{ fontSize: "0.75rem" }}>
@@ -2819,19 +2826,19 @@ export default function SettingsClient() {
                       </div>
                       <div style={{ marginTop: "1rem" }}>
                         <button type="button" className="primary-button" onClick={() => void retryFailed()} disabled={retrying}>
-                          {retrying ? "Retrying..." : `Retry ${failedEdits.length} failed row${failedEdits.length !== 1 ? "s" : ""} →`}
+                          {retrying ? "Retrying..." : `Retry ${failedEdits.length} failed row${failedEdits.length !== 1 ? "s" : ""} â†’`}
                         </button>
                       </div>
                     </div>
                   )}
                   <div style={{ display: "flex", gap: "0.75rem" }}>
                     <button type="button" className="secondary-button" onClick={resetImport}>Import another file</button>
-                    <Link href="/orders" className="ghost-button">View tickets →</Link>
+                    <Link href="/orders" className="ghost-button">View tickets â†’</Link>
                     {importResult.salesCreated > 0 && (
-                      <Link href="/sales" className="primary-button">View sales →</Link>
+                      <Link href="/sales" className="primary-button">View sales â†’</Link>
                     )}
                     {importResult.salesCreated === 0 && (
-                      <Link href="/orders" className="primary-button">View tickets →</Link>
+                      <Link href="/orders" className="primary-button">View tickets â†’</Link>
                     )}
                   </div>
                 </div>
@@ -2840,7 +2847,7 @@ export default function SettingsClient() {
           </>
         )}
 
-        {/* ── Clients tab ── */}
+        {/* â”€â”€ Clients tab â”€â”€ */}
         {activeTab === "clients" && (
           <>
             <section className="hero-card connections-hero">
@@ -2914,7 +2921,7 @@ export default function SettingsClient() {
                     type="text"
                     value={templateSubject}
                     onChange={(e) => setTemplateSubject(e.target.value)}
-                    placeholder="Your tickets – {{event_name}}"
+                    placeholder="Your tickets â€“ {{event_name}}"
                   />
                 </label>
 
@@ -2979,11 +2986,11 @@ export default function SettingsClient() {
                   <div className="field" style={{ color: "var(--text-primary)", fontSize: "13px" }}>
                     {interpolate(templateSubject, {
                       customer_name: "Jane Smith",
-                      event_name: "Coldplay – Music of the Spheres",
+                      event_name: "Coldplay â€“ Music of the Spheres",
                       event_date: "Sat 14 Jun 2025",
                       venue: "Wembley Stadium",
                       section: "Block 201",
-                      seats: "Row M, Seats 12–14",
+                      seats: "Row M, Seats 12â€“14",
                       quantity: "3",
                     })}
                   </div>
@@ -3004,14 +3011,14 @@ export default function SettingsClient() {
                   </pre>
                 </label>
                 <p style={{ fontSize: "12px", color: "var(--muted)" }}>
-                  Sample data only — real emails use the buyer&apos;s actual ticket details.
+                  Sample data only â€” real emails use the buyer&apos;s actual ticket details.
                 </p>
               </div>
             </section>
           </>
         )}
 
-        {/* ── Notifications tab ── */}
+        {/* â”€â”€ Notifications tab â”€â”€ */}
         {activeTab === "notifications" && (
           <>
             <section className="hero-card connections-hero">
@@ -3022,7 +3029,7 @@ export default function SettingsClient() {
               <div className="hero-meta">
                 <div>
                   <span className="hero-meta-label">Alerts</span>
-                  <strong>7 · 3 · 2 · 1 day</strong>
+                  <strong>7 Â· 3 Â· 2 Â· 1 day</strong>
                 </div>
                 <div>
                   <span className="hero-meta-label">Daily at</span>
@@ -3045,10 +3052,10 @@ export default function SettingsClient() {
                 </p>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10 }}>
                   {([
-                    { emoji: "⚠️", days: "7 days", color: "#FFB84F" },
-                    { emoji: "🔶", days: "3 days", color: "#FF7D2C" },
-                    { emoji: "🚨", days: "2 days", color: "#FF4500" },
-                    { emoji: "🔴", days: "1 day",  color: "#FF2244" },
+                    { emoji: "âš ï¸", days: "7 days", color: "#FFB84F" },
+                    { emoji: "ðŸ”¶", days: "3 days", color: "#FF7D2C" },
+                    { emoji: "ðŸš¨", days: "2 days", color: "#FF4500" },
+                    { emoji: "ðŸ”´", days: "1 day",  color: "#FF2244" },
                   ] as const).map(({ emoji, days, color }) => (
                     <div key={days} style={{ padding: "10px 12px", borderRadius: 8, background: "rgba(255,255,255,0.04)", border: `1px solid ${color}40`, textAlign: "center" }}>
                       <div style={{ fontSize: 20, marginBottom: 4 }}>{emoji}</div>
@@ -3066,12 +3073,12 @@ export default function SettingsClient() {
                   <h4>When to send daily alerts</h4>
                 </div>
                 {alertScheduleSaved && (
-                  <span className="status-badge status-static status-sold">Saved ✓</span>
+                  <span className="status-badge status-static status-sold">Saved âœ“</span>
                 )}
               </div>
               <div style={{ padding: "0 1.5rem 1.5rem", display: "flex", flexDirection: "column", gap: "1.25rem" }}>
                 <p style={{ color: "var(--text-2)", fontSize: "0.875rem", lineHeight: 1.6, margin: 0 }}>
-                  Alerts run daily at 09:00 UTC. Save your preferred time and timezone here — custom scheduling will activate automatically when the plan supports it.
+                  Alerts run daily at 09:00 UTC. Save your preferred time and timezone here â€” custom scheduling will activate automatically when the plan supports it.
                 </p>
                 <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
                   <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -3127,9 +3134,9 @@ export default function SettingsClient() {
                         <option value="Pacific/Honolulu">Honolulu (HST)</option>
                       </optgroup>
                       <optgroup label="South America">
-                        <option value="America/Sao_Paulo">São Paulo (BRT)</option>
+                        <option value="America/Sao_Paulo">SÃ£o Paulo (BRT)</option>
                         <option value="America/Argentina/Buenos_Aires">Buenos Aires (ART)</option>
-                        <option value="America/Bogota">Bogotá (COT)</option>
+                        <option value="America/Bogota">BogotÃ¡ (COT)</option>
                         <option value="America/Mexico_City">Mexico City (CT)</option>
                       </optgroup>
                       <optgroup label="Middle East &amp; Africa">
@@ -3168,7 +3175,7 @@ export default function SettingsClient() {
                     disabled={alertScheduleSaving}
                     onClick={() => void saveAlertSchedule()}
                   >
-                    {alertScheduleSaving ? "Saving…" : "Save schedule"}
+                    {alertScheduleSaving ? "Savingâ€¦" : "Save schedule"}
                   </button>
                 </div>
               </div>
@@ -3181,12 +3188,12 @@ export default function SettingsClient() {
                   <h4>Connect your channel</h4>
                 </div>
                 {discordSaved && (
-                  <span className="status-badge status-static status-sold">Saved ✓</span>
+                  <span className="status-badge status-static status-sold">Saved âœ“</span>
                 )}
               </div>
               <div style={{ padding: "0 1.5rem 1.5rem", display: "flex", flexDirection: "column", gap: "1.25rem" }}>
                 <ol style={{ color: "var(--text-2)", fontSize: "0.875rem", lineHeight: 1.7, margin: 0, paddingLeft: "1.2rem" }}>
-                  <li>In Discord, open your server → <strong>Server Settings → Integrations → Webhooks</strong></li>
+                  <li>In Discord, open your server â†’ <strong>Server Settings â†’ Integrations â†’ Webhooks</strong></li>
                   <li>Click <strong>New Webhook</strong>, choose a channel, then click <strong>Copy Webhook URL</strong></li>
                   <li>Paste the URL below and click <strong>Save</strong></li>
                 </ol>
@@ -3206,7 +3213,7 @@ export default function SettingsClient() {
                     disabled={discordSaving}
                     onClick={() => void saveDiscordWebhook()}
                   >
-                    {discordSaving ? "Saving…" : "Save"}
+                    {discordSaving ? "Savingâ€¦" : "Save"}
                   </button>
                   <button
                     type="button"
@@ -3214,7 +3221,7 @@ export default function SettingsClient() {
                     disabled={discordTesting || !discordWebhookUrl.trim().startsWith("https://discord.com/api/webhooks/")}
                     onClick={() => void testDiscordWebhook()}
                   >
-                    {discordTesting ? "Sending…" : "Send test ping"}
+                    {discordTesting ? "Sendingâ€¦" : "Send test ping"}
                   </button>
                 </div>
 
@@ -3227,7 +3234,7 @@ export default function SettingsClient() {
                     border: `1px solid ${discordMessage.ok ? "rgba(103,240,165,0.3)" : "rgba(255,80,80,0.3)"}`,
                     color: discordMessage.ok ? "#67F0A5" : "#ff8080",
                   }}>
-                    {discordMessage.ok ? "✓ " : "✗ "}{discordMessage.text}
+                    {discordMessage.ok ? "âœ“ " : "âœ— "}{discordMessage.text}
                   </div>
                 )}
 
@@ -3247,20 +3254,20 @@ export default function SettingsClient() {
                   <h4>Forward SMSPass codes to Discord</h4>
                 </div>
                 {smsSaved && (
-                  <span className="status-badge status-static status-sold">Saved ✓</span>
+                  <span className="status-badge status-static status-sold">Saved âœ“</span>
                 )}
               </div>
               <div style={{ padding: "0 1.5rem 1.5rem", display: "flex", flexDirection: "column", gap: "1.25rem" }}>
                 <p style={{ color: "var(--text-2)", fontSize: "0.875rem", lineHeight: 1.6, margin: 0 }}>
-                  Paste your own <strong>SMSPass.io</strong> API key below. TixTracker will automatically check for new SMS (e.g. Ticketmaster verification codes) and post them to Discord — no more loading the SMSPass site to check manually. Everyone&apos;s key is different and stored encrypted, separate from your account.
+                  Paste your own <strong>SMSPass.io</strong> API key below. TixTracker will automatically check for new SMS (e.g. Ticketmaster verification codes) and post them to Discord â€” no more loading the SMSPass site to check manually. Everyone&apos;s key is different and stored encrypted, separate from your account.
                 </p>
 
                 <label className="filter-field">
-                  <span className="filter-label">SMSPass API key{smsConfigured ? " (saved — leave blank to keep it unchanged)" : ""}</span>
+                  <span className="filter-label">SMSPass API key{smsConfigured ? " (saved â€” leave blank to keep it unchanged)" : ""}</span>
                   <input
                     className="field"
                     type="password"
-                    placeholder={smsConfigured ? "•••••••••••••••••••••••••• (unchanged)" : "e.g. b64890e9-d68c-41ac-96e8-ce58782709d6"}
+                    placeholder={smsConfigured ? "â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢ (unchanged)" : "e.g. b64890e9-d68c-41ac-96e8-ce58782709d6"}
                     value={smsApiKeyInput}
                     onChange={(e) => { setSmsApiKeyInput(e.target.value); setSmsMessage(null); }}
                     style={{ fontFamily: "var(--font-geist-mono, monospace)", fontSize: "0.8rem" }}
@@ -3268,7 +3275,7 @@ export default function SettingsClient() {
                 </label>
 
                 <label className="filter-field">
-                  <span className="filter-label">Discord webhook for codes (optional — leave blank to use your main webhook above)</span>
+                  <span className="filter-label">Discord webhook for codes (optional â€” leave blank to use your main webhook above)</span>
                   <input
                     className="field"
                     type="url"
@@ -3281,15 +3288,15 @@ export default function SettingsClient() {
 
                 <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "0.85rem", color: "var(--text-2)" }}>
                   <input type="checkbox" checked={smsIsActive} onChange={(e) => setSmsIsActive(e.target.checked)} />
-                  Active — check for new codes automatically
+                  Active â€” check for new codes automatically
                 </label>
 
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                   <button type="button" className="primary-button" disabled={smsSaving} onClick={() => void saveSmsPassSettings()}>
-                    {smsSaving ? "Saving…" : "Save"}
+                    {smsSaving ? "Savingâ€¦" : "Save"}
                   </button>
                   <button type="button" className="secondary-button" disabled={smsTesting || !smsConfigured} onClick={() => void testSmsPassConnection()}>
-                    {smsTesting ? "Testing…" : "Test connection"}
+                    {smsTesting ? "Testingâ€¦" : "Test connection"}
                   </button>
                 </div>
 
@@ -3302,7 +3309,7 @@ export default function SettingsClient() {
                     border: `1px solid ${smsMessage.ok ? "rgba(103,240,165,0.3)" : "rgba(255,80,80,0.3)"}`,
                     color: smsMessage.ok ? "#67F0A5" : "#ff8080",
                   }}>
-                    {smsMessage.ok ? "✓ " : "✗ "}{smsMessage.text}
+                    {smsMessage.ok ? "âœ“ " : "âœ— "}{smsMessage.text}
                   </div>
                 )}
 
@@ -3310,8 +3317,8 @@ export default function SettingsClient() {
                   <div style={{ padding: "12px 14px", borderRadius: 8, background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)" }}>
                     <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--text-muted)", lineHeight: 1.5 }}>
                       {smsLastPolledAt ? `Last checked: ${new Date(smsLastPolledAt).toLocaleString("en-GB")}` : "Not checked yet"}
-                      {smsLastSeenAt ? ` · Last code seen: ${new Date(smsLastSeenAt).toLocaleString("en-GB")}` : ""}
-                      {smsLastError ? ` · Last issue: ${smsLastError}` : ""}
+                      {smsLastSeenAt ? ` Â· Last code seen: ${new Date(smsLastSeenAt).toLocaleString("en-GB")}` : ""}
+                      {smsLastError ? ` Â· Last issue: ${smsLastError}` : ""}
                     </p>
                   </div>
                 )}
@@ -3325,7 +3332,7 @@ export default function SettingsClient() {
                   <h4>Customise embed fields</h4>
                 </div>
                 {webhookFieldsSaved && (
-                  <span className="status-badge status-static status-sold">Saved ✓</span>
+                  <span className="status-badge status-static status-sold">Saved âœ“</span>
                 )}
               </div>
               <div style={{ padding: "0 1.5rem 1.5rem", display: "flex", flexDirection: "column", gap: "1.75rem" }}>
@@ -3335,10 +3342,10 @@ export default function SettingsClient() {
 
                 {(
                   [
-                    { key: "order"    as WebhookFieldKey, label: "🎟️ Ticket Order",       desc: "Sent when a new ticket purchase is imported" },
-                    { key: "sale"     as WebhookFieldKey, label: "💸 Sale",                desc: "Sent when a new Viagogo / StubHub / Ticombo sale is scanned" },
-                    { key: "transfer" as WebhookFieldKey, label: "🚚 Tickets Delivered",   desc: "Sent when a Viagogo delivery confirmation is processed" },
-                    { key: "payout"   as WebhookFieldKey, label: "💰 Payout",              desc: "Sent when a Viagogo payout email is processed" },
+                    { key: "order"    as WebhookFieldKey, label: "ðŸŽŸï¸ Ticket Order",       desc: "Sent when a new ticket purchase is imported" },
+                    { key: "sale"     as WebhookFieldKey, label: "ðŸ’¸ Sale",                desc: "Sent when a new Viagogo / StubHub / Ticombo sale is scanned" },
+                    { key: "transfer" as WebhookFieldKey, label: "ðŸšš Tickets Delivered",   desc: "Sent when a Viagogo delivery confirmation is processed" },
+                    { key: "payout"   as WebhookFieldKey, label: "ðŸ’° Payout",              desc: "Sent when a Viagogo payout email is processed" },
                   ] as const
                 ).map(({ key, label, desc }) => {
                   const isEnabled = notifEnabled[key];
@@ -3399,7 +3406,7 @@ export default function SettingsClient() {
                   onClick={() => void saveWebhookFields()}
                   style={{ alignSelf: "flex-start" }}
                 >
-                  {webhookFieldsSaving ? "Saving…" : "Save format"}
+                  {webhookFieldsSaving ? "Savingâ€¦" : "Save format"}
                 </button>
               </div>
             </section>
@@ -3407,7 +3414,7 @@ export default function SettingsClient() {
           </>
         )}
 
-        {/* ── Currency tab ── */}
+        {/* â”€â”€ Currency tab â”€â”€ */}
         {activeTab === "currency" && (
           <>
             <section className="hero-card connections-hero">
@@ -3468,7 +3475,7 @@ export default function SettingsClient() {
           </>
         )}
 
-        {/* ── Accounts tab ── */}
+        {/* â”€â”€ Accounts tab â”€â”€ */}
         {activeTab === "accounts" && (
           <AccountsTab />
         )}

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
@@ -17,6 +17,7 @@ const navItems = [
   { label: "Cash Flow", href: "/cash-flow", active: false },
   { label: "Costs", href: "/costs", active: false },
   { label: "Tax & Accounts", href: "/tax-accounts", active: false },
+  { label: "Accounts", href: "/account-manager", active: false },
   { label: "Calculator", href: "/viagogo-calculator", active: false },
   { label: "Scans", href: "/scans", active: false },
   { label: "Presale & Codes", href: "/presale", active: false },
@@ -306,7 +307,7 @@ export default function ClientsClient() {
 
     if (errors.length > 0) {
       setEmailError(
-        `${errors.length} failed — ${errors.slice(0, 2).join(", ")}${errors.length > 2 ? `… (+${errors.length - 2} more)` : ""}`,
+        `${errors.length} failed â€” ${errors.slice(0, 2).join(", ")}${errors.length > 2 ? `â€¦ (+${errors.length - 2} more)` : ""}`,
       );
     } else {
       closeEmailModal();
@@ -452,7 +453,7 @@ export default function ClientsClient() {
           </div>
 
           {loading ? (
-            <div className="empty-state compact-empty-state"><h5>Loading clients…</h5></div>
+            <div className="empty-state compact-empty-state"><h5>Loading clientsâ€¦</h5></div>
           ) : filteredClients.length === 0 ? (
             <div className="state-card">
               <div className="state-orb state-orb-muted" />
@@ -490,12 +491,12 @@ export default function ClientsClient() {
                         <td>
                           <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
                             <span style={{ fontWeight: 500, fontSize: "13px" }}>{client.email}</span>
-                            {hasBeenEmailed && <span className="status-badge badge-sold" style={{ fontSize: "10px", padding: "1px 6px" }}>✓ Emailed</span>}
+                            {hasBeenEmailed && <span className="status-badge badge-sold" style={{ fontSize: "10px", padding: "1px 6px" }}>âœ“ Emailed</span>}
                             {isRepeat && <span className="status-badge badge-unlisted" style={{ fontSize: "10px", padding: "1px 6px" }}>Repeat</span>}
                             <ProxyBadge email={client.email} />
                           </div>
                           <div style={{ fontSize: "11px", color: "var(--muted)", marginTop: "2px" }}>
-                            {client.sales.slice(0, 2).map((s) => [s.event_name, s.event_date ? formatShortDate(s.event_date) : null].filter(Boolean).join(" · ")).join("  |  ") || "No event"}
+                            {client.sales.slice(0, 2).map((s) => [s.event_name, s.event_date ? formatShortDate(s.event_date) : null].filter(Boolean).join(" Â· ")).join("  |  ") || "No event"}
                             {client.sales.length > 2 ? ` +${client.sales.length - 2} more` : ""}
                           </div>
                         </td>
@@ -509,7 +510,7 @@ export default function ClientsClient() {
                           {formatCurrency(client.totalSpend)}
                         </td>
                         <td>
-                          <div style={{ fontSize: "13px" }}>{client.lastPurchaseAt ? formatDate(client.lastPurchaseAt) : "—"}</div>
+                          <div style={{ fontSize: "13px" }}>{client.lastPurchaseAt ? formatDate(client.lastPurchaseAt) : "â€”"}</div>
                           <div style={{ fontSize: "11px", color: "var(--muted)" }}>{client.lastPurchaseAt ? timeAgo(client.lastPurchaseAt) : ""}</div>
                         </td>
                         <td style={{ textAlign: "right" }}>
@@ -519,7 +520,7 @@ export default function ClientsClient() {
                             style={{ fontSize: "12px", padding: "4px 10px" }}
                             onClick={(e) => { e.stopPropagation(); openSingleEmail(client); }}
                           >
-                            {hasBeenEmailed ? "✓ Send Again" : "Send Email"}
+                            {hasBeenEmailed ? "âœ“ Send Again" : "Send Email"}
                           </button>
                         </td>
                       </tr>
@@ -540,7 +541,7 @@ export default function ClientsClient() {
               <p className="eyebrow">Client profile</p>
               <h4 style={{ wordBreak: "break-all", fontSize: "0.95rem" }}>{selectedClient.email}</h4>
             </div>
-            <button className="drawer-close" type="button" onClick={() => setSelectedEmail(null)}>×</button>
+            <button className="drawer-close" type="button" onClick={() => setSelectedEmail(null)}>Ã—</button>
           </div>
 
           <div className="drawer-content">
@@ -549,7 +550,7 @@ export default function ClientsClient() {
                 <strong style={{ wordBreak: "break-all" }}>{selectedClient.email}</strong>
                 <span style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap", marginTop: "0.25rem" }}>
                   {selectedClient.purchaseCount > 1 && <span className="status-badge badge-sold">Repeat buyer</span>}
-                  {sentClientEmails[selectedClient.email.toLowerCase()] && <span className="status-badge badge-sold">✓ Emailed</span>}
+                  {sentClientEmails[selectedClient.email.toLowerCase()] && <span className="status-badge badge-sold">âœ“ Emailed</span>}
                   <ProxyBadge email={selectedClient.email} />
                 </span>
               </div>
@@ -562,7 +563,7 @@ export default function ClientsClient() {
             <div className="drawer-summary">
               <div><span>Purchases</span><strong>{selectedClient.purchaseCount}</strong></div>
               <div><span>Tickets</span><strong>{selectedClient.ticketCount}</strong></div>
-              <div><span>Last purchase</span><strong>{selectedClient.lastPurchaseAt ? formatDate(selectedClient.lastPurchaseAt) : "—"}</strong></div>
+              <div><span>Last purchase</span><strong>{selectedClient.lastPurchaseAt ? formatDate(selectedClient.lastPurchaseAt) : "â€”"}</strong></div>
               <div><span>Total spent</span><strong>{formatCurrency(selectedClient.totalSpend)}</strong></div>
             </div>
 
@@ -573,7 +574,7 @@ export default function ClientsClient() {
                 style={{ width: "100%" }}
                 onClick={() => openSingleEmail(selectedClient)}
               >
-                {sentClientEmails[selectedClient.email.toLowerCase()] ? "✓ Send Again" : "Send Email"}
+                {sentClientEmails[selectedClient.email.toLowerCase()] ? "âœ“ Send Again" : "Send Email"}
               </button>
             </div>
 
@@ -591,8 +592,8 @@ export default function ClientsClient() {
                     <div className="inventory-ticket-seat">
                       <strong>{sale.event_name || "Untitled"}</strong>
                     </div>
-                    <span style={{ fontSize: "12px" }}>{sale.event_date ? formatShortDate(sale.event_date) : "—"}</span>
-                    <span>{sale.qty_sold ?? "—"}</span>
+                    <span style={{ fontSize: "12px" }}>{sale.event_date ? formatShortDate(sale.event_date) : "â€”"}</span>
+                    <span>{sale.qty_sold ?? "â€”"}</span>
                     <strong className="inventory-cost-value">
                       {formatCurrency(sale.payout_total ?? sale.sale_total)}
                     </strong>
@@ -616,7 +617,7 @@ export default function ClientsClient() {
                       <div key={i} className="inventory-ticket-row">
                         <div className="inventory-ticket-seat" style={{ gridColumn: "1 / -1" }}>
                           <strong style={{ fontSize: "12px" }}>{r.subject || "(no subject)"}</strong>
-                          <span style={{ fontSize: "11px" }}>{r.sentAt ? formatDate(r.sentAt) : "—"}{r.sentAt ? ` · ${timeAgo(r.sentAt)}` : ""}</span>
+                          <span style={{ fontSize: "11px" }}>{r.sentAt ? formatDate(r.sentAt) : "â€”"}{r.sentAt ? ` Â· ${timeAgo(r.sentAt)}` : ""}</span>
                         </div>
                       </div>
                     ))}
@@ -639,7 +640,7 @@ export default function ClientsClient() {
                 </p>
                 <h4>{emailTargets.length === 1 ? emailTargets[0] : `${emailTargets.length} recipients`}</h4>
               </div>
-              <button className="drawer-close" type="button" onClick={closeEmailModal} disabled={sendingEmail}>✕</button>
+              <button className="drawer-close" type="button" onClick={closeEmailModal} disabled={sendingEmail}>âœ•</button>
             </div>
 
             <div className="add-sale-body">
@@ -667,7 +668,7 @@ export default function ClientsClient() {
                       <span>To</span>
                       <div className="field" style={{ color: "var(--muted)", fontSize: "12px", lineHeight: "1.6" }}>
                         {emailTargets.slice(0, 5).join(", ")}
-                        {emailTargets.length > 5 ? ` … and ${emailTargets.length - 5} more` : ""}
+                        {emailTargets.length > 5 ? ` â€¦ and ${emailTargets.length - 5} more` : ""}
                       </div>
                     </label>
                   )}
@@ -703,7 +704,7 @@ export default function ClientsClient() {
             {emailProgress && (
               <div style={{ padding: "0 1.5rem 0.75rem" }}>
                 <div style={{ fontSize: "12px", color: "var(--muted)", marginBottom: "0.4rem" }}>
-                  Sending {emailProgress.sent} / {emailProgress.total}…
+                  Sending {emailProgress.sent} / {emailProgress.total}â€¦
                 </div>
                 <div style={{ height: "4px", background: "var(--border)", borderRadius: "2px", overflow: "hidden" }}>
                   <div
@@ -736,7 +737,7 @@ export default function ClientsClient() {
                 onClick={() => void sendEmails()}
               >
                 {sendingEmail
-                  ? `Sending${emailTargets.length > 1 ? ` (${emailProgress?.sent ?? 0}/${emailTargets.length})` : ""}…`
+                  ? `Sending${emailTargets.length > 1 ? ` (${emailProgress?.sent ?? 0}/${emailTargets.length})` : ""}â€¦`
                   : emailTargets.length === 1
                   ? "Send Email"
                   : `Send to ${emailTargets.length} clients`}
@@ -858,7 +859,7 @@ function ProxyBadge({ email }: { email: string }) {
         fontWeight: 600,
         whiteSpace: "nowrap",
       }}>
-        ✓ Real email
+        âœ“ Real email
       </span>
     );
   }

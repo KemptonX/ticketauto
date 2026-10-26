@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
@@ -29,6 +29,7 @@ const navItems = [
   { label: "Cash Flow", href: "/cash-flow", active: false },
   { label: "Costs", href: "/costs", active: true },
   { label: "Tax & Accounts", href: "/tax-accounts", active: false },
+  { label: "Accounts", href: "/account-manager", active: false },
   { label: "Calculator", href: "/viagogo-calculator", active: false },
   { label: "Scans", href: "/scans", active: false },
   { label: "Presale & Codes", href: "/presale", active: false },
@@ -54,7 +55,7 @@ function toMonthly(amount: number, cycle: BillingCycle): number {
 
 function formatBilledDate(value: string) {
   const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return "—";
+  if (Number.isNaN(d.getTime())) return "â€”";
   return new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric" }).format(d);
 }
 
@@ -140,7 +141,7 @@ export default function CostsClient() {
     const rows = filteredOverheads.length > 0 ? filteredOverheads : overheads;
     if (rows.length === 0) { setMessage("Nothing to export"); return; }
 
-    const headers = ["Name", "Category", "Billed Date", "Amount (£)", "Billing Cycle", "Monthly Equiv (£)", "Notes"];
+    const headers = ["Name", "Category", "Billed Date", "Amount (Â£)", "Billing Cycle", "Monthly Equiv (Â£)", "Notes"];
     const data = rows.map(o => [
       o.name,
       o.category ?? "",
@@ -152,7 +153,7 @@ export default function CostsClient() {
     ]);
 
     // Uses the shared, injection-safe CSV builder (src/lib/csv-export.ts)
-    // instead of this page's previous own quote-only escaping — an
+    // instead of this page's previous own quote-only escaping â€” an
     // expense name or note is exactly the kind of free-text field that
     // could carry a formula-injection payload if ever typed or imported.
     downloadCsv(`ticketauto-costs-${new Date().toISOString().slice(0, 10)}.csv`, headers, data);
@@ -169,7 +170,7 @@ export default function CostsClient() {
     const next: BillingCycle = o.billing_cycle === "monthly" ? "one-off" : "monthly";
     const { error } = await supabase.from("overheads").update({ billing_cycle: next }).eq("id", o.id);
     if (error) { setMessage(error.message); return; }
-    setMessage(next === "monthly" ? "Set to monthly — will auto-renew each month" : "Set to one-off");
+    setMessage(next === "monthly" ? "Set to monthly â€” will auto-renew each month" : "Set to one-off");
     void loadOverheads();
   }
 
@@ -206,7 +207,14 @@ export default function CostsClient() {
 
     if (toInsert.length === 0) return;
 
-    await supabase.from("overheads").insert(
+    // Previously this insert's result was never checked â€” "Auto-added N
+    // monthly charges" was shown unconditionally, even on every occasion
+    // this failed outright (e.g. while overheads.expense_date didn't
+    // exist yet: every automatic insert here failed silently, for every
+    // customer with a recurring monthly cost, while still claiming
+    // success). A database write must only ever be reported as
+    // successful once it's actually confirmed.
+    const { error } = await supabase.from("overheads").insert(
       toInsert.map((row) => ({
         user_id: user.id,
         name: row.name,
@@ -217,6 +225,11 @@ export default function CostsClient() {
         expense_date: now.toISOString().slice(0, 10),
       }))
     );
+
+    if (error) {
+      setMessage(`Couldn't auto-add this month's recurring charges: ${error.message}`);
+      return;
+    }
 
     void loadOverheads();
     setMessage(`Auto-added ${toInsert.length} monthly charge${toInsert.length > 1 ? "s" : ""} for ${now.toLocaleString("en-GB", { month: "long" })}`);
@@ -339,7 +352,7 @@ export default function CostsClient() {
                 <input className="field" placeholder="e.g. Proxy subscription" value={name} onChange={e => setName(e.target.value)} required />
               </label>
               <label className="filter-field">
-                <span className="filter-label">Amount (£)</span>
+                <span className="filter-label">Amount (Â£)</span>
                 <input className="field" type="number" step="0.01" min="0" placeholder="0.00" value={amount} onChange={e => setAmount(e.target.value)} required />
               </label>
               <label className="filter-field">
@@ -431,12 +444,12 @@ export default function CostsClient() {
                   {filteredOverheads.map(o => (
                     <tr key={o.id}>
                       <td><strong>{o.name}</strong></td>
-                      <td>{o.category || "—"}</td>
+                      <td>{o.category || "â€”"}</td>
                       <td>{formatBilledDate(o.created_at)}</td>
                       <td>{formatCurrency(o.amount)}</td>
                       <td><span className={`status-badge ${o.billing_cycle === "monthly" ? "badge-sold" : "badge-listed"}`}>{CYCLES.find(c => c.value === o.billing_cycle)?.label}</span></td>
-                      <td className="value-up">{o.billing_cycle === "one-off" ? "—" : formatCurrency(toMonthly(o.amount, o.billing_cycle))}</td>
-                      <td>{o.notes || "—"}</td>
+                      <td className="value-up">{o.billing_cycle === "one-off" ? "â€”" : formatCurrency(toMonthly(o.amount, o.billing_cycle))}</td>
+                      <td>{o.notes || "â€”"}</td>
                       <td>
                         <div style={{ display: "flex", gap: "8px" }}>
                           <button
@@ -445,7 +458,7 @@ export default function CostsClient() {
                             onClick={() => void toggleCycle(o)}
                             title={o.billing_cycle === "monthly" ? "Switch to one-off" : "Switch to monthly"}
                           >
-                            {o.billing_cycle === "monthly" ? "→ One-off" : "→ Monthly"}
+                            {o.billing_cycle === "monthly" ? "â†’ One-off" : "â†’ Monthly"}
                           </button>
                           <button type="button" className="ghost-button danger-button" onClick={() => void removeOverhead(o.id)}>
                             Remove

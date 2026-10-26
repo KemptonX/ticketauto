@@ -321,7 +321,10 @@ export default function SalesImportModal({ allOrders, onClose, onImported }: Sal
     const { data: userRes } = await supabase.auth.getUser();
     const userId = userRes?.user?.id;
     if (!userId) return;
-    await supabase.from("import_batches").insert({ user_id: userId, source: "sales_import", source_filename: importFileName || null, counts });
+    // Table is ticket_import_batches, not import_batches — see migration
+    // 0009's comment: a differently-shaped table already exists under
+    // the name import_batches for the unrelated presale importer.
+    await supabase.from("ticket_import_batches").insert({ user_id: userId, source: "sales_import", source_filename: importFileName || null, counts });
   }
 
   // Loads how much of each order is already sold (excluding "Deleted"

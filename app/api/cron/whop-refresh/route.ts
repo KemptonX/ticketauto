@@ -59,6 +59,10 @@ export async function GET(request: NextRequest) {
     // Need the user's email for the fallback-match path — not stored on
     // whop_entitlements itself (deliberately minimal — no need to
     // duplicate auth.users' own data), so look it up only when needed.
+    // This is also what makes this cron correctly re-check the
+    // explicitly-authorised legacy /account-access accounts, not just
+    // Discord ones: their row has discord_id = null, so the call below
+    // always falls through to this email match for them.
     const { data: userRes } = await supabase.auth.admin.getUserById(row.user_id);
     const email: string | undefined = userRes?.user?.email ?? undefined;
 

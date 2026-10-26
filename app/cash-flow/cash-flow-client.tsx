@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -66,6 +66,7 @@ const navItems = [
   { label: "Cash Flow", href: "/cash-flow", active: true },
   { label: "Costs", href: "/costs", active: false },
   { label: "Tax & Accounts", href: "/tax-accounts", active: false },
+  { label: "Accounts", href: "/account-manager", active: false },
   { label: "Calculator", href: "/viagogo-calculator", active: false },
   { label: "Scans", href: "/scans", active: false },
   { label: "Presale & Codes", href: "/presale", active: false },
@@ -73,7 +74,7 @@ const navItems = [
   { label: "FAQ", href: "/faq", active: false, target: "_blank", rel: "noopener noreferrer" },
 ];
 
-// ── Tax-year helpers ──────────────────────────────────────────────────────────
+// â”€â”€ Tax-year helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function txStart(startYear: number): Date {
   return new Date(startYear, 3, 6); // April 6
@@ -100,7 +101,7 @@ function eventTY(date: Date): number {
 
 function txMonths(startYear: number): Array<{ year: number; month: number; monthLabel: string }> {
   return Array.from({ length: 12 }, (_, i) => {
-    const month = (3 + i) % 12; // April=3 … March=2
+    const month = (3 + i) % 12; // April=3 â€¦ March=2
     const year = startYear + (month < 3 ? 1 : 0);
     return {
       year,
@@ -110,7 +111,7 @@ function txMonths(startYear: number): Array<{ year: number; month: number; month
   });
 }
 
-// ── Component ─────────────────────────────────────────────────────────────────
+// â”€â”€ Component â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export default function CashFlowClient() {
   useRatesReady();
@@ -253,7 +254,7 @@ export default function CashFlowClient() {
   }, [cashEvents, selectedTY]);
 
   const stats = useMemo(() => {
-    // Use sale payment_status data for received/incoming — more accurate than event_date
+    // Use sale payment_status data for received/incoming â€” more accurate than event_date
     const received = paymentStats.received;
     const incoming = paymentStats.awaiting;
     const totalCost = tyEvents.reduce((s, ev) => s + ev.costOut, 0);
@@ -270,7 +271,7 @@ export default function CashFlowClient() {
     for (const o of orders) {
       if (!o.event_date) continue;
       const d = parseEventDate(o.event_date);
-      // Only future events count as unsold stock — past events can't be sold
+      // Only future events count as unsold stock â€” past events can't be sold
       if (!d || d < tyStart || d > tyEnd) continue;
       if (d <= today) continue;
       // Fully sold orders have no unsold stock
@@ -382,7 +383,7 @@ export default function CashFlowClient() {
         <section className="hero-card analytics-hero-card">
           <div>
             <p className="section-tag">Tax year {txLabel(selectedTY)}</p>
-            <h3>Revenue tracks actual payout dates — see exactly when cash lands.</h3>
+            <h3>Revenue tracks actual payout dates â€” see exactly when cash lands.</h3>
           </div>
           <div className="hero-meta">
             <div>
@@ -396,7 +397,7 @@ export default function CashFlowClient() {
           </div>
         </section>
 
-        {/* ── Ticket Tracker ──────────────────────────────────────────────── */}
+        {/* â”€â”€ Ticket Tracker â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
 
         <section style={{
           background: "rgba(255,255,255,0.025)",
@@ -409,7 +410,7 @@ export default function CashFlowClient() {
             <div>
               <p className="section-tag" style={{ marginBottom: 4 }}>Ticket Tracker</p>
               <h3 style={{ margin: 0, fontSize: 20, fontWeight: 700, letterSpacing: "-0.04em" }}>
-                {txLabel(selectedTY)} — how many tickets have you sold?
+                {txLabel(selectedTY)} â€” how many tickets have you sold?
               </h3>
             </div>
             {stats.totalTickets > 0 && (
@@ -469,7 +470,7 @@ export default function CashFlowClient() {
                 {stats.ticketsLeft}
               </span>
               <span style={{ fontSize: 13, color: "var(--text-muted)" }}>
-                {stats.ticketsLeft === 0 ? "all sold — great work!" : "still to go"}
+                {stats.ticketsLeft === 0 ? "all sold â€” great work!" : "still to go"}
               </span>
             </div>
           </div>
@@ -519,7 +520,7 @@ export default function CashFlowClient() {
             <span className="kpi-accent" />
             <p>Revenue received</p>
             <strong>{formatCurrency(stats.received)}</strong>
-            <span>paid sales — confirmed income</span>
+            <span>paid sales â€” confirmed income</span>
           </article>
           <article className="kpi-card">
             <span className="kpi-accent" />
@@ -541,7 +542,7 @@ export default function CashFlowClient() {
           </article>
         </section>
 
-        {/* ── Month-by-month breakdown ────────────────────────────────────── */}
+        {/* â”€â”€ Month-by-month breakdown â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
 
         <section className="table-card">
           <div className="table-card-header">
@@ -549,7 +550,7 @@ export default function CashFlowClient() {
               <p className="section-tag">Month by month</p>
               <h4>{txLabel(selectedTY)} breakdown</h4>
             </div>
-            <span className="table-count">April → March</span>
+            <span className="table-count">April â†’ March</span>
           </div>
 
           {loading ? (
@@ -567,7 +568,7 @@ export default function CashFlowClient() {
           )}
         </section>
 
-        {/* ── Per-event detail ────────────────────────────────────────────── */}
+        {/* â”€â”€ Per-event detail â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
 
         {!loading && tyEvents.length > 0 && (
           <section className="table-card">
@@ -597,7 +598,7 @@ export default function CashFlowClient() {
                       <td>
                         <div className="event-cell">
                           <strong>{ev.eventName}</strong>
-                          <span>{ev.venue || "—"}</span>
+                          <span>{ev.venue || "â€”"}</span>
                         </div>
                       </td>
                       <td>{formatEventDate(ev.eventDate)}</td>
@@ -616,12 +617,12 @@ export default function CashFlowClient() {
                               : { color: "var(--text-muted)" }
                           }
                         >
-                          {ev.cashIn > 0 ? formatCurrency(ev.cashIn) : "—"}
+                          {ev.cashIn > 0 ? formatCurrency(ev.cashIn) : "â€”"}
                         </strong>
                       </td>
-                      <td>{ev.costOut > 0 ? formatCurrency(ev.costOut) : "—"}</td>
+                      <td>{ev.costOut > 0 ? formatCurrency(ev.costOut) : "â€”"}</td>
                       <td className={ev.cashIn > 0 ? (ev.profit >= 0 ? "value-up" : "value-down") : ""}>
-                        {ev.cashIn > 0 ? formatCurrency(ev.profit) : "—"}
+                        {ev.cashIn > 0 ? formatCurrency(ev.profit) : "â€”"}
                       </td>
                       <td>
                         <span
@@ -642,7 +643,7 @@ export default function CashFlowClient() {
   );
 }
 
-// ── Month breakdown (tab row + detail panel) ─────────────────────────────────
+// â”€â”€ Month breakdown (tab row + detail panel) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function MonthBreakdown({
   monthRows,
@@ -679,7 +680,7 @@ function MonthBreakdown({
 
   return (
     <div style={{ paddingTop: 8 }}>
-      {/* ── Tab row — CSS grid guarantees 12 equal columns edge-to-edge ── */}
+      {/* â”€â”€ Tab row â€” CSS grid guarantees 12 equal columns edge-to-edge â”€â”€ */}
       <div style={{
         display: "grid",
         gridTemplateColumns: "repeat(12, 1fr)",
@@ -713,7 +714,7 @@ function MonthBreakdown({
                 boxSizing: "border-box",
               }}
             >
-              {/* Now badge slot — fixed height keeps all tabs identical */}
+              {/* Now badge slot â€” fixed height keeps all tabs identical */}
               <span style={{ height: 18, display: "flex", alignItems: "center", justifyContent: "center" }}>
                 {r.isCurrentMonth && (
                   <span style={{
@@ -763,7 +764,7 @@ function MonthBreakdown({
         })}
       </div>
 
-      {/* Legend — left-aligned, directly below the tab row */}
+      {/* Legend â€” left-aligned, directly below the tab row */}
       <div style={{
         display: "flex",
         gap: 20,
@@ -798,7 +799,7 @@ function MonthBreakdown({
         ))}
       </div>
 
-      {/* ── Detail panel (animated) ── */}
+      {/* â”€â”€ Detail panel (animated) â”€â”€ */}
       <div
         style={{
           overflow: "hidden",
@@ -824,7 +825,7 @@ function MonthBreakdown({
   );
 }
 
-// ── Month detail panel ────────────────────────────────────────────────────────
+// â”€â”€ Month detail panel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function MonthDetailPanel({ row, events }: { row: MonthRow; events: CashEvent[] }) {
   const { label: statusLabel, cls: statusClass } = monthStatus(row);
@@ -849,7 +850,7 @@ function MonthDetailPanel({ row, events }: { row: MonthRow; events: CashEvent[] 
       background: "rgba(255,255,255,0.014)",
       overflow: "hidden",
     }}>
-      {/* Header — everything left-aligned, total stacked directly below heading */}
+      {/* Header â€” everything left-aligned, total stacked directly below heading */}
       <div style={{
         padding: "20px 24px 20px",
         borderBottom: "1px solid rgba(35,35,42,0.5)",
@@ -875,7 +876,7 @@ function MonthDetailPanel({ row, events }: { row: MonthRow; events: CashEvent[] 
           </span>
         </div>
 
-        {/* Row 2: total — block element, explicitly left-anchored */}
+        {/* Row 2: total â€” block element, explicitly left-anchored */}
         <div style={{ marginBottom: 6 }}>
           <span style={{
             display: "block",
@@ -885,7 +886,7 @@ function MonthDetailPanel({ row, events }: { row: MonthRow; events: CashEvent[] 
             color: amountColor,
             lineHeight: 1.1,
           }}>
-            {hasCash ? formatCurrency(row.totalCash) : "—"}
+            {hasCash ? formatCurrency(row.totalCash) : "â€”"}
           </span>
         </div>
 
@@ -897,7 +898,7 @@ function MonthDetailPanel({ row, events }: { row: MonthRow; events: CashEvent[] 
             ? "1 event"
             : `${row.eventCount} events`}
           {row.soldCount > 0 && row.soldCount < row.eventCount
-            ? ` · ${row.soldCount} with sales`
+            ? ` Â· ${row.soldCount} with sales`
             : ""}
         </div>
 
@@ -1029,7 +1030,7 @@ function MonthDetailPanel({ row, events }: { row: MonthRow; events: CashEvent[] 
   );
 }
 
-// ── Helpers for month tabs ────────────────────────────────────────────────────
+// â”€â”€ Helpers for month tabs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function shortMonth(month: number): string {
   return new Intl.DateTimeFormat("en-GB", { month: "short" }).format(new Date(2024, month, 1));
@@ -1066,7 +1067,7 @@ function monthStatus(row: MonthRow): { label: string; cls: string } {
   return { label: "No sales yet", cls: "status-unlisted" };
 }
 
-// ── Utilities ─────────────────────────────────────────────────────────────────
+// â”€â”€ Utilities â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function parseEventDate(value: string | null): Date | null {
   if (!value) return null;
@@ -1089,7 +1090,7 @@ function parseEventDate(value: string | null): Date | null {
 }
 
 function formatEventDate(value: string | null): string {
-  if (!value) return "—";
+  if (!value) return "â€”";
   const d = parseEventDate(value);
   if (!d) return value;
   return new Intl.DateTimeFormat("en-GB", {

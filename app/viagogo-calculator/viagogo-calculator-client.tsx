@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -7,16 +7,16 @@ import { SidebarLogo, NavIcon, SidebarFooter } from "@/app/components/nav-icons"
 type UkField = "display" | "listing" | "payout";
 
 const CURRENCIES = [
-  { code: "EUR", label: "EUR — Euro", symbol: "€" },
-  { code: "USD", label: "USD — US Dollar", symbol: "$" },
-  { code: "AUD", label: "AUD — Australian Dollar", symbol: "A$" },
-  { code: "CAD", label: "CAD — Canadian Dollar", symbol: "C$" },
-  { code: "MXN", label: "MXN — Mexican Peso", symbol: "MX$" },
-  { code: "SEK", label: "SEK — Swedish Krona", symbol: "kr" },
-  { code: "NOK", label: "NOK — Norwegian Krone", symbol: "kr" },
-  { code: "DKK", label: "DKK — Danish Krone", symbol: "kr" },
-  { code: "PLN", label: "PLN — Polish Zloty", symbol: "zł" },
-  { code: "CHF", label: "CHF — Swiss Franc", symbol: "Fr" },
+  { code: "EUR", label: "EUR â€” Euro", symbol: "â‚¬" },
+  { code: "USD", label: "USD â€” US Dollar", symbol: "$" },
+  { code: "AUD", label: "AUD â€” Australian Dollar", symbol: "A$" },
+  { code: "CAD", label: "CAD â€” Canadian Dollar", symbol: "C$" },
+  { code: "MXN", label: "MXN â€” Mexican Peso", symbol: "MX$" },
+  { code: "SEK", label: "SEK â€” Swedish Krona", symbol: "kr" },
+  { code: "NOK", label: "NOK â€” Norwegian Krone", symbol: "kr" },
+  { code: "DKK", label: "DKK â€” Danish Krone", symbol: "kr" },
+  { code: "PLN", label: "PLN â€” Polish Zloty", symbol: "zÅ‚" },
+  { code: "CHF", label: "CHF â€” Swiss Franc", symbol: "Fr" },
 ];
 
 const navItems = [
@@ -27,6 +27,7 @@ const navItems = [
   { label: "Cash Flow", href: "/cash-flow", active: false },
   { label: "Costs", href: "/costs", active: false },
   { label: "Tax & Accounts", href: "/tax-accounts", active: false },
+  { label: "Accounts", href: "/account-manager", active: false },
   { label: "Calculator", href: "/viagogo-calculator", active: true },
   { label: "Scans", href: "/scans", active: false },
   { label: "Presale & Codes", href: "/presale", active: false },
@@ -210,7 +211,7 @@ export default function ViagogoCalculatorClient() {
               <p className="kpi-label">Display price</p>
               <p className="calc-hint">What the buyer sees on viagogo</p>
               <div className="calc-input-wrap">
-                <span className="calc-prefix">£</span>
+                <span className="calc-prefix">Â£</span>
                 <input
                   className="field calc-input"
                   type="number"
@@ -225,9 +226,9 @@ export default function ViagogoCalculatorClient() {
 
             <div className="calc-field">
               <p className="kpi-label">Listing price</p>
-              <p className="calc-hint">display ÷ 1.1799</p>
+              <p className="calc-hint">display Ã· 1.1799</p>
               <div className="calc-input-wrap">
-                <span className="calc-prefix">£</span>
+                <span className="calc-prefix">Â£</span>
                 <input
                   className="field calc-input"
                   type="number"
@@ -242,9 +243,9 @@ export default function ViagogoCalculatorClient() {
 
             <div className="calc-field">
               <p className="kpi-label">Payout</p>
-              <p className="calc-hint">listing × 0.88</p>
+              <p className="calc-hint">listing Ã— 0.88</p>
               <div className="calc-input-wrap">
-                <span className="calc-prefix">£</span>
+                <span className="calc-prefix">Â£</span>
                 <input
                   className="field calc-input"
                   type="number"
@@ -267,14 +268,14 @@ export default function ViagogoCalculatorClient() {
               <h4 style={{ marginTop: "4px" }}>Convert to GBP</h4>
             </div>
             {fxRatesLoading && (
-              <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>Loading rates…</span>
+              <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>Loading ratesâ€¦</span>
             )}
             {fxRatesError && (
               <span style={{ fontSize: "12px", color: "#f87171" }}>{fxRatesError}</span>
             )}
             {!fxRatesLoading && !fxRatesError && liveRate && (
               <span style={{ fontSize: "12px", color: "var(--text-muted)" }}>
-                Live rate · 1 GBP = {liveRate.toFixed(4)} {fxCurrency}
+                Live rate Â· 1 GBP = {liveRate.toFixed(4)} {fxCurrency}
               </span>
             )}
           </div>
@@ -317,15 +318,15 @@ export default function ViagogoCalculatorClient() {
             {/* Exchange rate (editable) */}
             <div className="calc-field">
               <p className="kpi-label">Exchange rate</p>
-              <p className="calc-hint">GBP per {fxCurrency} · adjust for provider fees</p>
+              <p className="calc-hint">GBP per {fxCurrency} Â· adjust for provider fees</p>
               <div className="calc-input-wrap">
-                <span className="calc-prefix" style={{ fontSize: "11px", minWidth: "28px" }}>÷</span>
+                <span className="calc-prefix" style={{ fontSize: "11px", minWidth: "28px" }}>Ã·</span>
                 <input
                   className="field calc-input"
                   type="number"
                   step="0.0001"
                   min="0"
-                  placeholder={liveRate ? liveRate.toFixed(4) : "—"}
+                  placeholder={liveRate ? liveRate.toFixed(4) : "â€”"}
                   value={fxRateOverride}
                   onChange={(e) => setFxRateOverride(e.target.value)}
                 />
@@ -361,14 +362,14 @@ export default function ViagogoCalculatorClient() {
                   GBP equivalent
                 </p>
                 <p style={{ margin: "4px 0 0", fontSize: "28px", fontWeight: 700, letterSpacing: "-0.04em", color: "var(--text-primary)" }}>
-                  £{gbpEquivalent.toFixed(2)}
+                  Â£{gbpEquivalent.toFixed(2)}
                 </p>
               </div>
               <div style={{ textAlign: "right", fontSize: "12px", color: "var(--text-muted)", lineHeight: 1.6 }}>
                 <div>{currencyMeta.symbol}{parseFloat(fxAmount || "0").toFixed(2)} {fxCurrency}</div>
-                <div>÷ {(!isNaN(displayRate) ? displayRate : liveRate ?? 0).toFixed(4)}</div>
+                <div>Ã· {(!isNaN(displayRate) ? displayRate : liveRate ?? 0).toFixed(4)}</div>
                 {fxRateOverride !== "" && (
-                  <div style={{ color: "#f59e0b", fontSize: "11px" }}>⚠ Using manual rate</div>
+                  <div style={{ color: "#f59e0b", fontSize: "11px" }}>âš  Using manual rate</div>
                 )}
               </div>
             </div>
