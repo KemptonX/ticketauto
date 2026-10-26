@@ -1,23 +1,51 @@
-name: Deploy to VPS
+name: Test, Build & Deploy to Vercel
+
+# Replaces a legacy VPS/SSH deploy pipeline (removed 2026-10-26) that had
+# failed on every single run for 2+ months (dead VPS host) while the real
+# production site was being deployed manually via `vercel --prod`. This
+# workflow is the one actual deployment path from here on.
 
 on:
   push:
     branches: [main]
 
+env:
+  VERCEL_ORG_ID: team_1QwP8dN9lGyekC3WfWabIOw1
+  VERCEL_PROJECT_ID: prj_U8vdsB3RjUiVAMQQlg4QIKLfyVzE
+
 jobs:
-  deploy:
+  test-and-deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1.0.3
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
         with:
-          host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USER }}
-          key: ${{ secrets.VPS_SSH_KEY }}
-          port: 22
-          script: |
-            cd /root/TicketAuto
-            git pull origin main
-            npm ci --omit=dev
-            npm run build
-            pm2 restart ticketauto || pm2 start npm --name ticketauto -- start
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Type check
+        run: npx tsc --noEmit
+
+      - name: Run tests
+        run: npm test
+
+      - name: Pull Vercel project settings
+        run: npx vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Build (production, via Vercel)
+        run: npx vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Deploy prebuilt output to production
+        id: deploy
+        run: |
+          url=$(npx vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }})
+          echo "Deployed: $url"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+
+      - name: Health check
+        run: |
+          sleep 5
+          curl -fsS -o /dev/null -w "%{http_code}\n" "https://www.tixtracker.app/" | grep -qE "^(200|30[1-8])$"
