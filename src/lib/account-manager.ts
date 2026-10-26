@@ -64,18 +64,52 @@ export type TicketAccount = {
   updated_at: string;
 };
 
+// Discovered-candidate review flag — deliberately NOT an AI-style
+// confidence percentage. Confirmed against real production data: emails
+// like "customerservice@biggreencoach.co.uk" and
+// "customerserviceteam@warnermusic.com" show up in orders.account_email
+// for ticketmaster_direct purchases (a hospitality/coach-package
+// confirmation email's support contact leaking into that field upstream,
+// not a parsing bug in this module) and are obviously not a personal
+// purchasing account. A short, explainable substring list on the local
+// part catches the real cases found without flagging genuine personal
+// addresses that happen to contain a common word.
+const REVIEW_KEYWORDS = [
+  "customerservice", "customersupport", "noreply", "no-reply",
+  "donotreply", "do-not-reply", "enquiries", "enquiry", "contactus", "helpdesk",
+];
+
+export function assessCandidateConfidence(email: string): { needsReview: boolean; reviewReason: string | null } {
+  const local = email.split("@")[0]?.toLowerCase() ?? "";
+  const hit = REVIEW_KEYWORDS.find((w) => local.includes(w));
+  if (hit) {
+    return { needsReview: true, reviewReason: "Looks like a general contact or support address, not a personal account" };
+  }
+  return { needsReview: false, reviewReason: null };
+}
+
+export type DiscoveryCandidate = {
+  platform: Platform;
+  email: string;
+  orderCount: number;
+  lastSeenAt: string;
+  needsReview: boolean;
+  reviewReason: string | null;
+};
+
 // Groups raw order rows into discovery candidates: one candidate per
 // distinct (platform, email) pair, counting how many orders back it and
 // the most recent purchase date — purely a display aid for the review
 // list, not itself a database write.
 // existingKeys: `${platform}__${lowercased email}` for every account
-// already saved. Keyed by platform+email, not email alone — the same
-// email is a distinct identity on Ticketmaster vs AXS, so saving one
-// must not suppress discovery of the other.
+// already saved OR already dismissed by this user. Keyed by
+// platform+email, not email alone — the same email is a distinct
+// identity on Ticketmaster vs AXS, so saving/dismissing one must not
+// suppress discovery of the other.
 export function buildDiscoveryCandidates(
   orders: { account_email: string | null; source_type: string | null; created_at: string }[],
   existingKeys: Set<string>,
-): { platform: Platform; email: string; orderCount: number; lastSeenAt: string }[] {
+): DiscoveryCandidate[] {
   const byKey = new Map<string, { platform: Platform; email: string; orderCount: number; lastSeenAt: string }>();
 
   for (const o of orders) {
@@ -96,5 +130,7 @@ export function buildDiscoveryCandidates(
     }
   }
 
-  return [...byKey.values()].sort((a, b) => b.orderCount - a.orderCount);
+  return [...byKey.values()]
+    .map((c) => ({ ...c, ...assessCandidateConfidence(c.email) }))
+    .sort((a, b) => b.orderCount - a.orderCount);
 }

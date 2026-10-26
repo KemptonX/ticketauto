@@ -75,12 +75,18 @@ export async function GET() {
 
   // Discovery candidates: Ticketmaster/AXS accounts seen in existing
   // orders that aren't saved here yet — never auto-created, just
-  // surfaced for the customer to confirm or dismiss.
-  const existingKeys = new Set(
-    (accounts ?? [])
+  // surfaced for the customer to confirm or dismiss. Dismissed
+  // candidates (migration 0013) are excluded the same way an already-
+  // saved account is, so a dismissal actually sticks across refreshes.
+  const { data: dismissedRows } = await supabase
+    .from("dismissed_account_candidates")
+    .select("platform, email");
+  const existingKeys = new Set([
+    ...(accounts ?? [])
       .filter((a) => a.email)
       .map((a) => `${a.platform}__${(a.email ?? "").trim().toLowerCase()}`),
-  );
+    ...(dismissedRows ?? []).map((d) => `${d.platform}__${d.email.trim().toLowerCase()}`),
+  ]);
   const existingEmails = new Set((accounts ?? []).map((a) => (a.email ?? "").trim().toLowerCase()).filter(Boolean));
   const { data: classifiableOrders } = await supabase
     .from("orders")
@@ -90,12 +96,11 @@ export async function GET() {
   const candidates = buildDiscoveryCandidates(classifiableOrders ?? [], existingKeys);
 
   // Dashboard stats — all computed from the real data just fetched above,
-  // nothing hardcoded. "Unlinked purchases" = total orders minus the ones
-  // whose account_email matched a saved account (covers both "no email at
-  // all" and "has an email but it isn't a saved account" in one number).
-  const { count: totalOrders } = await supabase
-    .from("orders")
-    .select("id", { count: "exact", head: true });
+  // nothing hardcoded. "Linked purchases" = orders whose account_email
+  // matches a saved account; deliberately not showing "unlinked
+  // purchases" as a top-level figure any more — with 0 accounts saved it
+  // trivially equals the user's total order count, which read as an
+  // alarming number rather than a meaningful one.
   const matchedOrderCount = allOrders.filter((o) => {
     const key = (o.account_email ?? "").trim().toLowerCase();
     return key && existingEmails.has(key);
@@ -104,11 +109,10 @@ export async function GET() {
     totalAccounts: (accounts ?? []).length,
     ticketmasterAccounts: (accounts ?? []).filter((a) => a.platform === "ticketmaster").length,
     axsAccounts: (accounts ?? []).filter((a) => a.platform === "axs").length,
-    accountsWithTickets: enriched.filter((a) => a.purchase_count > 0).length,
-    unlinkedPurchases: Math.max((totalOrders ?? 0) - matchedOrderCount, 0),
+    linkedPurchases: matchedOrderCount,
   };
 
-  return NextResponse.json({ accounts: enriched, candidates, stats, tableReady: true });
+  return NextResponse.json({ accounts: enriched, candidates, stats, dismissedCount: (dismissedRows ?? []).length, tableReady: true });
 }
 
 const ALLOWED_FIELDS = new Set([
