@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { decryptCredential } from "@/src/lib/marketplace/encryption";
+import { isNoopCursorUpdate } from "@/src/lib/sms-poll-state";
 
 export const runtime = "nodejs";
 // PERF-002 fix — see app/api/cron/scan/route.ts for the full reasoning.
@@ -31,6 +32,7 @@ type SmsPassAccount = {
   last_seen_at: string | null;
   recent_signatures: string[];
   last_polled_at: string | null;
+  last_error: string | null;
 };
 
 type SmsMessage = {
@@ -145,7 +147,7 @@ export async function GET(request: NextRequest) {
 
   const { data: accounts, error: accountsError } = await supabase
     .from("sms_pass_accounts")
-    .select("id, user_id, api_key_encrypted, discord_webhook_url, last_seen_at, recent_signatures, last_polled_at")
+    .select("id, user_id, api_key_encrypted, discord_webhook_url, last_seen_at, recent_signatures, last_polled_at, last_error")
     .eq("is_active", true);
 
   if (accountsError) {
@@ -264,6 +266,25 @@ export async function GET(request: NextRequest) {
     const newLastSeenAt = maxMs !== null
       ? new Date(maxMs).toISOString()
       : (isFirstPoll ? new Date().toISOString() : account.last_seen_at);
+
+    // Disk IO: this endpoint runs every ~3s around the clock, and almost
+    // every cycle finds no new SMS. claimAccount() above has already stamped
+    // last_polled_at for this cycle, so when the cursor, signatures and
+    // error are all unchanged this second UPDATE would only rewrite
+    // identical values (a new row version + WAL each time). Skip it then.
+    // Any real change — new messages, a cursor move, a new or cleared
+    // error, first poll — still writes exactly as before.
+    const unchanged = isNoopCursorUpdate({
+      isFirstPoll,
+      newMessageCount: newMessages.length,
+      previous: {
+        lastSeenAt: account.last_seen_at,
+        signatures: account.recent_signatures,
+        error: account.last_error,
+      },
+      next: { lastSeenAt: newLastSeenAt, signatures: newSignatures, error: forwardError },
+    });
+    if (unchanged) continue;
 
     await supabase.from("sms_pass_accounts").update({
       last_seen_at: newLastSeenAt,
