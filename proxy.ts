@@ -56,21 +56,20 @@ export async function proxy(request: NextRequest) {
   return response;
 }
 
-export const proxyConfig = {
+// Next.js only reads an export named `config`. This was previously exported
+// as `proxyConfig`, which Next silently ignored, so the proxy ran on EVERY
+// request — including every JS/CSS chunk, font and image — and each run
+// called supabase.auth.getUser() (a Supabase Auth round-trip for any
+// signed-in visitor).
+//
+// The matcher deliberately covers every page and API route (not just the
+// protectedRoutes list above): the session refresh must also run on
+// /auth/callback and every other page, or the Discord OAuth PKCE flow and
+// session-cookie refresh break. That is exactly the behaviour production
+// already had (via the ignored export), minus static assets. It is the
+// matcher the deleted middleware.ts used for the same reason.
+export const config = {
   matcher: [
-    "/login",
-    "/dashboard",
-    "/orders/:path*",
-    "/sales/:path*",
-    "/archived-sales/:path*",
-    "/inventory/:path*",
-    "/analytics/:path*",
-    "/connections/:path*",
-    "/scans/:path*",
-    "/viagogo-calculator/:path*",
-    "/costs/:path*",
-    "/settings/:path*",
-    "/api/scan-gmail",
-    "/api/scan-sales",
+    "/((?!_next/static|_next/image|favicon\\.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|css|js|map|woff2?|ttf)$).*)",
   ],
 };
