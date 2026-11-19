@@ -6,6 +6,7 @@ import { supabase } from "@/src/lib/supabase";
 import { formatCurrency } from "@/src/lib/currency";
 import { useRatesReady } from "@/app/components/CurrencyProvider";
 import { SidebarLogo, NavIcon, SidebarFooter } from "@/app/components/nav-icons";
+import { ORDER_LIST_COLUMNS } from "@/src/lib/order-columns";
 
 type Order = {
   id: number;
@@ -108,7 +109,7 @@ export default function InventoryClient() {
 
     const { data, error } = await supabase
       .from("orders")
-      .select("*")
+      .select(ORDER_LIST_COLUMNS)
       .neq("listing_status", "Archived")
       .order("event_date", { ascending: true });
 

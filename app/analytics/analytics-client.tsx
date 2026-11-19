@@ -8,6 +8,7 @@ import { useRatesReady } from "@/app/components/CurrencyProvider";
 import { SidebarLogo, NavIcon, SidebarFooter } from "@/app/components/nav-icons";
 import { getProportionalCost } from "@/src/lib/proportional-cost";
 import { downloadCsv } from "@/src/lib/csv-export";
+import { ORDER_LIST_COLUMNS } from "@/src/lib/order-columns";
 
 type Order = {
   id: number;
@@ -195,7 +196,7 @@ export default function AnalyticsClient() {
     }
 
     const [ordersResult, salesResult, saleMetricsResult] = await Promise.all([
-      supabase.from("orders").select("*").or("listing_status.is.null,listing_status.not.in.(Ignored,Personal)").order("created_at", { ascending: true }),
+      supabase.from("orders").select(ORDER_LIST_COLUMNS).or("listing_status.is.null,listing_status.not.in.(Ignored,Personal)").order("created_at", { ascending: true }),
       supabase.from("sales").select("inventory_order_id, sold_at, qty_sold").not("inventory_order_id", "is", null),
       supabase.from("sales").select("payment_status, transfer_status, payout_total, sale_total").not("sale_status", "in", '("Archived","Deleted","Cancelled / Issue")'),
     ]);

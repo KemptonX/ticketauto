@@ -10,6 +10,7 @@ import { ShareMultiBannerModal, type MultiSaleStats } from "@/app/sales/ShareBan
 import ListingDraftModal from "@/app/components/marketplace/ListingDraftModal";
 import { getProportionalCost } from "@/src/lib/proportional-cost";
 import { downloadCsv as downloadCSV } from "@/src/lib/csv-export";
+import { ORDER_LIST_COLUMNS } from "@/src/lib/order-columns";
 import { checkQuantity, checkFinancialValue } from "@/src/lib/import-validation";
 
 type SyncLogEntry = {
@@ -40,7 +41,6 @@ type Order = {
   listing_status: string | null;
   source_type: string | null;
   created_at: string | null;
-  email_html: string | null;
 };
 
 
@@ -198,6 +198,10 @@ export default function OrdersClient() {
   const [submittingNew, setSubmittingNew] = useState(false);
   const [message, setMessage] = useState("");
   const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null);
+  // Whether the selected order has a stored confirmation email (drives the
+  // "Download PDF" button). Checked on demand for the one open order instead
+  // of loading every order's full email HTML with the list.
+  const [emailCheck, setEmailCheck] = useState<{ id: number; hasEmail: boolean } | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
   const [addingAccount, setAddingAccount] = useState(false);
   const [newAccountInput, setNewAccountInput] = useState("");
@@ -259,7 +263,7 @@ export default function OrdersClient() {
 
     const { data, error } = await supabase
       .from("orders")
-      .select("*")
+      .select(ORDER_LIST_COLUMNS)
       .order("created_at", { ascending: false });
 
     // Fetch matched sales to get actual qty_sold and sale_total per order
@@ -325,7 +329,7 @@ export default function OrdersClient() {
     const [ordersResult, salesResult] = await Promise.all([
       supabase
         .from("orders")
-        .select("*")
+        .select(ORDER_LIST_COLUMNS)
         .not("listing_status", "in", '("Ignored","Personal")')
         .order("created_at", { ascending: false }),
       supabase
@@ -1203,6 +1207,29 @@ export default function OrdersClient() {
   const selectedOrder =
     orders.find((order) => order.id === selectedOrderId) ?? null;
 
+  // Only trust a result for the order currently open, so a stale answer for
+  // a previously selected order never shows the button on the wrong ticket.
+  const selectedHasEmail =
+    selectedOrderId != null && emailCheck?.id === selectedOrderId && emailCheck.hasEmail;
+
+  useEffect(() => {
+    if (selectedOrderId == null) return;
+    let cancelled = false;
+    // `email_html IS NOT NULL` is answered without reading the HTML itself.
+    void supabase
+      .from("orders")
+      .select("id")
+      .eq("id", selectedOrderId)
+      .not("email_html", "is", null)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (!cancelled) setEmailCheck({ id: selectedOrderId, hasEmail: Boolean(data) });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedOrderId]);
+
   const metrics = useMemo(() => {
     const availableCount = filteredOrders.filter(
       (o) => o.listing_status !== "Sold",
@@ -2007,7 +2034,7 @@ export default function OrdersClient() {
             <h4>{selectedOrder.event_name || "Untitled ticket"}</h4>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            {selectedOrder.email_html && (
+            {selectedHasEmail && (
               <button
                 type="button"
                 onClick={() => window.open(`/api/email-pdf/${selectedOrder.id}`, "_blank")}
