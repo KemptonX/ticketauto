@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { createServerClient } from "@supabase/ssr";
 import { createClient } from "@supabase/supabase-js";
 import { checkWhopMembership, upsertEntitlement } from "@/src/lib/whop-entitlement";
+import { authSiteForRequest } from "@/src/lib/auth-site";
 
 export const runtime = "nodejs";
 
@@ -13,15 +14,20 @@ export async function GET(request: Request) {
   // mode=link means an existing user is linking their Discord — skip Whop check
   const isLinkMode = searchParams.get("mode") === "link";
   const next = searchParams.get("next") ?? "/settings?tab=connections";
+  // Production: tixtracker.app / www.tixtracker.app / .tixtracker.app cookies,
+  // exactly as before. Vercel preview only: the preview's own origin with
+  // host-only cookies. See src/lib/auth-site.ts.
+  const site = authSiteForRequest(request);
+  const cookieDomain = site.cookieDomain ? { domain: site.cookieDomain } : {};
 
   if (urlError) {
     return NextResponse.redirect(
-      `https://tixtracker.app/login?error=${encodeURIComponent(urlError)}`,
+      `${site.origin}/login?error=${encodeURIComponent(urlError)}`,
     );
   }
 
   if (!code) {
-    return NextResponse.redirect("https://tixtracker.app/login?error=no-code");
+    return NextResponse.redirect(`${site.origin}/login?error=no-code`);
   }
 
   const cookieStore = await cookies();
@@ -66,13 +72,13 @@ export async function GET(request: Request) {
 
   if (exchangeError || !data.user) {
     return NextResponse.redirect(
-      `https://tixtracker.app/login?error=${encodeURIComponent(exchangeError?.message ?? "auth-failed")}`,
+      `${site.origin}/login?error=${encodeURIComponent(exchangeError?.message ?? "auth-failed")}`,
     );
   }
 
   // Linking flow: user already has a valid session and is just adding Discord identity
   if (isLinkMode) {
-    return NextResponse.redirect(`https://tixtracker.app/${next.replace(/^\//, "")}?linked=true`);
+    return NextResponse.redirect(`${site.origin}/${next.replace(/^\//, "")}?linked=true`);
   }
 
   const apiKey = process.env.WHOP_API_KEY;
@@ -119,7 +125,7 @@ export async function GET(request: Request) {
       if (!result.ok || !result.isEntitled) {
         await supabase.auth.signOut();
         return NextResponse.redirect(
-          `https://tixtracker.app/login?error=${encodeURIComponent(
+          `${site.origin}/login?error=${encodeURIComponent(
             "No active TixTracker Whop membership found. Make sure you joined the TixTracker Whop product and connected the same Discord account to Whop.",
           )}`,
         );
@@ -150,13 +156,13 @@ export async function GET(request: Request) {
   // aren't dropped by a subsequent Vercel CDN redirect from tixtracker.app → www.tixtracker.app.
   // Explicitly copy session cookies onto the response — cookieStore.set() doesn't carry into
   // NextResponse.redirect() because they are separate response objects in Next.js.
-  const successResponse = NextResponse.redirect("https://www.tixtracker.app/dashboard");
+  const successResponse = NextResponse.redirect(`${site.appOrigin}/dashboard`);
   for (const c of outgoing) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     successResponse.cookies.set(c.name, c.value, {
       ...(c.options as any),
       // Ensure cookies work on both tixtracker.app and www.tixtracker.app
-      domain: ".tixtracker.app",
+      ...cookieDomain,
     });
   }
   // Expire the PKCE verifier now that the code exchange is complete
@@ -166,7 +172,7 @@ export async function GET(request: Request) {
     httpOnly: true,
     sameSite: "lax",
     secure: true,
-    domain: ".tixtracker.app",
+    ...cookieDomain,
   });
   return successResponse;
 }

@@ -9,6 +9,7 @@ import { useRatesReady } from "@/app/components/CurrencyProvider";
 import { TEMPLATE_VARS, DEFAULT_SUBJECT, DEFAULT_BODY, EmailTemplate, loadTemplates, saveTemplates, loadActiveTemplateId, saveActiveTemplateId, interpolate } from "@/src/lib/email-template";
 import { SidebarLogo, NavIcon, SidebarFooter } from "@/app/components/nav-icons";
 import { buildCsv } from "@/src/lib/csv-export";
+import { browserAuthSite } from "@/src/lib/auth-site";
 import AccountsTab from "@/app/components/marketplace/AccountsTab";
 import {
   autoMapHeader as sharedAutoMapHeader,
@@ -553,7 +554,7 @@ export default function SettingsClient() {
     const { error } = await supabase.auth.linkIdentity({
       provider: "discord",
       options: {
-        redirectTo: "https://tixtracker.app/auth/callback?mode=link&next=/settings?tab=connections",
+        redirectTo: `${browserAuthSite().origin}/auth/callback?mode=link&next=/settings?tab=connections`,
         scopes: "identify email",
       },
     });

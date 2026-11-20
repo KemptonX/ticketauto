@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createHash, randomBytes } from "crypto";
+import { authSiteForRequest } from "@/src/lib/auth-site";
 
 export const runtime = "nodejs";
 
@@ -12,7 +13,10 @@ function generateChallenge(verifier: string): string {
   return createHash("sha256").update(verifier).digest("base64url");
 }
 
-export async function GET() {
+export async function GET(request: Request) {
+  // Production: https://tixtracker.app + .tixtracker.app cookies, exactly as
+  // before. Vercel preview only: the preview's own origin, host-only cookie.
+  const site = authSiteForRequest(request);
   const verifier = generateVerifier();
   const challenge = generateChallenge(verifier);
 
@@ -22,7 +26,7 @@ export async function GET() {
   // redirects to Discord, Discord redirects back to our /auth/callback.
   const params = new URLSearchParams({
     provider: "discord",
-    redirect_to: "https://tixtracker.app/auth/callback",
+    redirect_to: `${site.origin}/auth/callback`,
     scopes: "identify email",
     code_challenge: challenge,
     code_challenge_method: "s256",
@@ -41,7 +45,7 @@ export async function GET() {
     httpOnly: true,
     secure: isProd,
     maxAge: 300, // 5 min — enough for the OAuth round-trip
-    ...(isProd ? { domain: ".tixtracker.app" } : {}),
+    ...(isProd && site.cookieDomain ? { domain: site.cookieDomain } : {}),
   });
 
   return response;
